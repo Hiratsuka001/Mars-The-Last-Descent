@@ -111,7 +111,7 @@ export const NovaAvatar: React.FC<NovaAvatarProps> = ({
         <ellipse cx="60" cy="45" rx="5.5" ry="6" fill="#0f172a" />
         {/* Cyan Iris */}
         <ellipse cx="40" cy="45" rx="4.8" ry="5.2" fill="#06b6d4" />
-        <ellipse cx="60" cy="45" rx="60 > 50 ? 4.8 : 4.8" ry="5.2" fill="#06b6d4" />
+        <ellipse cx="60" cy="45" rx="4.8" ry="5.2" fill="#06b6d4" />
         {/* Highlights */}
         <circle cx="38" cy="43" r="1.8" fill="#ffffff" />
         <circle cx="58" cy="43" r="1.8" fill="#ffffff" />

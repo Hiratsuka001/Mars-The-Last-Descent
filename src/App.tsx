@@ -1,27 +1,46 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { sound } from './systems/audio';
-import { getSavedProgress, saveProgress, GameProgress } from './systems/saveManager';
+import { getSavedProgress, saveProgress, resetProgress, hasSavedWorldRun, GameProgress } from './systems/saveManager';
 import { MISSIONS_DATA, MissionDiscovery } from './data/missions';
 import { MainMenu } from './components/MainMenu';
-import { PrologueScene } from './components/PrologueScene';
 import { GameCanvas, InteractiveEntity } from './components/GameCanvas';
 import { NovaDialogue } from './components/NovaDialogue';
-import { DiscoveryModal } from './components/DiscoveryModal';
-import { QuizModal } from './components/QuizModal';
-import { MarsCrashScene } from './components/MarsCrashScene';
-import { SojournerRoverPuzzle } from './components/MiniGames/SojournerRoverPuzzle';
-import { OpportunityWaterPuzzle } from './components/MiniGames/OpportunityWaterPuzzle';
-import { InSightSeismicPuzzle } from './components/MiniGames/InSightSeismicPuzzle';
-import { MarsWeatherChallenge } from './components/MarsWeatherChallenge';
-import { SpacecraftRepairScene } from './components/SpacecraftRepairScene';
-import { LaunchCinematic } from './components/LaunchCinematic';
-import { MissionArchiveModal } from './components/MissionArchiveModal';
-import { SettingsModal } from './components/SettingsModal';
-import { CreditsModal } from './components/CreditsModal';
 import { Compass, Volume2, VolumeX, Menu, Award, ArrowRight } from 'lucide-react';
+
+// Code-split heavy scenes, modals, cinematics, and mini-games
+const WorldScene = React.lazy(() => import('./components/WorldScene').then(m => ({ default: m.WorldScene })));
+const LaunchCinematic = React.lazy(() => import('./components/LaunchCinematic').then(m => ({ default: m.LaunchCinematic })));
+const SpacecraftRepairScene = React.lazy(() => import('./components/SpacecraftRepairScene').then(m => ({ default: m.SpacecraftRepairScene })));
+const MissionArchiveModal = React.lazy(() => import('./components/MissionArchiveModal').then(m => ({ default: m.MissionArchiveModal })));
+const SettingsModal = React.lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
+const CreditsModal = React.lazy(() => import('./components/CreditsModal').then(m => ({ default: m.CreditsModal })));
+const PrologueScene = React.lazy(() => import('./components/PrologueScene').then(m => ({ default: m.PrologueScene })));
+const MarsCrashScene = React.lazy(() => import('./components/MarsCrashScene').then(m => ({ default: m.MarsCrashScene })));
+const MarsWeatherChallenge = React.lazy(() => import('./components/MarsWeatherChallenge').then(m => ({ default: m.MarsWeatherChallenge })));
+const DiscoveryModal = React.lazy(() => import('./components/DiscoveryModal').then(m => ({ default: m.DiscoveryModal })));
+const QuizModal = React.lazy(() => import('./components/QuizModal').then(m => ({ default: m.QuizModal })));
+const SojournerRoverPuzzle = React.lazy(() => import('./components/MiniGames/SojournerRoverPuzzle').then(m => ({ default: m.SojournerRoverPuzzle })));
+const OpportunityWaterPuzzle = React.lazy(() => import('./components/MiniGames/OpportunityWaterPuzzle').then(m => ({ default: m.OpportunityWaterPuzzle })));
+const InSightSeismicPuzzle = React.lazy(() => import('./components/MiniGames/InSightSeismicPuzzle').then(m => ({ default: m.InSightSeismicPuzzle })));
+
+// Overhaul feature flag: Mars top-down open world
+export const USE_TOPDOWN_WORLD = true;
+
+const LoadingFallback: React.FC = () => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#03060d] text-cyan-400 font-mono text-sm select-none">
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-8 h-8 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
+      <span className="tracking-widest uppercase text-xs">Synchronizing Subsystems...</span>
+    </div>
+  </div>
+);
 
 export default function App() {
   const [progress, setProgress] = useState<GameProgress>(getSavedProgress());
+  const [worldSeed, setWorldSeed] = useState<number | string>(() => {
+    const saved = getSavedProgress();
+    return saved.worldSave?.seed ?? 19970704;
+  });
   
   // Active modals
   const [activeDiscovery, setActiveDiscovery] = useState<MissionDiscovery | null>(null);
@@ -62,11 +81,10 @@ export default function App() {
     setNovaDialogue(null);
   };
 
-  // Moon setup
+  // Ambient setup for legacy lunar surface
   useEffect(() => {
     if (progress.currentChapter === 2) {
       sound.startAmbience('moon');
-      // Introductory dialogue
       const timer = setTimeout(() => {
         setNovaDialogue({
           text: "Welcome to the Moon, Explorer! Gravity here is only 1/6th of Earth's (1.62 m/s²). Try moving and jumping. When you find historical instruments, press [E] or tap SCAN to deploy my sensor array!",
@@ -75,28 +93,16 @@ export default function App() {
         });
       }, 600);
       return () => clearTimeout(timer);
-    } else if (progress.currentChapter === 4) {
-      sound.startAmbience('mars');
-      // Mars exploration dialogue
-      const timer = setTimeout(() => {
-        setNovaDialogue({
-          text: "We are walking on the red soil of Mars, Explorer. Somewhere across these dunes lie the forgotten robotic explorers that taught humanity how to survive here. Let's find them!",
-          mood: 'curious',
-          actionLabel: 'Scan Horizon'
-        });
-      }, 600);
-      return () => clearTimeout(timer);
     }
   }, [progress.currentChapter]);
 
-  // Handle interaction on canvas
+  // Handle interaction on canvas (Legacy chapters)
   const handleCanvasInteraction = (entityId: string) => {
     if (MISSIONS_DATA[entityId]) {
       setActiveDiscovery(MISSIONS_DATA[entityId]);
     } else if (entityId === 'crashed_ship') {
-      // Return to diagnostics or repair
       if (progress.unlockedMissions.filter(m => !['apollo_lrrr', 'apollo_lrv', 'surveyor_3'].includes(m)).length >= 3) {
-        goToChapter(6); // Spacecraft repair
+        goToChapter(6);
       } else {
         setNovaDialogue({
           text: "The spacecraft ascent thrusters are still inoperable. We need engineering principles from the 3 historic Mars missions before we can recalibrate the systems!",
@@ -119,7 +125,6 @@ export default function App() {
 
     setActiveDiscovery(null);
 
-    // If moon discovery, launch quiz
     if (['apollo_lrrr', 'apollo_lrv', 'surveyor_3'].includes(missionId)) {
       setActiveQuiz(discovery);
     } else if (missionId === 'sojourner') {
@@ -148,7 +153,7 @@ export default function App() {
         text: "Outstanding work, Explorer! All 3 Lunar Instruments are analyzed and verified. Our spacecraft systems are configured for the interplanetary transfer burn to Mars!",
         mood: 'celebrate',
         actionLabel: 'Initiate Mars Descent Burn →',
-        onAction: () => goToChapter(3) // Go to Mars Crash
+        onAction: () => goToChapter(3)
       });
     } else {
       setNovaDialogue({
@@ -166,7 +171,6 @@ export default function App() {
     });
     setActiveMiniGame(null);
 
-    // Check if all 3 Mars missions are discovered and solved!
     const marsMissions = ['sojourner', 'opportunity', 'insight'];
     const marsSolved = marsMissions.every((m) =>
       progress.solvedMiniGames.includes(m) || m === gameId
@@ -177,7 +181,7 @@ export default function App() {
         text: "ALERT! A massive thermal convection dust storm is sweeping across the Martian horizon! We must make an urgent tactical routing decision!",
         mood: 'warning',
         actionLabel: 'Assess Weather Crisis →',
-        onAction: () => goToChapter(5) // Weather challenge
+        onAction: () => goToChapter(5)
       });
     } else {
       setNovaDialogue({
@@ -187,7 +191,7 @@ export default function App() {
     }
   };
 
-  // Chapter 1: Moon entities
+  // Chapter 1: Moon entities (Legacy)
   const moonEntities: InteractiveEntity[] = [
     {
       id: 'apollo_lrrr',
@@ -224,330 +228,225 @@ export default function App() {
     }
   ];
 
-  // Chapter 3: Mars exploration entities
-  const marsEntities: InteractiveEntity[] = [
-    {
-      id: 'crashed_ship',
-      name: 'Crashed Exploration Lander',
-      x: 200,
-      y: 390,
-      width: 120,
-      height: 50,
-      type: 'ship',
-      discovered: true,
-      label: 'Lander Wreckage'
-    },
-    {
-      id: 'sojourner',
-      name: 'Sojourner Microrover (1997)',
-      x: 950,
-      y: 420,
-      width: 90,
-      height: 40,
-      type: 'rover',
-      discovered: progress.unlockedMissions.includes('sojourner'),
-      label: 'Pathfinder Site'
-    },
-    {
-      id: 'opportunity',
-      name: 'Opportunity Rover (2004)',
-      x: 1850,
-      y: 410,
-      width: 90,
-      height: 45,
-      type: 'rover',
-      discovered: progress.unlockedMissions.includes('opportunity'),
-      label: 'Meridiani Outcrop'
-    },
-    {
-      id: 'insight',
-      name: 'InSight Lander & SEIS Dome (2018)',
-      x: 2750,
-      y: 410,
-      width: 110,
-      height: 45,
-      type: 'lander',
-      discovered: progress.unlockedMissions.includes('insight'),
-      label: 'Elysium Planitia SEIS'
-    }
-  ];
-
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#03060d] text-slate-100 flex flex-col font-sans select-none">
-      
-      {/* CHAPTER 0: MAIN MENU */}
-      {progress.currentChapter === 0 && (
-        <MainMenu
-          progress={progress}
-          onStartNewMission={() => goToChapter(1)}
-          onContinueMission={() => {
-            const ch = progress.currentChapter === 0 ? 1 : progress.currentChapter;
-            goToChapter(ch);
-          }}
-          onOpenArchive={() => setShowArchive(true)}
-          onOpenKnowledge={() => setShowArchive(true)}
-          onOpenSettings={() => setShowSettings(true)}
-          onOpenCredits={() => setShowCredits(true)}
-        />
-      )}
+      <Suspense fallback={<LoadingFallback />}>
+        {/* CHAPTER 0: MAIN MENU */}
+        {progress.currentChapter === 0 && (
+          <MainMenu
+            progress={progress}
+            onStartNewMission={() => {
+              resetProgress();
+              setProgress(getSavedProgress());
+              goToChapter(1); // Launch prologue leading into open world
+            }}
+            onContinueMission={() => {
+              if (hasSavedWorldRun()) {
+                goToChapter(4);
+              } else {
+                const ch = progress.currentChapter === 0 ? 4 : progress.currentChapter;
+                goToChapter(ch);
+              }
+            }}
+            onSelectChapter={(ch) => goToChapter(ch)}
+            onOpenArchive={() => setShowArchive(true)}
+            onOpenKnowledge={() => setShowArchive(true)}
+            onOpenSettings={() => setShowSettings(true)}
+            onOpenCredits={() => setShowCredits(true)}
+          />
+        )}
 
-      {/* CHAPTER 1: PROLOGUE — THE DEPTH OF EARTH */}
-      {progress.currentChapter === 1 && (
-        <PrologueScene onComplete={() => goToChapter(2)} />
-      )}
+        {/* CHAPTER 1: PROLOGUE — THE EXPEDITION TO MARS */}
+        {progress.currentChapter === 1 && (
+          <PrologueScene onComplete={() => goToChapter(4)} />
+        )}
 
-      {/* CHAPTER 2: ECHOES OF THE MOON (SURFACE EXPLORATION) */}
-      {progress.currentChapter === 2 && (
-        <div className="relative w-full h-full flex flex-col">
-          {/* Top HUD */}
-          <div className="absolute top-4 left-4 right-4 z-30 flex items-center justify-between pointer-events-none">
-            <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-950/80 backdrop-blur-md border border-slate-800 pointer-events-auto">
-              <button
-                onClick={() => goToChapter(0)}
-                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
-                title="Main Menu"
-              >
-                <Menu className="w-4 h-4" />
-              </button>
-              <div className="text-xs font-mono">
-                <span className="text-cyan-400 font-semibold">CHAPTER 1: THE MOON</span>
-                <span className="text-slate-500 mx-2">·</span>
-                <span className="text-slate-300">Gravity: 1.62 m/s²</span>
-                <span className="text-slate-500 mx-2">·</span>
-                <span className="text-slate-400">
-                  Discoveries: {progress.unlockedMissions.filter(m => ['apollo_lrrr', 'apollo_lrv', 'surveyor_3'].includes(m)).length} / 3
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 pointer-events-auto">
-              <button
-                onClick={() => setShowArchive(true)}
-                className="px-3 py-1.5 rounded-xl bg-slate-950/80 backdrop-blur-md border border-slate-800 hover:border-cyan-500/50 text-xs font-mono text-cyan-300 flex items-center gap-1.5 cursor-pointer"
-              >
-                <Compass className="w-3.5 h-3.5" />
-                <span>Archive</span>
-              </button>
-              <button
-                onClick={toggleSound}
-                className="p-2 rounded-xl bg-slate-950/80 backdrop-blur-md border border-slate-800 text-slate-300 cursor-pointer"
-              >
-                {isMuted ? <VolumeX className="w-4 h-4 text-slate-500" /> : <Volume2 className="w-4 h-4 text-cyan-400" />}
-              </button>
-            </div>
-          </div>
-
-          {/* Interactive Game Canvas */}
-          <div className="flex-1 w-full h-full">
-            <GameCanvas
-              environment="moon"
-              entities={moonEntities}
-              onInteract={handleCanvasInteraction}
-            />
-          </div>
-
-          {/* NOVA In-Game Dialogue Floating Box */}
-          {novaDialogue && (
-            <div className="absolute bottom-20 left-4 right-4 max-w-xl mx-auto z-30">
-              <NovaDialogue
-                text={novaDialogue.text}
-                mood={novaDialogue.mood || 'idle'}
-                actionLabel={novaDialogue.actionLabel}
-                onAction={novaDialogue.onAction}
-                onDismiss={() => setNovaDialogue(null)}
-              />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* CHAPTER 3: THE CRASH & MALFUNCTION */}
-      {progress.currentChapter === 3 && (
-        <MarsCrashScene onDiagnosticComplete={() => goToChapter(4)} />
-      )}
-
-      {/* CHAPTER 4: THE FORGOTTEN MACHINES (MARS EXPLORATION) */}
-      {progress.currentChapter === 4 && (
-        <div className="relative w-full h-full flex flex-col">
-          {/* Top HUD */}
-          <div className="absolute top-4 left-4 right-4 z-30 flex items-center justify-between pointer-events-none">
-            <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-950/80 backdrop-blur-md border border-slate-800 pointer-events-auto">
-              <button
-                onClick={() => goToChapter(0)}
-                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
-                title="Main Menu"
-              >
-                <Menu className="w-4 h-4" />
-              </button>
-              <div className="text-xs font-mono">
-                <span className="text-orange-400 font-semibold">CHAPTER 3: MARS EXPLORATION</span>
-                <span className="text-slate-500 mx-2">·</span>
-                <span className="text-slate-300">Gravity: 3.72 m/s²</span>
-                <span className="text-slate-500 mx-2">·</span>
-                <span className="text-slate-400">
-                  Missions: {progress.unlockedMissions.filter(m => m !== 'apollo_lrrr').length} / 3
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 pointer-events-auto">
-              {progress.solvedMiniGames.length >= 3 && (
+        {/* CHAPTER 2: ECHOES OF THE MOON (SURFACE EXPLORATION - LEGACY) */}
+        {progress.currentChapter === 2 && (
+          <div className="relative w-full h-full flex flex-col">
+            <div className="absolute top-4 left-4 right-4 z-30 flex items-center justify-between pointer-events-none">
+              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-950/80 backdrop-blur-md border border-slate-800 pointer-events-auto">
                 <button
-                  onClick={() => goToChapter(5)}
-                  className="px-3.5 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-400 text-slate-950 font-bold text-xs font-mono flex items-center gap-1.5 cursor-pointer shadow-lg animate-pulse"
+                  onClick={() => goToChapter(0)}
+                  className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                  title="Main Menu"
                 >
-                  <span>Weather Warning</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
+                  <Menu className="w-4 h-4" />
                 </button>
-              )}
+                <div className="text-xs font-mono">
+                  <span className="text-cyan-400 font-semibold">LEGACY: THE MOON</span>
+                  <span className="text-slate-500 mx-2">·</span>
+                  <span className="text-slate-300">Gravity: 1.62 m/s²</span>
+                  <span className="text-slate-500 mx-2">·</span>
+                  <span className="text-slate-400">
+                    Discoveries: {progress.unlockedMissions.filter(m => ['apollo_lrrr', 'apollo_lrv', 'surveyor_3'].includes(m)).length} / 3
+                  </span>
+                </div>
+              </div>
 
-              <button
-                onClick={() => setShowArchive(true)}
-                className="px-3 py-1.5 rounded-xl bg-slate-950/80 backdrop-blur-md border border-slate-800 hover:border-cyan-500/50 text-xs font-mono text-cyan-300 flex items-center gap-1.5 cursor-pointer"
-              >
-                <Compass className="w-3.5 h-3.5" />
-                <span>Archive</span>
-              </button>
-              <button
-                onClick={toggleSound}
-                className="p-2 rounded-xl bg-slate-950/80 backdrop-blur-md border border-slate-800 text-slate-300 cursor-pointer"
-              >
-                {isMuted ? <VolumeX className="w-4 h-4 text-slate-500" /> : <Volume2 className="w-4 h-4 text-cyan-400" />}
-              </button>
+              <div className="flex items-center gap-2 pointer-events-auto">
+                <button
+                  onClick={() => setShowArchive(true)}
+                  className="px-3 py-1.5 rounded-xl bg-slate-950/80 backdrop-blur-md border border-slate-800 hover:border-cyan-500/50 text-xs font-mono text-cyan-300 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Compass className="w-3.5 h-3.5" />
+                  <span>Archive</span>
+                </button>
+                <button
+                  onClick={toggleSound}
+                  className="p-2 rounded-xl bg-slate-950/80 backdrop-blur-md border border-slate-800 text-slate-300 cursor-pointer"
+                >
+                  {isMuted ? <VolumeX className="w-4 h-4 text-slate-500" /> : <Volume2 className="w-4 h-4 text-cyan-400" />}
+                </button>
+              </div>
             </div>
-          </div>
 
-          {/* Interactive Game Canvas */}
-          <div className="flex-1 w-full h-full">
-            <GameCanvas
-              environment="mars"
-              entities={marsEntities}
-              onInteract={handleCanvasInteraction}
-              stormIntensity={0.15}
-            />
-          </div>
-
-          {/* NOVA In-Game Dialogue Floating Box */}
-          {novaDialogue && (
-            <div className="absolute bottom-20 left-4 right-4 max-w-xl mx-auto z-30">
-              <NovaDialogue
-                text={novaDialogue.text}
-                mood={novaDialogue.mood || 'idle'}
-                actionLabel={novaDialogue.actionLabel}
-                onAction={novaDialogue.onAction}
-                onDismiss={() => setNovaDialogue(null)}
+            <div className="flex-1 w-full h-full">
+              <GameCanvas
+                environment="moon"
+                entities={moonEntities}
+                onInteract={handleCanvasInteraction}
               />
             </div>
-          )}
-        </div>
-      )}
 
-      {/* CHAPTER 5: THE WRATH OF MARS (WEATHER CHALLENGE) */}
-      {progress.currentChapter === 5 && (
-        <MarsWeatherChallenge
-          onChallengeResolved={(decision) => {
-            updateProgress((prev) => ({ ...prev, stormDecisionMade: decision }));
-            goToChapter(6); // Spacecraft repair
-          }}
-        />
-      )}
+            {novaDialogue && (
+              <div className="absolute bottom-20 left-4 right-4 max-w-xl mx-auto z-30">
+                <NovaDialogue
+                  text={novaDialogue.text}
+                  mood={novaDialogue.mood || 'idle'}
+                  actionLabel={novaDialogue.actionLabel}
+                  onAction={novaDialogue.onAction}
+                  onDismiss={() => setNovaDialogue(null)}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
-      {/* CHAPTER 6: SPACECRAFT REPAIR */}
-      {progress.currentChapter === 6 && (
-        <SpacecraftRepairScene onRepairComplete={() => goToChapter(7)} />
-      )}
+        {/* CHAPTER 3: THE CRASH & MALFUNCTION (LEGACY) */}
+        {progress.currentChapter === 3 && (
+          <MarsCrashScene onDiagnosticComplete={() => goToChapter(4)} />
+        )}
 
-      {/* CHAPTER 7: LAUNCH CINEMATIC & MISSION COMPLETE */}
-      {progress.currentChapter === 7 && (
-        <LaunchCinematic
-          progress={progress}
-          onReturnToMenu={() => goToChapter(0)}
-          onRestartCampaign={() => {
-            updateProgress(() => ({
-              currentChapter: 1,
-              unlockedMissions: [],
-              solvedMiniGames: [],
-              quizzesCompleted: [],
-              badges: [],
-              diagnosticsCompleted: [],
-              repairedSubsystems: [],
-              stormDecisionMade: null
-            }));
-          }}
-        />
-      )}
+        {/* CHAPTER 4: MARS OPEN-WORLD EXPEDITION */}
+        {progress.currentChapter === 4 && (
+          <WorldScene
+            key={String(worldSeed)}
+            config={{ seed: worldSeed }}
+            onExitToMenu={() => {
+              setProgress(getSavedProgress());
+              goToChapter(0);
+            }}
+            onOpenArchive={() => setShowArchive(true)}
+            onRestartWithSeed={(newSeed) => {
+              setWorldSeed(newSeed);
+              setProgress({ ...getSavedProgress(), currentChapter: 4 });
+            }}
+            isMuted={isMuted}
+            onToggleSound={toggleSound}
+          />
+        )}
 
-      {/* DISCOVERY MODAL (3 Sections: MACHINE, SCIENCE, WHY IT MATTERS) */}
-      {activeDiscovery && (
-        <DiscoveryModal
-          discovery={activeDiscovery}
-          onClose={() => handleDiscoveryDone(activeDiscovery.id)}
-          onStartActivity={() => handleDiscoveryDone(activeDiscovery.id)}
-          activityLabel={
-            activeDiscovery.id === 'apollo_lrrr'
-              ? 'Begin Knowledge Quiz'
-              : 'Launch Engineering Simulator'
-          }
-        />
-      )}
+        {/* CHAPTER 5: MARS WEATHER CHALLENGE (LEGACY) */}
+        {progress.currentChapter === 5 && (
+          <MarsWeatherChallenge
+            onChallengeResolved={(decision) => {
+              updateProgress((prev) => ({ ...prev, stormDecisionMade: decision }));
+              goToChapter(6);
+            }}
+          />
+        )}
 
-      {/* INTERACTIVE QUIZ MODAL (Moon Discovery) */}
-      {activeQuiz && (
-        <QuizModal
-          discovery={activeQuiz}
-          onSuccess={() => handleQuizSuccess(activeQuiz.id)}
-          onClose={() => setActiveQuiz(null)}
-        />
-      )}
+        {/* CHAPTER 6: SPACECRAFT REPAIR (LEGACY MODAL) */}
+        {progress.currentChapter === 6 && (
+          <SpacecraftRepairScene onRepairComplete={() => goToChapter(7)} />
+        )}
 
-      {/* MINI-GAME 1: SOJOURNER ROVER ROUTING */}
-      {activeMiniGame === 'sojourner' && (
-        <SojournerRoverPuzzle
-          onSuccess={() => handleMiniGameSuccess('sojourner')}
-          onClose={() => setActiveMiniGame(null)}
-        />
-      )}
+        {/* CHAPTER 7: LAUNCH CINEMATIC & MISSION COMPLETE */}
+        {progress.currentChapter === 7 && (
+          <LaunchCinematic
+            progress={progress}
+            onReturnToMenu={() => goToChapter(0)}
+            onRestartCampaign={() => {
+              resetProgress();
+              setProgress(getSavedProgress());
+              goToChapter(1);
+            }}
+          />
+        )}
 
-      {/* MINI-GAME 2: OPPORTUNITY PALEOWATER EVIDENCE */}
-      {activeMiniGame === 'opportunity' && (
-        <OpportunityWaterPuzzle
-          onSuccess={() => handleMiniGameSuccess('opportunity')}
-          onClose={() => setActiveMiniGame(null)}
-        />
-      )}
+        {/* DISCOVERY MODAL */}
+        {activeDiscovery && (
+          <DiscoveryModal
+            discovery={activeDiscovery}
+            onClose={() => handleDiscoveryDone(activeDiscovery.id)}
+            onStartActivity={() => handleDiscoveryDone(activeDiscovery.id)}
+            activityLabel={
+              activeDiscovery.id === 'apollo_lrrr'
+                ? 'Begin Knowledge Quiz'
+                : 'Launch Engineering Simulator'
+            }
+          />
+        )}
 
-      {/* MINI-GAME 3: INSIGHT SEISMOGRAM FILTER */}
-      {activeMiniGame === 'insight' && (
-        <InSightSeismicPuzzle
-          onSuccess={() => handleMiniGameSuccess('insight')}
-          onClose={() => setActiveMiniGame(null)}
-        />
-      )}
+        {/* INTERACTIVE QUIZ MODAL */}
+        {activeQuiz && (
+          <QuizModal
+            discovery={activeQuiz}
+            onSuccess={() => handleQuizSuccess(activeQuiz.id)}
+            onClose={() => setActiveQuiz(null)}
+          />
+        )}
 
-      {/* MISSION ARCHIVE & KNOWLEDGE BASE */}
-      {showArchive && (
-        <MissionArchiveModal
-          unlockedMissionIds={progress.unlockedMissions}
-          onClose={() => setShowArchive(false)}
-        />
-      )}
+        {/* MINI-GAMES */}
+        {activeMiniGame === 'sojourner' && (
+          <SojournerRoverPuzzle
+            onSuccess={() => handleMiniGameSuccess('sojourner')}
+            onClose={() => setActiveMiniGame(null)}
+          />
+        )}
 
-      {/* SETTINGS MODAL */}
-      {showSettings && (
-        <SettingsModal
-          onClose={() => setShowSettings(false)}
-          onResetSave={() => {
-            setProgress(getSavedProgress());
-            goToChapter(0);
-          }}
-        />
-      )}
+        {activeMiniGame === 'opportunity' && (
+          <OpportunityWaterPuzzle
+            onSuccess={() => handleMiniGameSuccess('opportunity')}
+            onClose={() => setActiveMiniGame(null)}
+          />
+        )}
 
-      {/* CREDITS & NASA SOURCES MODAL */}
-      {showCredits && (
-        <CreditsModal onClose={() => setShowCredits(false)} />
-      )}
+        {activeMiniGame === 'insight' && (
+          <InSightSeismicPuzzle
+            onSuccess={() => handleMiniGameSuccess('insight')}
+            onClose={() => setActiveMiniGame(null)}
+          />
+        )}
 
+        {/* MISSION ARCHIVE & CODEX */}
+        {showArchive && (
+          <MissionArchiveModal
+            unlockedMissionIds={progress.unlockedMissions}
+            completedEquipmentIds={progress.worldSave?.completedEquipmentIds || []}
+            collectedSampleIds={progress.worldSave?.collectedSampleIds || []}
+            researchPoints={progress.worldSave?.researchPoints || 0}
+            onClose={() => setShowArchive(false)}
+          />
+        )}
+
+        {/* SETTINGS MODAL */}
+        {showSettings && (
+          <SettingsModal
+            onClose={() => setShowSettings(false)}
+            onResetSave={() => {
+              setProgress(getSavedProgress());
+              goToChapter(0);
+            }}
+          />
+        )}
+
+        {/* CREDITS & NASA SOURCES */}
+        {showCredits && (
+          <CreditsModal onClose={() => setShowCredits(false)} />
+        )}
+      </Suspense>
     </div>
   );
 }

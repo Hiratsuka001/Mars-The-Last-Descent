@@ -1,53 +1,184 @@
 import React, { useState } from 'react';
 import { MISSIONS_DATA, MissionDiscovery } from '../data/missions';
+import { SCIENCE_SAMPLES, getSampleResearchPoints } from '../data/samples';
+import { atlas } from '../render/atlas';
 import { sound } from '../systems/audio';
-import { X, Award, ExternalLink, Cpu, Compass, Sparkles, CheckCircle2 } from 'lucide-react';
+import { X, Award, ExternalLink, Cpu, Compass, Sparkles, CheckCircle2, ChevronDown, ChevronUp, Lock, Microscope } from 'lucide-react';
 import { NovaAvatar } from './NovaAvatar';
 
+export interface CodexEntry {
+  id: string;
+  name: string;
+  agencyYear: string;
+  spriteKey: string;
+  headlineFact: string;
+  bullets: string[];
+}
+
+export const MARS_CODEX_ENTRIES: CodexEntry[] = [
+  {
+    id: 'eq_sojourner',
+    name: 'Sojourner Microrover',
+    agencyYear: 'NASA / JPL · 1997',
+    spriteKey: 'wreck_sojourner',
+    headlineFact: 'First wheeled rover on Mars, proving extraterrestrial mobility across Ares Vallis with a 6-wheel rocker-bogie chassis.',
+    bullets: [
+      'Operated 83 Martian days (12x beyond designed 7-day lifespan).',
+      'Autonomous hazard sensors detected rocks and prevented rollovers.',
+      'Alpha Proton X-ray Spectrometer measured volcanic rock compositions.',
+    ],
+  },
+  {
+    id: 'eq_opportunity',
+    name: 'Opportunity Rover (MER-B)',
+    agencyYear: 'NASA / JPL · 2004',
+    spriteKey: 'wreck_opportunity',
+    headlineFact: 'Discovered hematite spherules and sedimentary sulfate ripples in Meridiani Planum, definitively confirming ancient Martian standing liquid water.',
+    bullets: [
+      'Explored Mars for 14 years and drove over 45 kilometers.',
+      'Surfaced evidence of acidic lakes and flowing groundwater.',
+      'Endured dust storms via periodic wind-cleaning of solar panels.',
+    ],
+  },
+  {
+    id: 'eq_insight',
+    name: 'InSight Geophysical Station',
+    agencyYear: 'NASA / CNES · 2018',
+    spriteKey: 'wreck_insight',
+    headlineFact: 'Probed the deep Martian interior with a dome-shielded seismometer, confirming a liquid iron-nickel core and recording 1,300+ marsquakes.',
+    bullets: [
+      'Wind & Thermal Shield isolated sensors down to picometer vibrations.',
+      'Mapped crust thickness between 24 km and 72 km.',
+      'Measured core radius at approximately 1,830 kilometers.',
+    ],
+  },
+  {
+    id: 'eq_spirit',
+    name: 'Spirit Rover (MER-A)',
+    agencyYear: 'NASA / JPL · 2004',
+    spriteKey: 'wreck_spirit',
+    headlineFact: 'Uncovered 90% pure silica deposits at Gusev Crater, proving ancient volcanic hot springs once bubbled on early Mars.',
+    bullets: [
+      'Stalled front wheel churned up bright white subsurface silica.',
+      'Explored Columbia Hills and survived severe Martian winters.',
+      'Operated for over 2,200 sols—more than 24x design expectations.',
+    ],
+  },
+  {
+    id: 'eq_deep_space_dish',
+    name: 'Deep Space Relay Array',
+    agencyYear: 'NASA / JPL · 1963–Present',
+    spriteKey: 'wreck_deep_space_dish',
+    headlineFact: 'Global parabolic antenna network providing uninterrupted microwave telemetry, high-bandwidth data transmission, and navigation to deep-space probes.',
+    bullets: [
+      'Features 70-meter dishes stationed 120° apart worldwide.',
+      'Maintains contact with probes billions of kilometers from Earth.',
+      'Critical communication bridge for all Mars orbiters and rovers.',
+    ],
+  },
+  {
+    id: 'eq_phoenix',
+    name: 'Phoenix Polar Ice Lander',
+    agencyYear: 'NASA / Univ of Arizona · 2008',
+    spriteKey: 'wreck_phoenix',
+    headlineFact: 'Dug trenches into northern arctic permafrost, directly exposing and imaging subsurface water ice sublimating in sunlight.',
+    bullets: [
+      'Robotic scoop arm excavated bright white pure water ice slabs.',
+      'Detected perchlorate salts that lower water freezing point.',
+      'Observed snow falling from Martian cirrus clouds via lidar.',
+    ],
+  },
+  {
+    id: 'eq_lrv_buggy',
+    name: 'Apollo Lunar Roving Vehicle',
+    agencyYear: 'NASA / Boeing · 1971–1972',
+    spriteKey: 'wreck_lrv_buggy',
+    headlineFact: 'Electric 4-wheel rover with woven piano-wire mesh wheels that expanded astronaut surface exploration traverse radius from 1 km to 7 km.',
+    bullets: [
+      'Driven across Apollo 15, 16, and 17 rilles and mountains.',
+      'Woven zinc-coated steel mesh prevented vacuum blowouts.',
+      'Carried 490 kg of astronauts, equipment, and geological samples.',
+    ],
+  },
+  {
+    id: 'eq_surveyor',
+    name: 'Surveyor 3 Lunar Lander',
+    agencyYear: 'NASA / JPL · 1967',
+    spriteKey: 'wreck_surveyor',
+    headlineFact: 'First robotic probe visited by humans on another world when Apollo 12 astronauts walked to it and retrieved its camera.',
+    bullets: [
+      'Proved lunar soil was firm enough for astronaut landers.',
+      'Robotic scoop dug trenches televised live back to Earth.',
+      'Returned camera helped scientists study long-term space radiation exposure.',
+    ],
+  },
+];
+
 interface MissionArchiveModalProps {
-  unlockedMissionIds: string[];
+  completedEquipmentIds?: string[];
+  unlockedMissionIds?: string[];
+  collectedSampleIds?: string[];
+  researchPoints?: number;
   onClose: () => void;
   onSelectDiscovery?: (discovery: MissionDiscovery) => void;
 }
 
 export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
-  unlockedMissionIds,
+  completedEquipmentIds = [],
+  unlockedMissionIds = [],
+  collectedSampleIds = [],
+  researchPoints = 0,
   onClose,
-  onSelectDiscovery
 }) => {
-  const allMissions = Object.values(MISSIONS_DATA);
-  const [selectedId, setSelectedId] = useState<string>(
-    unlockedMissionIds[0] || allMissions[0].id
+  const [activeTab, setActiveTab] = useState<'mars' | 'samples' | 'legacy'>('mars');
+  const [selectedMarsId, setSelectedMarsId] = useState<string>(
+    completedEquipmentIds[0] || MARS_CODEX_ENTRIES[0].id
+  );
+  const [isLearnMoreOpen, setIsLearnMoreOpen] = useState<boolean>(false);
+
+  // Legacy tab state
+  const allLegacyMissions = Object.values(MISSIONS_DATA);
+  const [selectedLegacyId, setSelectedLegacyId] = useState<string>(
+    unlockedMissionIds[0] || allLegacyMissions[0].id
   );
 
-  const activeMission = MISSIONS_DATA[selectedId] || allMissions[0];
-  const isUnlocked = unlockedMissionIds.includes(activeMission.id);
+  const unlockedCount = completedEquipmentIds.length;
+  const samplesCount = collectedSampleIds.length;
+  const activeMarsEntry = MARS_CODEX_ENTRIES.find((e) => e.id === selectedMarsId) || MARS_CODEX_ENTRIES[0];
+  const isMarsUnlocked = completedEquipmentIds.includes(activeMarsEntry.id);
+
+  const activeLegacyMission = MISSIONS_DATA[selectedLegacyId] || allLegacyMissions[0];
+  const isLegacyUnlocked = unlockedMissionIds.includes(activeLegacyMission.id);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+    <div data-testid="codex-modal" className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200 select-none">
       <div className="relative w-full max-w-4xl bg-slate-950 border border-cyan-500/40 rounded-2xl shadow-[0_16px_60px_rgba(0,0,0,0.8)] overflow-hidden text-slate-200 flex flex-col max-h-[92vh]">
         
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between shrink-0">
+        <div className="px-5 py-3.5 border-b border-slate-800 bg-slate-900/70 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-cyan-950/60 border border-cyan-500/30 text-cyan-400">
               <Compass className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-[11px] font-mono text-cyan-400 uppercase tracking-wider">
-                HISTORICAL NASA EXPLORATION ARCHIVE
+              <div className="text-[10px] font-mono text-cyan-400 uppercase tracking-widest font-semibold">
+                PLANETARY EXPLORATION CODEX
               </div>
-              <h3 className="text-base md:text-lg font-semibold text-white font-display">
+              <h3 className="text-base font-semibold text-white font-display">
                 Field Discoveries & Machine Lore
               </h3>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs font-mono text-slate-400 hidden sm:inline">
-              Unlocked: {unlockedMissionIds.length} / {allMissions.length}
-            </span>
+            <div
+              data-testid="codex-research-points"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-950/60 border border-amber-500/40 text-xs font-mono text-amber-300 font-bold"
+            >
+              <span>{researchPoints} RP</span>
+            </div>
             <button
+              data-testid="codex-close-btn"
               onClick={() => {
                 sound.playClick();
                 onClose();
@@ -59,169 +190,393 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
           </div>
         </div>
 
-        {/* Body Layout: Left Sidebar + Right Inspector */}
-        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-          
-          {/* Left Mission List */}
-          <div className="w-full md:w-72 border-r border-slate-800/80 p-3 space-y-2 overflow-y-auto bg-slate-950/50 shrink-0">
-            {allMissions.map((m) => {
-              const unlocked = unlockedMissionIds.includes(m.id);
-              const isSelected = selectedId === m.id;
-
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => {
-                    sound.playClick();
-                    setSelectedId(m.id);
-                  }}
-                  className={`w-full p-3 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
-                    isSelected
-                      ? 'border-cyan-400 bg-cyan-950/40 text-white'
-                      : 'border-slate-800/80 bg-slate-900/20 text-slate-400 hover:border-slate-700 hover:text-slate-200'
-                  }`}
-                >
-                  <div className="flex items-center justify-between text-[11px] font-mono mb-1">
-                    <span className={unlocked ? 'text-cyan-400' : 'text-slate-600'}>
-                      {m.year}
-                    </span>
-                    {unlocked ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    ) : (
-                      <span className="text-[10px] text-slate-600">LOCKED</span>
-                    )}
-                  </div>
-                  <div className="text-xs font-semibold truncate text-slate-100">
-                    {unlocked ? m.name : 'Unknown Signal'}
-                  </div>
-                  <div className="text-[10px] text-slate-500 truncate mt-0.5">
-                    {unlocked ? m.location : 'Explore surface to log'}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Right Inspector */}
-          <div className="flex-1 p-6 overflow-y-auto space-y-5">
-            {isUnlocked ? (
-              <>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 text-xs font-mono text-cyan-400">
-                      <span>{activeMission.missionName}</span>
-                      <span aria-hidden="true">·</span>
-                      <span>{activeMission.location}</span>
-                    </div>
-                    <h3 className="text-xl font-bold font-display text-white mt-1">
-                      {activeMission.name}
-                    </h3>
-                    <p className="text-xs text-slate-300 italic mt-0.5">
-                      "{activeMission.tagline}"
-                    </p>
-                  </div>
-
-                  <div className="px-3 py-1.5 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-300 text-xs font-mono flex items-center gap-2 shrink-0">
-                    <Award className="w-4 h-4" />
-                    <span>{activeMission.badge}</span>
-                  </div>
-                </div>
-
-                {/* THE MACHINE */}
-                <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800 space-y-2">
-                  <div className="text-xs font-mono text-cyan-400 uppercase font-semibold flex items-center gap-1.5">
-                    <Cpu className="w-3.5 h-3.5" />
-                    <span>1. THE MACHINE</span>
-                  </div>
-                  <div className="text-sm font-semibold text-slate-200">
-                    {activeMission.machine.title}
-                  </div>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    {activeMission.machine.description}
-                  </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px] font-mono">
-                    {activeMission.machine.specs.map((s, i) => (
-                      <div key={i} className="p-2 rounded bg-slate-950 border border-slate-800">
-                        <div className="text-slate-500 text-[10px]">{s.label}</div>
-                        <div className="text-slate-200 font-semibold truncate">{s.value}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* THE SCIENCE */}
-                <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800 space-y-2">
-                  <div className="text-xs font-mono text-emerald-400 uppercase font-semibold flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>2. THE SCIENCE</span>
-                  </div>
-                  <div className="text-sm font-semibold text-slate-200">
-                    {activeMission.science.title}
-                  </div>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    {activeMission.science.description}
-                  </p>
-                  <ul className="space-y-1 text-xs text-slate-300 pt-1">
-                    {activeMission.science.measurements.map((m, i) => (
-                      <li key={i} className="flex items-center gap-2">
-                        <span className="text-emerald-400 font-mono">▪</span>
-                        <span>{m}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                {/* WHY IT MATTERS */}
-                <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800 space-y-2">
-                  <div className="text-xs font-mono text-amber-400 uppercase font-semibold flex items-center gap-1.5">
-                    <Compass className="w-3.5 h-3.5" />
-                    <span>3. WHY IT MATTERS</span>
-                  </div>
-                  <div className="text-sm font-semibold text-slate-200">
-                    {activeMission.whyItMatters.title}
-                  </div>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    {activeMission.whyItMatters.description}
-                  </p>
-                  <div className="p-2.5 rounded bg-amber-950/20 border-l-2 border-amber-400 text-xs text-amber-200">
-                    {activeMission.whyItMatters.keyTakeaway}
-                  </div>
-                </div>
-
-                {/* Verified Citation */}
-                <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-800">
-                  <span>Source: {activeMission.officialSource.title}</span>
-                  <a
-                    href={activeMission.officialSource.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-cyan-400 hover:underline flex items-center gap-1 font-mono"
-                  >
-                    <span>View NASA Catalog</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-              </>
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-4">
-                <NovaAvatar mood="curious" size={80} />
-                <div className="space-y-1 max-w-sm">
-                  <h4 className="text-base font-semibold text-slate-200 font-display">
-                    Uncharted Exploration Sector
-                  </h4>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    This historical NASA mission has not been scanned yet. Traverse the Moon or Mars surfaces to locate and analyze this machine!
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-
+        {/* Tab Switcher */}
+        <div className="flex items-center border-b border-slate-800/80 bg-slate-950 px-4 pt-2 gap-2 shrink-0">
+          <button
+            onClick={() => {
+              sound.playClick();
+              setActiveTab('mars');
+            }}
+            data-testid="mars-relics-tab-btn"
+            className={`px-4 py-2 rounded-t-xl text-xs font-mono font-bold transition-all cursor-pointer border-t border-x ${
+              activeTab === 'mars'
+                ? 'bg-slate-900 text-cyan-300 border-cyan-500/40 shadow-sm'
+                : 'bg-transparent text-slate-400 border-transparent hover:text-slate-200'
+            }`}
+          >
+            Mars Surface Relics ({unlockedCount}/8)
+          </button>
+          <button
+            onClick={() => {
+              sound.playClick();
+              setActiveTab('samples');
+            }}
+            data-testid="specimen-book-tab-btn"
+            className={`px-4 py-2 rounded-t-xl text-xs font-mono font-bold transition-all cursor-pointer border-t border-x flex items-center gap-1.5 ${
+              activeTab === 'samples'
+                ? 'bg-slate-900 text-cyan-300 border-cyan-500/40 shadow-sm'
+                : 'bg-transparent text-slate-400 border-transparent hover:text-slate-200'
+            }`}
+          >
+            <Microscope className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Specimen Book ({Object.keys(SCIENCE_SAMPLES).filter(k => collectedSampleIds.some(id => id.includes(k) || id === k)).length}/6)</span>
+          </button>
+          <button
+            onClick={() => {
+              sound.playClick();
+              setActiveTab('legacy');
+            }}
+            data-testid="legacy-archive-tab-btn"
+            className={`px-4 py-2 rounded-t-xl text-xs font-mono font-medium transition-all cursor-pointer border-t border-x ${
+              activeTab === 'legacy'
+                ? 'bg-slate-900 text-cyan-300 border-cyan-500/40 shadow-sm'
+                : 'bg-transparent text-slate-400 border-transparent hover:text-slate-200'
+            }`}
+          >
+            Historical Apollo Archive
+          </button>
         </div>
 
+        {/* Tab 1: Mars Open-World Codex */}
+        {activeTab === 'mars' && (
+          <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
+            {/* Left Equipment List */}
+            <div className="w-full md:w-72 border-r border-slate-800/80 p-2.5 space-y-1.5 overflow-y-auto bg-slate-950/50 shrink-0">
+              {MARS_CODEX_ENTRIES.map((entry) => {
+                const isUnlocked = completedEquipmentIds.includes(entry.id);
+                const isSelected = selectedMarsId === entry.id;
+
+                return (
+                  <button
+                    key={entry.id}
+                    onClick={() => {
+                      sound.playClick();
+                      setSelectedMarsId(entry.id);
+                      setIsLearnMoreOpen(false);
+                    }}
+                    className={`w-full p-2.5 rounded-xl text-left border transition-all cursor-pointer flex items-center justify-between gap-2.5 ${
+                      isSelected
+                        ? 'border-cyan-400 bg-cyan-950/40 text-white shadow-sm'
+                        : 'border-slate-800/80 bg-slate-900/20 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 truncate">
+                      {/* Silhouette or Icon */}
+                      <div className={`w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 ${
+                        !isUnlocked ? 'brightness-0 opacity-30 contrast-200' : ''
+                      }`}>
+                        {isUnlocked ? (
+                          <div className="w-5 h-5 flex items-center justify-center text-xs font-mono text-cyan-300 font-bold">
+                            {entry.name.slice(0, 2).toUpperCase()}
+                          </div>
+                        ) : (
+                          <Lock className="w-3.5 h-3.5 text-slate-600" />
+                        )}
+                      </div>
+
+                      <div className="truncate">
+                        <div className="text-xs font-semibold truncate text-slate-100">
+                          {isUnlocked ? entry.name : '???'}
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-500 truncate">
+                          {isUnlocked ? entry.agencyYear : 'Signal Uncharted'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {isUnlocked ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    ) : (
+                      <span className="text-[9px] font-mono text-slate-600 shrink-0">LOCKED</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Right Entry Inspector */}
+            <div className="flex-1 p-5 sm:p-7 overflow-y-auto space-y-4">
+              {isMarsUnlocked ? (
+                <>
+                  <div className="border-b border-slate-800/80 pb-3">
+                    <div className="text-xs font-mono text-cyan-400 font-semibold uppercase tracking-wider">
+                      {activeMarsEntry.agencyYear}
+                    </div>
+                    <h3 className="text-xl sm:text-2xl font-bold font-display text-white mt-0.5">
+                      {activeMarsEntry.name}
+                    </h3>
+                  </div>
+
+                  {/* Headline Fact (Single sentence, max ~20 words) */}
+                  <div className="p-4 rounded-xl bg-slate-900/50 border border-cyan-500/20 text-slate-100 text-sm leading-relaxed">
+                    {activeMarsEntry.headlineFact}
+                  </div>
+
+                  {/* Collapsible Learn More */}
+                  <div className="border border-slate-800 rounded-xl bg-slate-900/30 overflow-hidden">
+                    <button
+                      onClick={() => setIsLearnMoreOpen((prev) => !prev)}
+                      className="w-full px-4 py-2.5 flex items-center justify-between text-xs font-mono text-cyan-300 hover:text-white transition-colors cursor-pointer"
+                    >
+                      <span className="font-semibold uppercase tracking-wider">
+                        {isLearnMoreOpen ? 'Hide Engineering Notes' : 'Learn More (Engineering Notes)'}
+                      </span>
+                      {isLearnMoreOpen ? (
+                        <ChevronUp className="w-4 h-4" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4" />
+                      )}
+                    </button>
+
+                    {isLearnMoreOpen && (
+                      <div className="px-4 pb-4 pt-1 space-y-2 text-xs text-slate-300 border-t border-slate-800/60 animate-in fade-in duration-200">
+                        {activeMarsEntry.bullets.map((bullet, idx) => (
+                          <div key={idx} className="flex items-start gap-2">
+                            <span className="text-cyan-400 font-mono mt-0.5">▪</span>
+                            <span className="leading-relaxed">{bullet}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-3">
+                  <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center brightness-0 opacity-40">
+                    <Lock className="w-8 h-8 text-slate-500" />
+                  </div>
+                  <div className="space-y-1 max-w-sm">
+                    <h4 className="text-base font-semibold text-slate-200 font-display">
+                      Signal Undetected
+                    </h4>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Traverse the Martian surface and locate this relic to extract its telemetry and unlock its entry.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 2: Specimen Book (Martian Geological & Astrobiological Specimens) */}
+        {activeTab === 'samples' && (
+          <div data-testid="specimen-book-tab" className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div>
+                <h4 className="text-sm font-bold text-white font-mono uppercase tracking-wider">
+                  Specimen Book · Martian Field Science
+                </h4>
+                <p className="text-xs text-slate-400">
+                  6 unique geological specimens cataloged with verified NASA discoveries. Earn Research Points to upgrade ascent vehicle systems.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div
+                  data-testid="specimen-book-total-gathered"
+                  className="px-3 py-1 rounded-xl bg-cyan-950/70 border border-cyan-500/40 text-cyan-300 font-mono text-xs font-bold shrink-0"
+                >
+                  {samplesCount} / 18 Gathered
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {Object.values(SCIENCE_SAMPLES).map((sample) => {
+                const collectedOfType = collectedSampleIds.filter((id) => id.includes(sample.id) || id === sample.id).length;
+                const isDiscovered = collectedOfType > 0;
+                const rpVal = getSampleResearchPoints(sample.rarity);
+
+                const rarityColor =
+                  sample.rarity === 'exotic'
+                    ? 'border-amber-500/50 bg-amber-950/30 text-amber-300'
+                    : sample.rarity === 'rare'
+                    ? 'border-cyan-500/50 bg-cyan-950/30 text-cyan-300'
+                    : 'border-emerald-500/50 bg-emerald-950/30 text-emerald-300';
+
+                return (
+                  <div
+                    key={sample.id}
+                    data-testid={`specimen-card-${sample.id}`}
+                    className={`p-4 rounded-xl border transition-all flex flex-col justify-between ${
+                      isDiscovered
+                        ? 'border-slate-800 bg-slate-900/40 shadow-sm'
+                        : 'border-slate-800/40 bg-slate-950/40 opacity-75'
+                    }`}
+                  >
+                    <div className="space-y-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            data-testid={isDiscovered ? `specimen-sprite-${sample.id}` : `specimen-silhouette-${sample.id}`}
+                            className={`w-9 h-9 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 ${
+                              !isDiscovered ? 'brightness-0 opacity-25 contrast-200' : ''
+                            }`}
+                          >
+                            <canvas
+                              ref={(node) => {
+                                if (node) {
+                                  const c = node.getContext('2d');
+                                  if (c) {
+                                    c.clearRect(0, 0, 32, 32);
+                                    c.imageSmoothingEnabled = false;
+                                    atlas.drawSprite(c, sample.spriteKey, 0, 0, 32, 32);
+                                  }
+                                }
+                              }}
+                              width={32}
+                              height={32}
+                              className="w-8 h-8"
+                            />
+                          </div>
+                          <div>
+                            <div className="text-[10px] font-mono text-cyan-400 uppercase tracking-widest font-semibold">
+                              {sample.category}
+                            </div>
+                            <h5
+                              data-testid={`specimen-name-${sample.id}`}
+                              className={`text-xs font-bold leading-tight ${isDiscovered ? 'text-white' : 'text-slate-500'}`}
+                            >
+                              {isDiscovered ? sample.name : 'Unknown Specimen'}
+                            </h5>
+                          </div>
+                        </div>
+
+                        <span
+                          data-testid={`specimen-rarity-${sample.id}`}
+                          className={`px-2 py-0.5 rounded text-[9px] font-mono uppercase tracking-wider font-bold border ${rarityColor}`}
+                        >
+                          {sample.rarity} (+{rpVal} RP)
+                        </span>
+                      </div>
+
+                      {isDiscovered ? (
+                        <>
+                          <p className="text-[11px] text-slate-300 leading-relaxed">
+                            {sample.description}
+                          </p>
+                          <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800/80 space-y-1">
+                            <div className="text-[10px] font-mono text-cyan-400 font-bold uppercase tracking-wider">
+                              NASA Discovery Record
+                            </div>
+                            <p
+                              data-testid={`specimen-fact-${sample.id}`}
+                              className="text-[11px] text-slate-300 leading-relaxed italic"
+                            >
+                              "{sample.scienceFact}"
+                            </p>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="py-4 text-center space-y-1.5">
+                          <Lock className="w-5 h-5 text-slate-600 mx-auto" />
+                          <p
+                            data-testid={`specimen-fact-${sample.id}`}
+                            className="text-[11px] text-slate-500 font-mono"
+                          >
+                            Undiscovered · Survey {sample.preferredBiomes.join(' or ')} to discover and record.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-3 pt-2.5 border-t border-slate-800/60 flex items-center justify-between text-[10px] font-mono">
+                      <span className="text-slate-500">Native: {sample.preferredBiomes.join(', ')}</span>
+                      <span
+                        data-testid={`specimen-status-${sample.id}`}
+                        className={isDiscovered ? 'text-emerald-400 font-bold' : 'text-slate-600'}
+                      >
+                        {isDiscovered ? 'FOUND' : 'SILHOUETTE'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: Historical Apollo Archive (Preserved Legacy Content) */}
+        {activeTab === 'legacy' && (
+          <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
+            {/* Left Mission List */}
+            <div className="w-full md:w-72 border-r border-slate-800/80 p-2.5 space-y-1.5 overflow-y-auto bg-slate-950/50 shrink-0">
+              {allLegacyMissions.map((m) => {
+                const isUnlocked = unlockedMissionIds.includes(m.id);
+                const isSelected = selectedLegacyId === m.id;
+
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => {
+                      sound.playClick();
+                      setSelectedLegacyId(m.id);
+                    }}
+                    className={`w-full p-2.5 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
+                      isSelected
+                        ? 'border-cyan-400 bg-cyan-950/40 text-white'
+                        : 'border-slate-800/80 bg-slate-900/20 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-[10px] font-mono mb-1">
+                      <span className={isUnlocked ? 'text-cyan-400' : 'text-slate-600'}>
+                        {m.year}
+                      </span>
+                      {isUnlocked ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <span className="text-[9px] text-slate-600">LOCKED</span>
+                      )}
+                    </div>
+                    <div className="text-xs font-semibold truncate text-slate-100">
+                      {isUnlocked ? m.name : 'Unknown Signal'}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Right Legacy Details */}
+            <div className="flex-1 p-5 sm:p-7 overflow-y-auto space-y-4">
+              {isLegacyUnlocked ? (
+                <>
+                  <div>
+                    <div className="text-xs font-mono text-cyan-400">{activeLegacyMission.location}</div>
+                    <h3 className="text-xl font-bold font-display text-white mt-0.5">
+                      {activeLegacyMission.name}
+                    </h3>
+                    <p className="text-xs text-slate-300 italic mt-0.5">"{activeLegacyMission.tagline}"</p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-900/40 border border-slate-800 space-y-1.5">
+                    <div className="text-xs font-mono text-cyan-400 font-semibold">1. THE MACHINE</div>
+                    <p className="text-xs text-slate-300 leading-relaxed">{activeLegacyMission.machine.description}</p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-900/40 border border-slate-800 space-y-1.5">
+                    <div className="text-xs font-mono text-emerald-400 font-semibold">2. THE SCIENCE</div>
+                    <p className="text-xs text-slate-300 leading-relaxed">{activeLegacyMission.science.description}</p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-slate-900/40 border border-slate-800 space-y-1.5">
+                    <div className="text-xs font-mono text-amber-400 font-semibold">3. WHY IT MATTERS</div>
+                    <p className="text-xs text-slate-300 leading-relaxed">{activeLegacyMission.whyItMatters.keyTakeaway}</p>
+                  </div>
+                </>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-2">
+                  <NovaAvatar mood="curious" size={60} />
+                  <div className="text-sm font-semibold text-slate-200">Uncharted Sector</div>
+                  <p className="text-xs text-slate-400">Play the Earth and Moon chapters to unlock these historical files.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Footer */}
-        <div className="px-6 py-3.5 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between shrink-0">
-          <div className="text-xs font-mono text-slate-400">
+        <div className="px-5 py-3 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between shrink-0">
+          <div className="text-[11px] font-mono text-slate-400">
             Real NASA Mission Archive · Strictly Verified Historical Facts
           </div>
           <button
@@ -231,7 +586,7 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
             }}
             className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition-colors cursor-pointer"
           >
-            Close Archive
+            Close Codex
           </button>
         </div>
 

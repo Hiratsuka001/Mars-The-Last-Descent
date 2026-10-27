@@ -1,49 +1,57 @@
 import React, { useState } from 'react';
 import { sound } from '../systems/audio';
 import { NovaAvatar } from './NovaAvatar';
-import { Wrench, CheckCircle2, ChevronRight, Cpu, Zap, Radio, Sliders, ShieldCheck } from 'lucide-react';
+import { Wrench, CheckCircle2, ChevronRight, Zap, Radio, Sliders, X, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface SpacecraftRepairSceneProps {
+  collectedPartIds?: string[];
   onRepairComplete: () => void;
+  onClose?: () => void;
 }
 
-export const SpacecraftRepairScene: React.FC<SpacecraftRepairSceneProps> = ({ onRepairComplete }) => {
-  // 3 Engineering Subsystem Repairs:
-  // 1. Thruster Gimbal Joint Alignment (from Sojourner's Rocker-Bogie kinematic knowledge)
-  // 2. Solar Bus Battery Thermal Cycling (from Opportunity's energy management)
-  // 3. Inertial Gyro Calibration (from InSight's seismic sensor calibration)
+export const SpacecraftRepairScene: React.FC<SpacecraftRepairSceneProps> = ({
+  collectedPartIds = [],
+  onRepairComplete,
+  onClose,
+}) => {
   const [repairs, setRepairs] = useState({
     gimbal: false,
     powerBus: false,
-    gyro: false
+    gyro: false,
   });
 
   const [activeTab, setActiveTab] = useState<'gimbal' | 'powerBus' | 'gyro'>('gimbal');
+  const [showGimbalWhy, setShowGimbalWhy] = useState(false);
+  const [showPowerWhy, setShowPowerWhy] = useState(false);
+  const [showGyroWhy, setShowGyroWhy] = useState(false);
 
   // Mini-puzzle states
   const [gimbalAngle, setGimbalAngle] = useState(12); // target is 0°
   const [powerFrequency, setPowerFrequency] = useState(30); // target is 60Hz
   const [gyroTrim, setGyroTrim] = useState(-15); // target is 0
 
-  const handleFixGimbal = () => {
+  const handleFixGimbal = (val?: number) => {
+    const angle = val !== undefined ? val : gimbalAngle;
     sound.playHover();
-    if (Math.abs(gimbalAngle) <= 2) {
+    if (Math.abs(angle) <= 2) {
       sound.playSuccess();
       setRepairs((prev) => ({ ...prev, gimbal: true }));
     }
   };
 
-  const handleFixPower = () => {
+  const handleFixPower = (val?: number) => {
+    const freq = val !== undefined ? val : powerFrequency;
     sound.playHover();
-    if (powerFrequency >= 58 && powerFrequency <= 62) {
+    if (freq >= 58 && freq <= 62) {
       sound.playSuccess();
       setRepairs((prev) => ({ ...prev, powerBus: true }));
     }
   };
 
-  const handleFixGyro = () => {
+  const handleFixGyro = (val?: number) => {
+    const trim = val !== undefined ? val : gyroTrim;
     sound.playHover();
-    if (Math.abs(gyroTrim) <= 1) {
+    if (Math.abs(trim) <= 1) {
       sound.playSuccess();
       setRepairs((prev) => ({ ...prev, gyro: true }));
     }
@@ -52,121 +60,134 @@ export const SpacecraftRepairScene: React.FC<SpacecraftRepairSceneProps> = ({ on
   const allRepairsDone = repairs.gimbal && repairs.powerBus && repairs.gyro;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-3xl bg-slate-950 border border-cyan-500/40 rounded-2xl shadow-[0_16px_60px_rgba(0,0,0,0.8)] overflow-hidden text-slate-200 flex flex-col max-h-[92vh]">
+    <div data-testid="repair-scene" className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200 select-none">
+      <div className="relative w-full max-w-2xl bg-slate-950 border border-cyan-500/40 rounded-2xl shadow-[0_16px_60px_rgba(0,0,0,0.8)] overflow-hidden text-slate-200 flex flex-col max-h-[92vh]">
         
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-cyan-950/60 border border-cyan-500/30 text-cyan-400">
-              <Wrench className="w-5 h-5" />
+        <div className="px-5 py-3 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-cyan-950/60 border border-cyan-500/30 text-cyan-400">
+              <Wrench className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-[11px] font-mono text-cyan-400 uppercase tracking-wider">
-                CHAPTER 5 // SPACECRAFT ENGINEERING PROTOCOL
+              <div className="text-[10px] font-mono text-cyan-400 uppercase tracking-wider font-semibold">
+                ASCENT MODULE INITIALIZATION
               </div>
-              <h3 className="text-base md:text-lg font-semibold text-white font-display">
-                Applying NASA Principles to Restore Exploration Vessel
+              <h3 className="text-sm sm:text-base font-semibold text-white font-display">
+                Spacecraft Systems Calibration
               </h3>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-xs font-mono">
-            <span className="text-slate-400">Readiness:</span>
-            <span className={`font-bold ${allRepairsDone ? 'text-emerald-400' : 'text-amber-400'}`}>
-              {[repairs.gimbal, repairs.powerBus, repairs.gyro].filter(Boolean).length}/3 Subsystems
-            </span>
+
+          <div className="flex items-center gap-2">
+            <div className="text-xs font-mono text-slate-400 hidden sm:block">
+              Status: <span className={allRepairsDone ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
+                {allRepairsDone ? 'READY' : '3 Calibrations Required'}
+              </span>
+            </div>
+            {onClose && (
+              <button
+                onClick={() => {
+                  sound.playClick();
+                  onClose();
+                }}
+                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto space-y-5 flex-1">
+        <div className="p-4 sm:p-5 overflow-y-auto space-y-3.5 flex-1">
           
-          <div className="p-3.5 rounded-xl bg-slate-900/50 border border-slate-800 text-xs text-slate-300 leading-relaxed">
-            <strong>Engineering Principle:</strong> We do not strip real museum rovers for spare parts. Instead, we use the <em>scientific principles</em> discovered by NASA missions—robotic kinematics, solar battery thermal management, and seismological gyro tuning—to recalibrate our spacecraft systems!
+          {/* Hardware Status Banner (10 words) */}
+          <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between text-xs text-slate-300">
+            <span>8/8 components mounted. Calibrate the 3 subsystems below for launch.</span>
+            <span className="text-emerald-400 font-mono font-bold flex items-center gap-1 shrink-0 ml-2">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Hardware Ready</span>
+            </span>
           </div>
 
           {/* Subsystem Navigation Tabs */}
           <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => { sound.playHover(); setActiveTab('gimbal'); }}
-              className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
                 activeTab === 'gimbal'
-                  ? 'border-cyan-400 bg-cyan-950/40 text-white'
+                  ? 'border-cyan-400 bg-cyan-950/40 text-white shadow-sm'
                   : 'border-slate-800 bg-slate-900/30 text-slate-400 hover:text-slate-200'
               }`}
             >
-              <div className="flex items-center gap-2 truncate">
-                <Cpu className="w-4 h-4 text-cyan-400 shrink-0" />
-                <span className="text-xs font-mono font-semibold truncate">1. Gimbal Joint</span>
-              </div>
-              {repairs.gimbal && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
+              <span className="text-xs font-mono font-semibold truncate">1. Gimbal</span>
+              {repairs.gimbal && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
             </button>
 
             <button
               onClick={() => { sound.playHover(); setActiveTab('powerBus'); }}
-              className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
                 activeTab === 'powerBus'
-                  ? 'border-cyan-400 bg-cyan-950/40 text-white'
+                  ? 'border-cyan-400 bg-cyan-950/40 text-white shadow-sm'
                   : 'border-slate-800 bg-slate-900/30 text-slate-400 hover:text-slate-200'
               }`}
             >
-              <div className="flex items-center gap-2 truncate">
-                <Zap className="w-4 h-4 text-amber-400 shrink-0" />
-                <span className="text-xs font-mono font-semibold truncate">2. Power Bus</span>
-              </div>
-              {repairs.powerBus && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
+              <span className="text-xs font-mono font-semibold truncate">2. Power Bus</span>
+              {repairs.powerBus && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
             </button>
 
             <button
               onClick={() => { sound.playHover(); setActiveTab('gyro'); }}
-              className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
                 activeTab === 'gyro'
-                  ? 'border-cyan-400 bg-cyan-950/40 text-white'
+                  ? 'border-cyan-400 bg-cyan-950/40 text-white shadow-sm'
                   : 'border-slate-800 bg-slate-900/30 text-slate-400 hover:text-slate-200'
               }`}
             >
-              <div className="flex items-center gap-2 truncate">
-                <Radio className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span className="text-xs font-mono font-semibold truncate">3. Gyroscope</span>
-              </div>
-              {repairs.gyro && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
+              <span className="text-xs font-mono font-semibold truncate">3. Gyroscope</span>
+              {repairs.gyro && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
             </button>
           </div>
 
-          {/* Active Repair Workspace */}
-          <div className="p-5 rounded-xl bg-slate-900/40 border border-slate-800 space-y-4">
+          {/* Active Workspace */}
+          <div className="p-3.5 sm:p-4 rounded-xl bg-slate-900/40 border border-slate-800 space-y-3">
             
             {/* 1. GIMBAL REPAIR */}
             {activeTab === 'gimbal' && (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-[11px] font-mono text-cyan-400 uppercase">
-                      INSPIRED BY SOJOURNER’S 6-WHEEL ROCKER-BOGIE KINEMATICS
-                    </span>
-                    <h4 className="text-base font-semibold text-white font-display">
-                      Thruster Gimbal Vector Alignment
-                    </h4>
-                  </div>
-                  {repairs.gimbal ? (
-                    <div className="px-3 py-1 bg-emerald-950 border border-emerald-500 rounded text-xs font-mono text-emerald-300">
-                      ALIGNED (0.0° THRUST VECTOR)
-                    </div>
-                  ) : null}
+                  <span className="text-xs font-semibold text-white">Thruster Gimbal Vector</span>
+                  {repairs.gimbal && (
+                    <span className="text-[10px] font-mono text-emerald-400 font-bold">ALIGNED (0.0°)</span>
+                  )}
                 </div>
 
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  The impact shoved the main ascent rocket bell off-axis. Using Sojourner’s articulated joint principles, dial the servo gimbal actuator back to <strong>0° center</strong> so the rocket thrust aligns with our center of mass.
-                </p>
+                <div className="text-xs text-slate-300 flex items-center justify-between gap-2">
+                  <span>Center rocket gimbal to <strong>0°</strong> to align thrust with center of mass.</span>
+                  <button
+                    onClick={() => setShowGimbalWhy((p) => !p)}
+                    className="text-[10px] font-mono text-cyan-400 hover:text-cyan-300 shrink-0 underline cursor-pointer"
+                  >
+                    {showGimbalWhy ? 'Hide' : 'Why?'}
+                  </button>
+                </div>
 
-                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                {showGimbalWhy && (
+                  <div className="p-2 rounded-lg bg-cyan-950/30 border border-cyan-500/30 text-xs text-slate-300 animate-in fade-in duration-150">
+                    Inspired by Sojourner's joints. Off-center thrust causes uncontrolled tumbling during ascent.
+                  </div>
+                )}
+
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
                   <div className="flex items-center justify-between text-xs font-mono">
                     <span className="text-slate-400 flex items-center gap-1.5">
                       <Sliders className="w-3.5 h-3.5 text-cyan-400" />
-                      Actuator Gimbal Angle:
+                      Gimbal Angle:
                     </span>
                     <span className={Math.abs(gimbalAngle) <= 2 ? 'text-emerald-400 font-bold' : 'text-cyan-400'}>
-                      {gimbalAngle > 0 ? `+${gimbalAngle}°` : `${gimbalAngle}°`} {Math.abs(gimbalAngle) <= 2 ? '(NOMINAL CENTER)' : ''}
+                      {gimbalAngle > 0 ? `+${gimbalAngle}°` : `${gimbalAngle}°`} {Math.abs(gimbalAngle) <= 2 ? '(CENTERED)' : ''}
                     </span>
                   </div>
 
@@ -177,13 +198,13 @@ export const SpacecraftRepairScene: React.FC<SpacecraftRepairSceneProps> = ({ on
                     value={gimbalAngle}
                     disabled={repairs.gimbal}
                     onChange={(e) => {
-                      setGimbalAngle(Number(e.target.value));
-                      if (Math.abs(Number(e.target.value)) <= 2) handleFixGimbal();
+                      const val = Number(e.target.value);
+                      setGimbalAngle(val);
+                      if (Math.abs(val) <= 2) handleFixGimbal(val);
                     }}
                     className="w-full accent-cyan-400 cursor-pointer"
                   />
-
-                  <div className="flex justify-between text-[10px] font-mono text-slate-500">
+                  <div className="flex justify-between text-[9px] font-mono text-slate-500">
                     <span>-25° PITCH</span>
                     <span>0° TRUE CENTER</span>
                     <span>+25° PITCH</span>
@@ -194,35 +215,38 @@ export const SpacecraftRepairScene: React.FC<SpacecraftRepairSceneProps> = ({ on
 
             {/* 2. POWER BUS REPAIR */}
             {activeTab === 'powerBus' && (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-[11px] font-mono text-amber-400 uppercase">
-                      INSPIRED BY OPPORTUNITY’S SOLAR THERMAL MANAGEMENT
-                    </span>
-                    <h4 className="text-base font-semibold text-white font-display">
-                      Auxiliary Power Inverter Synchronizer
-                    </h4>
-                  </div>
-                  {repairs.powerBus ? (
-                    <div className="px-3 py-1 bg-emerald-950 border border-emerald-500 rounded text-xs font-mono text-emerald-300">
-                      LOCKED (60.0 HZ BUS)
-                    </div>
-                  ) : null}
+                  <span className="text-xs font-semibold text-white">Power Inverter Bus</span>
+                  {repairs.powerBus && (
+                    <span className="text-[10px] font-mono text-emerald-400 font-bold">SYNCHRONIZED (60 Hz)</span>
+                  )}
                 </div>
 
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Opportunity survived 14 harsh Martian winters by carefully scheduling deep-sleep cycles and routing current to internal survival heaters. Match our main bus alternating frequency to <strong>60 Hz</strong> to prevent thermal overload on the ascent batteries.
-                </p>
+                <div className="text-xs text-slate-300 flex items-center justify-between gap-2">
+                  <span>Match main bus frequency to <strong>60 Hz</strong> to prevent power surge.</span>
+                  <button
+                    onClick={() => setShowPowerWhy((p) => !p)}
+                    className="text-[10px] font-mono text-amber-400 hover:text-amber-300 shrink-0 underline cursor-pointer"
+                  >
+                    {showPowerWhy ? 'Hide' : 'Why?'}
+                  </button>
+                </div>
 
-                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                {showPowerWhy && (
+                  <div className="p-2 rounded-lg bg-amber-950/30 border border-amber-500/30 text-xs text-slate-300 animate-in fade-in duration-150">
+                    Inspired by Opportunity's power cycling to prevent thermal battery overload.
+                  </div>
+                )}
+
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
                   <div className="flex items-center justify-between text-xs font-mono">
                     <span className="text-slate-400 flex items-center gap-1.5">
                       <Sliders className="w-3.5 h-3.5 text-amber-400" />
-                      Inverter Bus Frequency:
+                      Frequency:
                     </span>
                     <span className={powerFrequency >= 58 && powerFrequency <= 62 ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
-                      {powerFrequency} Hz {powerFrequency >= 58 && powerFrequency <= 62 ? '(BUS SYNCHRONIZED)' : ''}
+                      {powerFrequency} Hz {powerFrequency >= 58 && powerFrequency <= 62 ? '(SYNCHRONIZED)' : ''}
                     </span>
                   </div>
 
@@ -233,16 +257,16 @@ export const SpacecraftRepairScene: React.FC<SpacecraftRepairSceneProps> = ({ on
                     value={powerFrequency}
                     disabled={repairs.powerBus}
                     onChange={(e) => {
-                      setPowerFrequency(Number(e.target.value));
-                      if (Number(e.target.value) >= 58 && Number(e.target.value) <= 62) handleFixPower();
+                      const val = Number(e.target.value);
+                      setPowerFrequency(val);
+                      if (val >= 58 && val <= 62) handleFixPower(val);
                     }}
                     className="w-full accent-amber-400 cursor-pointer"
                   />
-
-                  <div className="flex justify-between text-[10px] font-mono text-slate-500">
-                    <span>20 Hz (Underdriven)</span>
-                    <span>60 Hz (Standard Bus)</span>
-                    <span>100 Hz (Overheated)</span>
+                  <div className="flex justify-between text-[9px] font-mono text-slate-500">
+                    <span>20 Hz (Low)</span>
+                    <span>60 Hz (Standard)</span>
+                    <span>100 Hz (High)</span>
                   </div>
                 </div>
               </div>
@@ -250,35 +274,38 @@ export const SpacecraftRepairScene: React.FC<SpacecraftRepairSceneProps> = ({ on
 
             {/* 3. GYRO REPAIR */}
             {activeTab === 'gyro' && (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-[11px] font-mono text-emerald-400 uppercase">
-                      INSPIRED BY INSIGHT’S SEISMIC VIBRATION ISOLATION
-                    </span>
-                    <h4 className="text-base font-semibold text-white font-display">
-                      Inertial Navigation Drift Trim
-                    </h4>
-                  </div>
-                  {repairs.gyro ? (
-                    <div className="px-3 py-1 bg-emerald-950 border border-emerald-500 rounded text-xs font-mono text-emerald-300">
-                      CALIBRATED (ZERO DRIFT)
-                    </div>
-                  ) : null}
+                  <span className="text-xs font-semibold text-white">Inertial Navigation Trim</span>
+                  {repairs.gyro && (
+                    <span className="text-[10px] font-mono text-emerald-400 font-bold">CALIBRATED (0.00 μrad/s)</span>
+                  )}
                 </div>
 
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  InSight’s ultra-sensitive pendulum sensors measured vibrations as small as a single picometer by filtering thermal expansion. Trim out the high-frequency drift until our navigation gyro reads <strong>0.00 μrad/s</strong>.
-                </p>
+                <div className="text-xs text-slate-300 flex items-center justify-between gap-2">
+                  <span>Trim navigation gyro drift to <strong>0.00 μrad/s</strong>.</span>
+                  <button
+                    onClick={() => setShowGyroWhy((p) => !p)}
+                    className="text-[10px] font-mono text-emerald-400 hover:text-emerald-300 shrink-0 underline cursor-pointer"
+                  >
+                    {showGyroWhy ? 'Hide' : 'Why?'}
+                  </button>
+                </div>
 
-                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                {showGyroWhy && (
+                  <div className="p-2 rounded-lg bg-emerald-950/30 border border-emerald-500/30 text-xs text-slate-300 animate-in fade-in duration-150">
+                    Inspired by InSight's seismic sensor stabilization to nullify guidance drift.
+                  </div>
+                )}
+
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
                   <div className="flex items-center justify-between text-xs font-mono">
                     <span className="text-slate-400 flex items-center gap-1.5">
                       <Sliders className="w-3.5 h-3.5 text-emerald-400" />
-                      Inertial Drift Trim:
+                      Drift Trim:
                     </span>
                     <span className={Math.abs(gyroTrim) <= 1 ? 'text-emerald-400 font-bold' : 'text-emerald-400'}>
-                      {gyroTrim > 0 ? `+${gyroTrim}` : `${gyroTrim}`} μrad/s {Math.abs(gyroTrim) <= 1 ? '(DRIFT NULLIFIED)' : ''}
+                      {gyroTrim > 0 ? `+${gyroTrim}` : `${gyroTrim}`} μrad/s {Math.abs(gyroTrim) <= 1 ? '(NULLIFIED)' : ''}
                     </span>
                   </div>
 
@@ -289,16 +316,16 @@ export const SpacecraftRepairScene: React.FC<SpacecraftRepairSceneProps> = ({ on
                     value={gyroTrim}
                     disabled={repairs.gyro}
                     onChange={(e) => {
-                      setGyroTrim(Number(e.target.value));
-                      if (Math.abs(Number(e.target.value)) <= 1) handleFixGyro();
+                      const val = Number(e.target.value);
+                      setGyroTrim(val);
+                      if (Math.abs(val) <= 1) handleFixGyro(val);
                     }}
                     className="w-full accent-emerald-400 cursor-pointer"
                   />
-
-                  <div className="flex justify-between text-[10px] font-mono text-slate-500">
-                    <span>-30 Drift</span>
-                    <span>0.0 Null Trim</span>
-                    <span>+30 Drift</span>
+                  <div className="flex justify-between text-[9px] font-mono text-slate-500">
+                    <span>-30 μrad/s</span>
+                    <span>0.00 μrad/s</span>
+                    <span>+30 μrad/s</span>
                   </div>
                 </div>
               </div>
@@ -306,49 +333,27 @@ export const SpacecraftRepairScene: React.FC<SpacecraftRepairSceneProps> = ({ on
 
           </div>
 
-          {/* Pre-Flight Checklist */}
-          <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
-            <div className="text-xs font-mono text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-cyan-400" />
-              <span>Pre-Ascent Launch Checklist:</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-xs">
-              <div className={`p-2.5 rounded-lg border flex items-center gap-2 ${repairs.gimbal ? 'border-emerald-500/50 bg-emerald-950/30 text-emerald-200' : 'border-slate-800 text-slate-500'}`}>
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Rocket Gimbal Centered</span>
-              </div>
-              <div className={`p-2.5 rounded-lg border flex items-center gap-2 ${repairs.powerBus ? 'border-emerald-500/50 bg-emerald-950/30 text-emerald-200' : 'border-slate-800 text-slate-500'}`}>
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Power Bus Synchronized</span>
-              </div>
-              <div className={`p-2.5 rounded-lg border flex items-center gap-2 ${repairs.gyro ? 'border-emerald-500/50 bg-emerald-950/30 text-emerald-200' : 'border-slate-800 text-slate-500'}`}>
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Navigation Gyro Calibrated</span>
-              </div>
-            </div>
-          </div>
-
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <NovaAvatar mood={allRepairsDone ? 'celebrate' : 'happy'} size={40} />
-            <div className="text-xs text-slate-400 hidden sm:block">
+        <div className="px-5 py-3 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2.5">
+            <NovaAvatar mood={allRepairsDone ? 'celebrate' : 'happy'} size={32} />
+            <div className="text-[11px] text-slate-400 hidden sm:block">
               {allRepairsDone
-                ? '"All systems pass! The return mission is ready for its final sequence."'
-                : '"Adjust each slider until the feedback signals turn green."'}
+                ? '"All systems nominal! Ready for launch."'
+                : '"Adjust sliders until all signals turn green."'}
             </div>
           </div>
 
           <button
+            data-testid="launch-ascent-btn"
             disabled={!allRepairsDone}
             onClick={() => {
               sound.playClick();
               onRepairComplete();
             }}
-            className="px-6 py-2.5 rounded-xl font-bold font-mono text-xs tracking-wider transition-all cursor-pointer disabled:opacity-40 flex items-center gap-2 bg-cyan-400 hover:bg-cyan-300 text-slate-950 shadow-[0_0_20px_rgba(6,182,212,0.4)]"
+            className="px-5 py-2 rounded-xl font-bold font-mono text-xs tracking-wider transition-all cursor-pointer disabled:opacity-40 flex items-center gap-1.5 bg-cyan-400 hover:bg-cyan-300 text-slate-950 shadow-[0_0_20px_rgba(6,182,212,0.4)]"
           >
             <span>COMMENCE RETURN ASCENT</span>
             <ChevronRight className="w-4 h-4" />

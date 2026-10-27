@@ -1,8 +1,6 @@
 {
-  "name": "12 KM: BEYOND THE DEPTH — MARS: THE LAST ASCENT",
-  "description": "An educational sci-fi exploration adventure game journeying from Earth's deepest borehole to the Moon and Mars with your robotic cat companion, NOVA.",
+  "name": "Mars: The Last Descent",
+  "description": "An educational sci-fi open world exploration game on Mars where you uncover historical robotic missions, salvage parts, repair your lander, and ascend to orbit.",
   "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "majorCapabilities": []
 }

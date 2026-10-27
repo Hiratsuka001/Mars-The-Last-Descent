@@ -31,7 +31,8 @@ export const SojournerRoverPuzzle: React.FC<SojournerRoverPuzzleProps> = ({
   const [roverDir, setRoverDir] = useState<0 | 90 | 180 | 270>(90); // 90 is facing East
   const [commandQueue, setCommandQueue] = useState<('F' | 'L' | 'R')[]>([]);
   const [isRunning, setIsRunning] = useState(false);
-  const [statusMessage, setStatusMessage] = useState('Program Sojourner’s route across Ares Vallis to deploy APXS on Barnacle Bill.');
+  const [statusMessage, setStatusMessage] = useState('Program Sojourner’s path around rocks to deploy APXS on Barnacle Bill.');
+  const [showWhy, setShowWhy] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [collision, setCollision] = useState(false);
 
@@ -118,7 +119,7 @@ export const SojournerRoverPuzzle: React.FC<SojournerRoverPuzzleProps> = ({
           sound.playSuccess();
           setIsCompleted(true);
           setIsRunning(false);
-          setStatusMessage('SUCCESS! APXS deployed on Barnacle Bill. High-silica andesite rock confirmed!');
+          setStatusMessage('SUCCESS: APXS deployed on Barnacle Bill! Drive motor salvaged.');
           return;
         }
       }
@@ -141,33 +142,46 @@ export const SojournerRoverPuzzle: React.FC<SojournerRoverPuzzleProps> = ({
               <Compass className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-[11px] font-mono text-cyan-400 uppercase tracking-wider">
-                ROBOTIC MOBILITY SIMULATOR · 1997
+              <div className="text-[10px] font-mono text-cyan-400 uppercase tracking-wider font-semibold">
+                ROBOTIC MOBILITY SIMULATOR
               </div>
-              <h3 className="text-base md:text-lg font-semibold text-white font-display">
-                Sojourner: Ares Vallis Waypoint Navigation
+              <h3 className="text-sm sm:text-base font-semibold text-white font-display">
+                Sojourner: Waypoint Navigation
               </h3>
             </div>
           </div>
           <button
+            data-testid="puzzle-exit-btn"
             onClick={() => {
               sound.playClick();
               onClose();
             }}
-            className="text-xs font-mono text-slate-400 hover:text-white px-2 py-1"
+            className="text-xs font-mono text-slate-400 hover:text-white px-2 py-1 cursor-pointer"
           >
             ✕ Exit
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="p-4 sm:p-5 space-y-3">
           
-          {/* Mission Explanation Banner */}
-          <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-800 flex items-center justify-between text-xs text-slate-300">
-            <div>
-              Because light takes <strong>10 to 20 minutes</strong> to travel from Earth to Mars, rovers cannot be driven with real-time joysticks. Engineers plan sequences of waypoint steps ahead of time!
+          {/* Mission Explanation Banner with Collapsed Why */}
+          <div className="p-2.5 rounded-xl bg-slate-900/50 border border-slate-800 flex items-center justify-between text-xs text-slate-300 gap-2">
+            <div className="text-xs">
+              Program Sojourner's route around rocks to deploy APXS on <strong>Barnacle Bill</strong>.
             </div>
+            <button
+              onClick={() => setShowWhy((p) => !p)}
+              className="text-[10px] font-mono text-cyan-400 hover:text-cyan-300 shrink-0 underline cursor-pointer"
+            >
+              {showWhy ? 'Hide' : 'Why?'}
+            </button>
           </div>
+
+          {showWhy && (
+            <div className="p-2.5 rounded-lg bg-cyan-950/30 border border-cyan-500/30 text-xs text-slate-300 animate-in fade-in duration-150">
+              Light delay (10–20 min) prevents joystick control, requiring pre-planned waypoints.
+            </div>
+          )}
 
           {/* Grid Arena */}
           <div className="bg-[#180e0a] border-2 border-orange-950/70 rounded-xl p-3 shadow-inner relative overflow-hidden">

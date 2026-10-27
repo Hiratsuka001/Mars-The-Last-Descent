@@ -54,6 +54,7 @@ export const NovaDialogue: React.FC<NovaDialogueProps> = ({
 
   return (
     <div
+      data-testid="nova-dialogue"
       onClick={handleSkipTyping}
       className={`bg-slate-950/90 backdrop-blur-md border border-cyan-500/30 shadow-[0_8px_32px_rgba(0,0,0,0.6)] rounded-xl p-4 flex items-start gap-4 transition-all duration-300 ${className}`}
     >
@@ -93,6 +94,7 @@ export const NovaDialogue: React.FC<NovaDialogueProps> = ({
         <div className="mt-3 flex items-center justify-end gap-2">
           {onAction && actionLabel && (
             <button
+              data-testid="nova-dialogue-action-btn"
               onClick={(e) => {
                 e.stopPropagation();
                 sound.playClick();
@@ -107,6 +109,7 @@ export const NovaDialogue: React.FC<NovaDialogueProps> = ({
 
           {onDismiss && (
             <button
+              data-testid="nova-dialogue-dismiss-btn"
               onClick={(e) => {
                 e.stopPropagation();
                 sound.playClick();

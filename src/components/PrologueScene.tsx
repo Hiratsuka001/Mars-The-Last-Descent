@@ -43,6 +43,7 @@ export const PrologueScene: React.FC<PrologueSceneProps> = ({ onComplete }) => {
         </div>
 
         <button
+          data-testid="skip-prologue-btn"
           onClick={() => {
             sound.playClick();
             onComplete();
@@ -123,10 +124,10 @@ export const PrologueScene: React.FC<PrologueSceneProps> = ({ onComplete }) => {
             <NovaAvatar mood="happy" size={110} />
             <div className="space-y-2">
               <h1 className="text-3xl sm:text-5xl font-bold font-display tracking-wider text-white">
-                12 KM: BEYOND THE DEPTH
+                MARS: THE LAST DESCENT
               </h1>
               <div className="text-sm sm:text-base font-mono text-cyan-400 uppercase tracking-widest">
-                MARS: THE LAST ASCENT
+                AN EXPEDITION BEYOND EARTH
               </div>
               <p className="text-xs sm:text-sm text-slate-400 italic">
                 "We went as deep as we could. Now, let's go beyond."
@@ -134,6 +135,7 @@ export const PrologueScene: React.FC<PrologueSceneProps> = ({ onComplete }) => {
             </div>
 
             <button
+          data-testid="skip-prologue-btn"
               onClick={() => {
                 sound.playClick();
                 onComplete();
