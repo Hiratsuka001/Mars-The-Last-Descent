@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { MISSIONS_DATA, MissionDiscovery } from '../data/missions';
 import { SCIENCE_SAMPLES, getSampleResearchPoints } from '../data/samples';
+import { ORDERED_LOGS, LogEntry } from '../data/logs';
 import { atlas } from '../render/atlas';
 import { sound } from '../systems/audio';
-import { X, Award, ExternalLink, Cpu, Compass, Sparkles, CheckCircle2, ChevronDown, ChevronUp, Lock, Microscope } from 'lucide-react';
+import { X, Award, ExternalLink, Cpu, Compass, Sparkles, CheckCircle2, ChevronDown, ChevronUp, Lock, Microscope, Radio } from 'lucide-react';
 import { NovaAvatar } from './NovaAvatar';
 
 export interface CodexEntry {
@@ -118,6 +119,8 @@ interface MissionArchiveModalProps {
   completedEquipmentIds?: string[];
   unlockedMissionIds?: string[];
   collectedSampleIds?: string[];
+  discoveredLandmarkIds?: string[];
+  recoveredLogIds?: string[];
   researchPoints?: number;
   onClose: () => void;
   onSelectDiscovery?: (discovery: MissionDiscovery) => void;
@@ -127,14 +130,21 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
   completedEquipmentIds = [],
   unlockedMissionIds = [],
   collectedSampleIds = [],
+  discoveredLandmarkIds = [],
+  recoveredLogIds = [],
   researchPoints = 0,
   onClose,
 }) => {
-  const [activeTab, setActiveTab] = useState<'mars' | 'samples' | 'legacy'>('mars');
+  const [activeTab, setActiveTab] = useState<'mars' | 'samples' | 'logs' | 'legacy'>('mars');
   const [selectedMarsId, setSelectedMarsId] = useState<string>(
     completedEquipmentIds[0] || MARS_CODEX_ENTRIES[0].id
   );
   const [isLearnMoreOpen, setIsLearnMoreOpen] = useState<boolean>(false);
+  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+
+  const toggleCardExpanded = (id: string) => {
+    setExpandedCards((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
 
   // Legacy tab state
   const allLegacyMissions = Object.values(MISSIONS_DATA);
@@ -144,6 +154,12 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
 
   const unlockedCount = completedEquipmentIds.length;
   const samplesCount = collectedSampleIds.length;
+  const unlockedLogsCount = ORDERED_LOGS.filter(
+    (log) =>
+      recoveredLogIds.includes(log.id) ||
+      recoveredLogIds.includes(log.wreckId) ||
+      recoveredLogIds.includes(log.partId)
+  ).length;
   const activeMarsEntry = MARS_CODEX_ENTRIES.find((e) => e.id === selectedMarsId) || MARS_CODEX_ENTRIES[0];
   const isMarsUnlocked = completedEquipmentIds.includes(activeMarsEntry.id);
 
@@ -171,6 +187,12 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
+            <div
+              data-testid="landmarks-codex-counter"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-indigo-950/60 border border-indigo-500/40 text-xs font-mono text-indigo-300 font-bold"
+            >
+              <span>Landmarks {discoveredLandmarkIds.length}/5</span>
+            </div>
             <div
               data-testid="codex-research-points"
               className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-950/60 border border-amber-500/40 text-xs font-mono text-amber-300 font-bold"
@@ -219,7 +241,22 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
             }`}
           >
             <Microscope className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Specimen Book ({Object.keys(SCIENCE_SAMPLES).filter(k => collectedSampleIds.some(id => id.includes(k) || id === k)).length}/6)</span>
+            <span>Specimen Book ({collectedSampleIds.length}/18)</span>
+          </button>
+          <button
+            onClick={() => {
+              sound.playClick();
+              setActiveTab('logs');
+            }}
+            data-testid="logs-tab-btn"
+            className={`px-4 py-2 rounded-t-xl text-xs font-mono font-bold transition-all cursor-pointer border-t border-x flex items-center gap-1.5 ${
+              activeTab === 'logs'
+                ? 'bg-slate-900 text-cyan-300 border-cyan-500/40 shadow-sm'
+                : 'bg-transparent text-slate-400 border-transparent hover:text-slate-200'
+            }`}
+          >
+            <Radio className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Logs ({unlockedLogsCount}/8)</span>
           </button>
           <button
             onClick={() => {
@@ -368,7 +405,7 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
                   Specimen Book · Martian Field Science
                 </h4>
                 <p className="text-xs text-slate-400">
-                  6 unique geological specimens cataloged with verified NASA discoveries. Earn Research Points to upgrade ascent vehicle systems.
+                  6 unique geological specimens cataloged. Earn Research Points to upgrade ascent vehicle systems.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -376,7 +413,7 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
                   data-testid="specimen-book-total-gathered"
                   className="px-3 py-1 rounded-xl bg-cyan-950/70 border border-cyan-500/40 text-cyan-300 font-mono text-xs font-bold shrink-0"
                 >
-                  {samplesCount} / 18 Gathered
+                  {samplesCount} / 18 Found
                 </div>
               </div>
             </div>
@@ -451,22 +488,31 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
                       </div>
 
                       {isDiscovered ? (
-                        <>
-                          <p className="text-[11px] text-slate-300 leading-relaxed">
-                            {sample.description}
+                        <div className="space-y-2">
+                          <p
+                            data-testid={`specimen-fact-${sample.id}`}
+                            className="text-[11px] text-slate-300 leading-relaxed"
+                          >
+                            {sample.scienceFact}
                           </p>
-                          <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800/80 space-y-1">
-                            <div className="text-[10px] font-mono text-cyan-400 font-bold uppercase tracking-wider">
-                              NASA Discovery Record
-                            </div>
-                            <p
-                              data-testid={`specimen-fact-${sample.id}`}
-                              className="text-[11px] text-slate-300 leading-relaxed italic"
+
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => toggleCardExpanded(sample.id)}
+                              className="text-[10px] text-cyan-400 hover:text-cyan-300 font-mono underline cursor-pointer"
+                              data-testid={`specimen-toggle-${sample.id}`}
                             >
-                              "{sample.scienceFact}"
-                            </p>
+                              {expandedCards[sample.id] ? 'Hide details' : 'Learn more'}
+                            </button>
+
+                            {expandedCards[sample.id] && (
+                              <p className="mt-1.5 text-[11px] text-slate-300 leading-relaxed bg-slate-950/60 p-2 rounded border border-slate-800/80">
+                                {sample.description}
+                              </p>
+                            )}
                           </div>
-                        </>
+                        </div>
                       ) : (
                         <div className="py-4 text-center space-y-1.5">
                           <Lock className="w-5 h-5 text-slate-600 mx-auto" />
@@ -496,7 +542,99 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
           </div>
         )}
 
-        {/* Tab 3: Historical Apollo Archive (Preserved Legacy Content) */}
+        {/* Tab 3: Story Memory Logs (FICTION) */}
+        {activeTab === 'logs' && (
+          <div data-testid="codex-logs-tab-content" className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
+              <div>
+                <div className="text-xs font-mono text-cyan-400 font-semibold uppercase tracking-wider flex items-center gap-2">
+                  <span>Telemetric Memory Fragments</span>
+                  <span
+                    data-testid="fiction-tag"
+                    className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase"
+                  >
+                    FICTION
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Pre-arrival memory fragments left by Nova on historical probes across Mars.
+                </p>
+              </div>
+              <div className="text-xs font-mono text-cyan-300 bg-cyan-950/40 border border-cyan-500/30 px-3 py-1 rounded-xl">
+                Decrypted: {unlockedLogsCount} / 8
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {ORDERED_LOGS.map((log) => {
+                const isUnlocked =
+                  recoveredLogIds.includes(log.id) ||
+                  recoveredLogIds.includes(log.wreckId) ||
+                  recoveredLogIds.includes(log.partId);
+
+                return (
+                  <div
+                    key={log.id}
+                    data-testid={`codex-log-entry-${log.order}`}
+                    className={`p-3.5 rounded-xl border transition-all ${
+                      isUnlocked
+                        ? 'bg-slate-900/60 border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.08)]'
+                        : 'bg-slate-950/40 border-slate-800/60 opacity-60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-xs font-mono mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className={isUnlocked ? 'text-cyan-400 font-bold' : 'text-slate-500'}>
+                          Log #{log.order}: {log.probeName}
+                        </span>
+                        {isUnlocked && (
+                          <span
+                            data-testid="fiction-tag"
+                            className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase"
+                          >
+                            FICTION
+                          </span>
+                        )}
+                      </div>
+                      {isUnlocked ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      ) : (
+                        <div
+                          data-testid={`codex-log-locked-${log.order}`}
+                          className="flex items-center gap-1 text-[10px] text-slate-500"
+                        >
+                          <Lock className="w-3 h-3" />
+                          <span>LOCKED</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {isUnlocked ? (
+                      <p
+                        data-testid={`log-text-${log.order}`}
+                        className="text-xs text-slate-200 italic font-mono leading-relaxed"
+                      >
+                        "{log.text}"
+                      </p>
+                    ) : (
+                      <div className="space-y-1">
+                        <div className="text-[11px] font-mono text-slate-500 tracking-wider flex items-center gap-1.5">
+                          <Lock className="w-3 h-3 text-slate-600" />
+                          <span>[ ENCRYPTED TELEMETRY FRAGMENT ]</span>
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-600">
+                          Salvage probe to decrypt memory fragment.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 4: Historical Apollo Archive (Preserved Legacy Content) */}
         {activeTab === 'legacy' && (
           <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
             {/* Left Mission List */}
@@ -577,7 +715,7 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
         {/* Footer */}
         <div className="px-5 py-3 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between shrink-0">
           <div className="text-[11px] font-mono text-slate-400">
-            Real NASA Mission Archive · Strictly Verified Historical Facts
+            Inspired by real NASA missions · Mars Exploration Surface Survey
           </div>
           <button
             onClick={() => {

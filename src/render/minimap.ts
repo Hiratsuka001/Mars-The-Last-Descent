@@ -4,7 +4,7 @@
  */
 
 import { WorldChunkManager, TILE_SIZE } from '../world/chunk';
-import { PlacedEquipment, PlacedSample } from '../world/placement';
+import { PlacedEquipment, PlacedSample, PlacedLandmark } from '../world/placement';
 import { BiomeType } from '../world/biomes';
 
 export const MINIMAP_VIEW_RADIUS = 36;   // Tiles visible in circular HUD radar
@@ -136,19 +136,22 @@ export class FogOfWarSystem {
   public deserialize(data: SerializedFogOfWar): void {
     this.chunks.clear();
     this.dirtyChunks.clear();
+    if (!data) return;
     this.exploredCount = data.revealedCount || 0;
 
-    for (const [key, base64] of Object.entries(data.chunks)) {
-      try {
-        const binary = atob(base64);
-        const bitset = new Uint8Array(128);
-        for (let i = 0; i < binary.length && i < 128; i++) {
-          bitset[i] = binary.charCodeAt(i);
+    if (data.chunks && typeof data.chunks === 'object') {
+      for (const [key, base64] of Object.entries(data.chunks)) {
+        try {
+          const binary = atob(base64);
+          const bitset = new Uint8Array(128);
+          for (let i = 0; i < binary.length && i < 128; i++) {
+            bitset[i] = binary.charCodeAt(i);
+          }
+          this.chunks.set(key, bitset);
+          this.dirtyChunks.add(key);
+        } catch (err) {
+          console.warn(`[FogOfWar] Failed to deserialize chunk ${key}:`, err);
         }
-        this.chunks.set(key, bitset);
-        this.dirtyChunks.add(key);
-      } catch (err) {
-        console.warn(`[FogOfWar] Failed to deserialize chunk ${key}:`, err);
       }
     }
   }
@@ -271,7 +274,9 @@ export class MinimapRenderer {
     time: number,
     samples?: PlacedSample[],
     collectedSampleIds?: string[],
-    revealedSampleGlints?: boolean
+    revealedSampleGlints?: boolean,
+    landmarks?: PlacedLandmark[],
+    discoveredLandmarkIds?: string[]
   ): void {
     const playerTileX = Math.floor(playerX / TILE_SIZE);
     const playerTileY = Math.floor(playerY / TILE_SIZE);
@@ -374,6 +379,33 @@ export class MinimapRenderer {
           targetCtx.beginPath();
           targetCtx.arc(mx, my, 2.5, 0, Math.PI * 2);
           targetCtx.fill();
+        }
+      }
+    }
+
+    // 2c. Discovered Natural Landmarks
+    if (landmarks && discoveredLandmarkIds) {
+      for (const lm of landmarks) {
+        if (!discoveredLandmarkIds.includes(lm.id)) continue;
+        const dx = lm.tileX - playerTileX;
+        const dy = lm.tileY - playerTileY;
+        const distTiles = Math.hypot(dx, dy);
+        if (distTiles <= MINIMAP_VIEW_RADIUS - 2) {
+          const mx = center + dx * scale;
+          const my = center + dy * scale;
+          targetCtx.save();
+          targetCtx.fillStyle = lm.def.iconColor || '#fbbf24';
+          targetCtx.strokeStyle = '#ffffff';
+          targetCtx.lineWidth = 1;
+          targetCtx.beginPath();
+          targetCtx.moveTo(mx, my - 4.5);
+          targetCtx.lineTo(mx + 4, my);
+          targetCtx.lineTo(mx, my + 4.5);
+          targetCtx.lineTo(mx - 4, my);
+          targetCtx.closePath();
+          targetCtx.fill();
+          targetCtx.stroke();
+          targetCtx.restore();
         }
       }
     }
@@ -580,7 +612,9 @@ export class MinimapRenderer {
     time: number,
     samples?: PlacedSample[],
     collectedSampleIds?: string[],
-    revealedSampleGlints?: boolean
+    revealedSampleGlints?: boolean,
+    landmarks?: PlacedLandmark[],
+    discoveredLandmarkIds?: string[]
   ): void {
     const playerTileX = Math.floor(playerX / TILE_SIZE);
     const playerTileY = Math.floor(playerY / TILE_SIZE);
@@ -682,6 +716,38 @@ export class MinimapRenderer {
           targetCtx.beginPath();
           targetCtx.arc(mx, my, 4, 0, Math.PI * 2);
           targetCtx.fill();
+        }
+      }
+    }
+
+    // 2c. Discovered Natural Landmarks (Full Overlay Map)
+    if (landmarks && discoveredLandmarkIds) {
+      for (const lm of landmarks) {
+        if (!discoveredLandmarkIds.includes(lm.id)) continue;
+        const dx = lm.tileX - playerTileX;
+        const dy = lm.tileY - playerTileY;
+        const distTiles = Math.hypot(dx, dy);
+        if (distTiles <= OVERLAY_VIEW_RADIUS - 2) {
+          const mx = center + dx * scale;
+          const my = center + dy * scale;
+          targetCtx.save();
+          targetCtx.fillStyle = lm.def.iconColor || '#fbbf24';
+          targetCtx.strokeStyle = '#ffffff';
+          targetCtx.lineWidth = 1.2;
+          targetCtx.beginPath();
+          targetCtx.moveTo(mx, my - 6);
+          targetCtx.lineTo(mx + 5.5, my);
+          targetCtx.lineTo(mx, my + 6);
+          targetCtx.lineTo(mx - 5.5, my);
+          targetCtx.closePath();
+          targetCtx.fill();
+          targetCtx.stroke();
+
+          targetCtx.font = 'bold 9px monospace';
+          targetCtx.fillStyle = '#f8fafc';
+          targetCtx.textAlign = 'center';
+          targetCtx.fillText(lm.def.name.split(' ')[0], mx, my + 13);
+          targetCtx.restore();
         }
       }
     }

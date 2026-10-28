@@ -13,9 +13,17 @@ export interface BoxCollider {
 
 export class CollisionSystem {
   private world: WorldChunkManager;
+  private obstacleBoxes: BoxCollider[] = [];
 
   constructor(world: WorldChunkManager) {
     this.world = world;
+  }
+
+  /**
+   * Set dynamic/prop obstacle bounding boxes (e.g. chasm opening)
+   */
+  public setObstacleBoxes(boxes: BoxCollider[]): void {
+    this.obstacleBoxes = boxes;
   }
 
   /**
@@ -38,6 +46,20 @@ export class CollisionSystem {
       return true;
     }
 
+    // 3. Check if tile overlaps any obstacle box (e.g. canyon chasm void)
+    const worldX = tileX * TILE_SIZE + TILE_SIZE / 2;
+    const worldY = tileY * TILE_SIZE + TILE_SIZE / 2;
+    for (const box of this.obstacleBoxes) {
+      if (
+        worldX >= box.x - box.width / 2 &&
+        worldX <= box.x + box.width / 2 &&
+        worldY >= box.y - box.height / 2 &&
+        worldY <= box.y + box.height / 2
+      ) {
+        return true;
+      }
+    }
+
     return false;
   }
 
@@ -52,6 +74,18 @@ export class CollisionSystem {
    * Check if a world-space point collides with an obstacle
    */
   public isPointBlocked(worldX: number, worldY: number): boolean {
+    for (const box of this.obstacleBoxes) {
+      const halfW = box.width / 2;
+      const halfH = box.height / 2;
+      if (
+        worldX >= box.x - halfW &&
+        worldX <= box.x + halfW &&
+        worldY >= box.y - halfH &&
+        worldY <= box.y + halfH
+      ) {
+        return true;
+      }
+    }
     const tileX = Math.floor(worldX / TILE_SIZE);
     const tileY = Math.floor(worldY / TILE_SIZE);
     return this.isTileBlocked(tileX, tileY);
@@ -61,6 +95,19 @@ export class CollisionSystem {
    * Check if an AABB feet hitbox overlaps any blocking tile or prop
    */
   public checkBoxCollision(x: number, y: number, halfW: number, halfH: number): boolean {
+    for (const box of this.obstacleBoxes) {
+      const bHalfW = box.width / 2;
+      const bHalfH = box.height / 2;
+      if (
+        x + halfW > box.x - bHalfW &&
+        x - halfW < box.x + bHalfW &&
+        y + halfH > box.y - bHalfH &&
+        y - halfH < box.y + bHalfH
+      ) {
+        return true;
+      }
+    }
+
     const minTileX = Math.floor((x - halfW) / TILE_SIZE);
     const maxTileX = Math.floor((x + halfW) / TILE_SIZE);
     const minTileY = Math.floor((y - halfH) / TILE_SIZE);

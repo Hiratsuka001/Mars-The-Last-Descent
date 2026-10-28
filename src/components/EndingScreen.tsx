@@ -3,11 +3,12 @@
  * Displays campaign metrics, completion epilogue, and restart/menu options.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { sound } from '../systems/audio';
 import { NovaAvatar } from './NovaAvatar';
 import { formatPlayTime } from '../systems/saveManager';
-import { Award, RotateCcw, Home, Info, Sparkles, Clock, Wrench, Compass } from 'lucide-react';
+import { ORDERED_LOGS } from '../data/logs';
+import { Award, RotateCcw, Home, Info, Sparkles, Clock, Wrench, Compass, Radio } from 'lucide-react';
 
 interface EndingScreenProps {
   playTimeSeconds: number;
@@ -15,6 +16,7 @@ interface EndingScreenProps {
   totalParts?: number;
   exploredTiles: number;
   seed: number | string;
+  recoveredLogIds?: string[];
   onPlayAgain: (newSeed: boolean) => void;
   onReturnToMenu: () => void;
   onOpenCredits: () => void;
@@ -26,13 +28,23 @@ export const EndingScreen: React.FC<EndingScreenProps> = ({
   totalParts = 8,
   exploredTiles = 0,
   seed,
+  recoveredLogIds = [],
   onPlayAgain,
   onReturnToMenu,
   onOpenCredits,
 }) => {
+  const [isLogsSkipped, setIsLogsSkipped] = useState<boolean>(false);
+
+  const unlockedLogs = ORDERED_LOGS.filter(
+    (log) =>
+      recoveredLogIds.includes(log.id) ||
+      recoveredLogIds.includes(log.wreckId) ||
+      recoveredLogIds.includes(log.partId)
+  );
+
   return (
     <div data-testid="ending-screen" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-300 select-none">
-      <div className="relative w-full max-w-xl p-6 sm:p-8 rounded-2xl bg-slate-950/95 border border-cyan-500/50 shadow-[0_0_80px_rgba(6,182,212,0.4)] flex flex-col items-center text-center space-y-6">
+      <div className="relative w-full max-w-xl p-6 sm:p-8 rounded-2xl bg-slate-950/95 border border-cyan-500/50 shadow-[0_0_80px_rgba(6,182,212,0.4)] flex flex-col items-center text-center space-y-6 max-h-[92vh] overflow-y-auto">
         
         {/* Nova Celebration Avatar */}
         <div className="relative">
@@ -98,6 +110,57 @@ export const EndingScreen: React.FC<EndingScreenProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Story Logs: Memory Fragments */}
+        {unlockedLogs.length > 0 && !isLogsSkipped && (
+          <div data-testid="ending-logs-section" className="w-full text-left space-y-3 pt-3 border-t border-slate-800 animate-in fade-in duration-300">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono font-bold text-cyan-300 uppercase tracking-wider">
+                  Recovered Memory Logs ({unlockedLogs.length}/8)
+                </span>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase">
+                  FICTION
+                </span>
+              </div>
+              <button
+                data-testid="skip-logs-btn"
+                onClick={() => {
+                  sound.playClick();
+                  setIsLogsSkipped(true);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-mono text-slate-300 hover:text-white cursor-pointer transition-colors"
+              >
+                Skip Logs →
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+              {unlockedLogs.map((log) => (
+                <div key={log.id} data-testid="ending-log-item" className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs">
+                  <div className="text-[10px] font-mono text-cyan-400 font-semibold mb-0.5">
+                    Log #{log.order}: {log.probeName}
+                  </div>
+                  <div className="text-slate-200 italic font-mono text-[11px] leading-relaxed">
+                    "{log.text}"
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {unlockedLogs.length >= 8 && (
+              <div
+                data-testid="nova-log-reveal"
+                className="p-3 rounded-xl bg-cyan-950/60 border border-cyan-400 text-cyan-200 text-xs font-mono flex items-center gap-2.5 shadow-[0_0_20px_rgba(6,182,212,0.3)] animate-in fade-in duration-300"
+              >
+                <span className="text-lg">🐱</span>
+                <span className="font-semibold text-white">
+                  "Those were my words. I'd forgotten them. Thank you for finding me."
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Action Buttons Matrix */}
         <div className="w-full flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-2">

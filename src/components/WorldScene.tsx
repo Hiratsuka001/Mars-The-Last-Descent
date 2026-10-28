@@ -2,9 +2,12 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { atlas } from '../render/atlas';
 import { WorldChunkManager, CHUNK_PIXEL_SIZE, WorldProp } from '../world/chunk';
 import { CollisionSystem } from '../world/collision';
-import { EquipmentPlacementSystem, PlacedEquipment, PlacedSample } from '../world/placement';
+import { EquipmentPlacementSystem, PlacedEquipment, PlacedSample, PlacedLandmark } from '../world/placement';
 import { SHIP_PARTS, EquipmentDefinition } from '../data/equipment';
 import { SCIENCE_SAMPLES } from '../data/samples';
+import { LANDMARK_DEFINITIONS } from '../data/landmarks';
+import { drawLandmark } from '../render/landmarkRender';
+import { ORDERED_LOGS, getLogForPart, getLogForWreck, deriveLogIdsFromParts } from '../data/logs';
 import { PartsHUD } from './PartsHUD';
 import { NovaDialogue } from './NovaDialogue';
 import { SojournerRoverPuzzle } from './MiniGames/SojournerRoverPuzzle';
@@ -19,10 +22,10 @@ import { EndingScreen } from './EndingScreen';
 import { CreditsModal } from './CreditsModal';
 import { MissionArchiveModal } from './MissionArchiveModal';
 import { FogOfWarSystem, MinimapRenderer, MINIMAP_VIEW_RADIUS, REVEAL_RADIUS_TILES } from '../render/minimap';
-import { saveWorldProgress, getSavedProgress, resetProgress, formatPlayTime, PlayerUpgrades } from '../systems/saveManager';
+import { saveWorldProgress, getSavedProgress, resetProgress, formatPlayTime, PlayerUpgrades, isReduceMotionEnabled, setReduceMotionEnabled } from '../systems/saveManager';
 import { getSampleResearchPoints } from '../data/samples';
 import { sound } from '../systems/audio';
-import { Sparkles, CheckCircle2, Wrench, RotateCcw, Save, ShieldCheck, Zap, Radio, Sun, Moon, Heart, Flame, Microscope, X } from 'lucide-react';
+import { Sparkles, CheckCircle2, Wrench, RotateCcw, Save, ShieldCheck, Zap, Radio, Sun, Moon, Heart, Flame, Microscope, Compass, X } from 'lucide-react';
 
 export interface WorldSceneConfig {
   seed: number | string;
@@ -60,6 +63,8 @@ interface FootprintDecal {
   alpha: number;
   type: 'boot' | 'paw';
   color: string;
+  lifetime: number;
+  maxLifetime: number;
 }
 
 interface WorldParticle {
@@ -143,6 +148,20 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
   const [nearbySample, setNearbySample] = useState<PlacedSample | null>(null);
   const [sampleToast, setSampleToast] = useState<{ name: string; fact: string } | null>(null);
 
+  // Procedural Natural Landmarks State (5 per world)
+  const landmarksListRef = useRef<PlacedLandmark[]>([]);
+  const [discoveredLandmarkIds, setDiscoveredLandmarkIds] = useState<string[]>([]);
+  const discoveredLandmarksRef = useRef<string[]>([]);
+  discoveredLandmarksRef.current = discoveredLandmarkIds;
+  const [landmarkToast, setLandmarkToast] = useState<{ name: string; fact: string } | null>(null);
+  const lastPlayerTileRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Story Memory Logs State (8 logs tied to historical wreck relics)
+  const [recoveredLogIds, setRecoveredLogIds] = useState<string[]>([]);
+  const recoveredLogIdsRef = useRef<string[]>([]);
+  recoveredLogIdsRef.current = recoveredLogIds;
+  const [logToast, setLogToast] = useState<{ number: number; reaction: string; probeName: string } | null>(null);
+
   // Astronaut Sprint & Jetpack Thruster State
   const [sprintEnergy, setSprintEnergy] = useState<number>(100);
   const sprintEnergyRef = useRef<number>(100);
@@ -156,19 +175,20 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
   const sonarWaveRef = useRef<{ active: boolean; x: number; y: number; radius: number; maxRadius: number } | null>(null);
   const compassTimerRef = useRef<number>(0);
   const sampleGlintTimerRef = useRef<number>(0); // Glint reveal timer ~6s on Sonar
+  const lastCompassPointersRef = useRef<any[]>([]);
 
-  // Research Points & Upgrades Progression Loop
+  // Research Points & Upgrades Progression Loop (2 levels each)
   const [researchPoints, setResearchPoints] = useState<number>(0);
   const researchPointsRef = useRef<number>(0);
   const [upgrades, setUpgrades] = useState<PlayerUpgrades>({
-    jetpack: false,
-    scan: false,
-    minimap: false,
+    jetpack: 0,
+    scan: 0,
+    minimap: 0,
   });
   const upgradesRef = useRef<PlayerUpgrades>({
-    jetpack: false,
-    scan: false,
-    minimap: false,
+    jetpack: 0,
+    scan: 0,
+    minimap: 0,
   });
   const [isShipTerminalOpen, setIsShipTerminalOpen] = useState<boolean>(false);
 
@@ -196,6 +216,18 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
   // Footprints & Particle Engine
   const footprintsRef = useRef<FootprintDecal[]>([]);
   const particlesRef = useRef<WorldParticle[]>([]);
+
+  // Camera Shake & Juice System (Respects Reduce Motion)
+  const cameraShakeRef = useRef<{ time: number; duration: number; intensity: number }>({
+    time: 0,
+    duration: 0,
+    intensity: 0,
+  });
+
+  const triggerCameraShake = useCallback((intensity: number = 3.0, duration: number = 0.2) => {
+    if (isReduceMotionEnabled()) return;
+    cameraShakeRef.current = { time: duration, duration, intensity };
+  }, []);
 
   // Spacecraft Repair, Launch Cinematic & Ending Screen States
   const [isRepairing, setIsRepairing] = useState<boolean>(false);
@@ -348,6 +380,18 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     );
     equipmentListRef.current = placementRef.current.generate();
     samplesListRef.current = placementRef.current.generateSamples();
+    landmarksListRef.current = placementRef.current.generateLandmarks();
+
+    // Register obstacle box for canyon rim chasm (walkable around, not over)
+    const canyonObstacleBoxes = landmarksListRef.current
+      .filter((lm) => lm.id === 'canyon_rim')
+      .map((lm) => ({
+        x: lm.worldX,
+        y: lm.worldY - 26,
+        width: 104,
+        height: 24,
+      }));
+    collisionRef.current.setObstacleBoxes(canyonObstacleBoxes);
 
     // Restore saved open-world progress if available
     const saved = getSavedProgress();
@@ -360,12 +404,23 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       completedRef.current = worldSave.completedEquipmentIds || [];
       setCollectedSampleIds(worldSave.collectedSampleIds || []);
       collectedSamplesRef.current = worldSave.collectedSampleIds || [];
+      setDiscoveredLandmarkIds(worldSave.discoveredLandmarkIds || []);
+      discoveredLandmarksRef.current = worldSave.discoveredLandmarkIds || [];
+      const loadedLogs = Array.isArray(worldSave.recoveredLogIds)
+        ? worldSave.recoveredLogIds
+        : deriveLogIdsFromParts(worldSave.collectedPartIds || [], worldSave.completedEquipmentIds || []);
+      setRecoveredLogIds(loadedLogs);
+      recoveredLogIdsRef.current = loadedLogs;
       setResearchPoints(worldSave.researchPoints || 0);
       researchPointsRef.current = worldSave.researchPoints || 0;
+      const parseUpgradeLvl = (v: any): number => {
+        if (typeof v === 'number') return Math.min(2, Math.max(0, Math.floor(v)));
+        return v ? 1 : 0;
+      };
       const loadedUpgrades: PlayerUpgrades = {
-        jetpack: !!worldSave.upgrades?.jetpack,
-        scan: !!worldSave.upgrades?.scan,
-        minimap: !!worldSave.upgrades?.minimap,
+        jetpack: parseUpgradeLvl(worldSave.upgrades?.jetpack),
+        scan: parseUpgradeLvl(worldSave.upgrades?.scan),
+        minimap: parseUpgradeLvl(worldSave.upgrades?.minimap),
       };
       setUpgrades(loadedUpgrades);
       upgradesRef.current = loadedUpgrades;
@@ -433,6 +488,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     ];
     cameraRef.current.x = playerRef.current.x;
     cameraRef.current.y = playerRef.current.y;
+    setNovaBubble(null);
+    novaBubbleTimerRef.current = 0;
     fogRef.current.revealArea(ship.tileX, ship.tileY, REVEAL_RADIUS_TILES);
     sound.playHover();
   }, []);
@@ -450,6 +507,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     ];
     cameraRef.current.x = playerRef.current.x;
     cameraRef.current.y = playerRef.current.y;
+    setNovaBubble(null);
+    novaBubbleTimerRef.current = 0;
     fogRef.current.revealArea(targetTileX, targetTileY, REVEAL_RADIUS_TILES);
     sound.playHover();
   }, []);
@@ -486,6 +545,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     (window as any).__getPlayer = () => playerRef.current;
     (window as any).__getNova = () => novaRef.current;
     (window as any).__getSamplesList = () => samplesListRef.current;
+    (window as any).__getLandmarksList = () => landmarksListRef.current;
+    (window as any).__getDiscoveredLandmarks = () => discoveredLandmarksRef.current;
     (window as any).__getResearchPoints = () => researchPointsRef.current;
     (window as any).__getUpgrades = () => upgradesRef.current;
     (window as any).__teleportToSample = (index: number = 0) => {
@@ -503,6 +564,365 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         sound.playHover();
       }
     };
+    (window as any).__teleportToLandmark = (indexOrId: number | string = 0) => {
+      const landmarks = landmarksListRef.current;
+      const target = typeof indexOrId === 'number'
+        ? landmarks[indexOrId]
+        : landmarks.find((l) => l.id === indexOrId);
+      if (target) {
+        playerRef.current.x = target.worldX;
+        playerRef.current.y = target.worldY;
+        playerRef.current.facing = 'down';
+        novaRef.current.x = playerRef.current.x - 16;
+        novaRef.current.y = playerRef.current.y;
+        cameraRef.current.x = playerRef.current.x;
+        cameraRef.current.y = playerRef.current.y;
+        setNovaBubble(null);
+        novaBubbleTimerRef.current = 0;
+        fogRef.current.revealArea(target.tileX, target.tileY, 20);
+        sound.playHover();
+        return { success: true, name: target.def.name, id: target.id };
+      }
+      return { success: false };
+    };
+    (window as any).__teleportNearLandmark = (indexOrId: number | string = 0, offsetTilesBelow: number = 6) => {
+      const landmarks = landmarksListRef.current;
+      const target = typeof indexOrId === 'number'
+        ? landmarks[indexOrId]
+        : landmarks.find((l) => l.id === indexOrId);
+      if (target) {
+        const wPx = target.def.widthTiles * 16;
+        const hPx = target.def.heightTiles * 16;
+        const centerWorldX = target.worldX;
+        const centerWorldY = target.worldY - hPx / 2;
+
+        const minY = target.worldY - hPx;
+
+        // Player placed exactly 6 tiles BELOW the landmark
+        playerRef.current.x = centerWorldX;
+        playerRef.current.y = target.worldY + offsetTilesBelow * 16;
+        playerRef.current.facing = 'up';
+        novaRef.current.x = playerRef.current.x - 16;
+        novaRef.current.y = playerRef.current.y;
+
+        // Frame camera so landmark top is safely below HUD bar and player is inside viewport
+        cameraRef.current.x = centerWorldX;
+        cameraRef.current.y = Math.round(minY + 80);
+
+        // Clear any pending bubbles
+        setNovaBubble(null);
+        novaBubbleTimerRef.current = 0;
+
+        // Reveal fog of war and set sol daylight
+        const tileCX = Math.floor(centerWorldX / 16);
+        const tileCY = Math.floor(centerWorldY / 16);
+        fogRef.current.revealArea(tileCX, tileCY, 24);
+        solTimeRef.current = 0.35;
+
+        sound.playHover();
+        return {
+          success: true,
+          name: target.def.name,
+          id: target.id,
+          bounds: {
+            minX: target.worldX - wPx / 2,
+            maxX: target.worldX + wPx / 2,
+            minY: target.worldY - hPx,
+            maxY: target.worldY,
+            centerX: centerWorldX,
+            centerY: centerWorldY,
+            wPx,
+            hPx,
+          },
+          playerPos: { x: playerRef.current.x, y: playerRef.current.y },
+          distTilesBelow: (playerRef.current.y - target.worldY) / 16,
+          distTilesX: Math.abs(playerRef.current.x - centerWorldX) / 16,
+          distTilesY: Math.abs(playerRef.current.y - centerWorldY) / 16,
+        };
+      }
+      return { success: false };
+    };
+    (window as any).__dismissLandmarkToast = () => {
+      setLandmarkToast(null);
+    };
+    (window as any).__getRecoveredLogs = () => recoveredLogIdsRef.current;
+    (window as any).__grantPart = () => handleGrantOnePart();
+    (window as any).__grantAllParts = () => handleGrantAllParts();
+    (window as any).__getCameraTransform = () => {
+      const canvas = canvasRef.current;
+      const width = canvas ? canvas.width : 1366;
+      const height = canvas ? canvas.height : 768;
+      return {
+        cameraX: cameraRef.current.x,
+        cameraY: cameraRef.current.y,
+        scale: CAMERA_SCALE,
+        viewportWidth: width,
+        viewportHeight: height,
+        viewCenterW: width / 2,
+        viewCenterH: height / 2,
+      };
+    };
+    (window as any).__testChasmCollision = () => {
+      const collision = collisionRef.current;
+      const lm = landmarksListRef.current.find((l) => l.id === 'canyon_rim');
+      if (!lm) return { success: false, reason: 'canyon_rim not found' };
+
+      const box = {
+        x: lm.worldX,
+        y: lm.worldY - 26,
+        width: 104,
+        height: 24,
+      };
+      const voidMinX = box.x - box.width / 2;
+      const voidMaxX = box.x + box.width / 2;
+      const voidMinY = box.y - box.height / 2;
+      const voidMaxY = box.y + box.height / 2;
+
+      const results: any[] = [];
+      const speeds = [
+        { name: 'normal', step: 95 * 0.016 },
+        { name: 'jetpack_boost', step: 95 * 1.6 * 0.016 },
+      ];
+
+      for (const sp of speeds) {
+        // 1. North: Approach from above (y < voidMinY), walking South (+Y)
+        {
+          let px = box.x;
+          let py = voidMinY - 20;
+          for (let i = 0; i < 40; i++) {
+            const res = collision.resolveMovement(px, py, 0, sp.step, 6, 4);
+            px = res.x;
+            py = res.y;
+          }
+          const insideVoid = px > voidMinX && px < voidMaxX && py > voidMinY && py < voidMaxY;
+          const hitY = py;
+          for (let i = 0; i < 20; i++) {
+            const res = collision.resolveMovement(px, py, 0, -sp.step, 6, 4);
+            px = res.x;
+            py = res.y;
+          }
+          const movedAway = (hitY - py) >= 12;
+          results.push({
+            side: 'North',
+            speed: sp.name,
+            insideVoid,
+            stuck: !movedAway,
+            passed: !insideVoid && movedAway,
+          });
+        }
+
+        // 2. South: Approach from below (y > voidMaxY), walking North (-Y)
+        {
+          let px = box.x;
+          let py = voidMaxY + 20;
+          for (let i = 0; i < 40; i++) {
+            const res = collision.resolveMovement(px, py, 0, -sp.step, 6, 4);
+            px = res.x;
+            py = res.y;
+          }
+          const insideVoid = px > voidMinX && px < voidMaxX && py > voidMinY && py < voidMaxY;
+          const hitY = py;
+          for (let i = 0; i < 20; i++) {
+            const res = collision.resolveMovement(px, py, 0, sp.step, 6, 4);
+            px = res.x;
+            py = res.y;
+          }
+          const movedAway = (py - hitY) >= 12;
+          results.push({
+            side: 'South',
+            speed: sp.name,
+            insideVoid,
+            stuck: !movedAway,
+            passed: !insideVoid && movedAway,
+          });
+        }
+
+        // 3. West: Approach from left (x < voidMinX), walking East (+X)
+        {
+          let px = voidMinX - 20;
+          let py = box.y;
+          for (let i = 0; i < 40; i++) {
+            const res = collision.resolveMovement(px, py, sp.step, 0, 6, 4);
+            px = res.x;
+            py = res.y;
+          }
+          const insideVoid = px > voidMinX && px < voidMaxX && py > voidMinY && py < voidMaxY;
+          const hitX = px;
+          for (let i = 0; i < 20; i++) {
+            const res = collision.resolveMovement(px, py, -sp.step, 0, 6, 4);
+            px = res.x;
+            py = res.y;
+          }
+          const movedAway = (hitX - px) >= 12;
+          results.push({
+            side: 'West',
+            speed: sp.name,
+            insideVoid,
+            stuck: !movedAway,
+            passed: !insideVoid && movedAway,
+          });
+        }
+
+        // 4. East: Approach from right (x > voidMaxX), walking West (-X)
+        {
+          let px = voidMaxX + 20;
+          let py = box.y;
+          for (let i = 0; i < 40; i++) {
+            const res = collision.resolveMovement(px, py, -sp.step, 0, 6, 4);
+            px = res.x;
+            py = res.y;
+          }
+          const insideVoid = px > voidMinX && px < voidMaxX && py > voidMinY && py < voidMaxY;
+          const hitX = px;
+          for (let i = 0; i < 20; i++) {
+            const res = collision.resolveMovement(px, py, sp.step, 0, 6, 4);
+            px = res.x;
+            py = res.y;
+          }
+          const movedAway = (px - hitX) >= 12;
+          results.push({
+            side: 'East',
+            speed: sp.name,
+            insideVoid,
+            stuck: !movedAway,
+            passed: !insideVoid && movedAway,
+          });
+        }
+      }
+
+      const allPassed = results.every((r) => r.passed);
+      return { success: true, allPassed, results };
+    };
+    (window as any).__testBFSReachability = (seeds?: (string | number)[]) => {
+      const targetSeeds = seeds || [19970704, 42, 2026];
+      const seedResults: any[] = [];
+
+      for (const s of targetSeeds) {
+        const testWorld = new WorldChunkManager(s);
+        const testCollision = new CollisionSystem(testWorld);
+        const safeSpawn = testCollision.findSafeSpawnPoint();
+        const testPlacement = new EquipmentPlacementSystem(s, testWorld, safeSpawn.tileX, safeSpawn.tileY);
+        const wrecks = testPlacement.generate();
+        const samples = testPlacement.generateSamples();
+        const landmarks = testPlacement.generateLandmarks();
+
+        const canyonBoxes = landmarks
+          .filter((lm) => lm.id === 'canyon_rim')
+          .map((lm) => ({ x: lm.worldX, y: lm.worldY - 26, width: 104, height: 24 }));
+        testCollision.setObstacleBoxes(canyonBoxes);
+
+        const visited = new Set<string>();
+        const queue: [number, number][] = [[safeSpawn.tileX, safeSpawn.tileY]];
+        visited.add(`${safeSpawn.tileX},${safeSpawn.tileY}`);
+
+        const dirs = [
+          [1, 0], [-1, 0], [0, 1], [0, -1],
+          [1, 1], [-1, 1], [1, -1], [-1, -1]
+        ];
+
+        while (queue.length > 0) {
+          const [cx, cy] = queue.shift()!;
+          const d = Math.hypot(cx - safeSpawn.tileX, cy - safeSpawn.tileY);
+          if (d >= 320) continue;
+
+          for (const [dx, dy] of dirs) {
+            const nx = cx + dx;
+            const ny = cy + dy;
+            const key = `${nx},${ny}`;
+            if (!visited.has(key)) {
+              if (testCollision.isTileWalkable(nx, ny)) {
+                visited.add(key);
+                queue.push([nx, ny]);
+              }
+            }
+          }
+        }
+
+        const unreachedWrecks = wrecks.filter((w) => {
+          if (visited.has(`${w.tileX},${w.tileY}`)) return false;
+          return !dirs.some(([dx, dy]) => visited.has(`${w.tileX + dx},${w.tileY + dy}`));
+        });
+        const unreachedSamples = samples.filter((sp) => {
+          if (visited.has(`${sp.tileX},${sp.tileY}`)) return false;
+          return !dirs.some(([dx, dy]) => visited.has(`${sp.tileX + dx},${sp.tileY + dy}`));
+        });
+        const shipReachable = visited.has(`${safeSpawn.tileX},${safeSpawn.tileY}`);
+
+        seedResults.push({
+          seed: s,
+          shipReachable,
+          totalWrecks: wrecks.length,
+          unreachedWrecksCount: unreachedWrecks.length,
+          totalSamples: samples.length,
+          unreachedSamplesCount: unreachedSamples.length,
+          allReachable: shipReachable && unreachedWrecks.length === 0 && unreachedSamples.length === 0,
+        });
+      }
+
+      const allSeedsPassed = seedResults.every((sr) => sr.allReachable);
+      return { allSeedsPassed, seedResults };
+    };
+    (window as any).__teleportToBiome = (biomeName: string) => {
+      const world = worldRef.current;
+      const centerTx = Math.floor(playerRef.current.x / 16);
+      const centerTy = Math.floor(playerRef.current.y / 16);
+      for (let r = 1; r <= 80; r++) {
+        for (let dx = -r; dx <= r; dx++) {
+          for (let dy = -r; dy <= r; dy++) {
+            if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+            const tx = centerTx + dx;
+            const ty = centerTy + dy;
+            if (world.getTileBiome(tx, ty) === biomeName && collisionRef.current.isTileWalkable(tx, ty)) {
+              playerRef.current.x = tx * 16 + 8;
+              playerRef.current.y = ty * 16 + 8;
+              cameraRef.current.x = playerRef.current.x;
+              cameraRef.current.y = playerRef.current.y;
+              setNovaBubble(null);
+              novaBubbleTimerRef.current = 0;
+              fogRef.current.revealArea(tx, ty, 20);
+              return { success: true, tileX: tx, tileY: ty };
+            }
+          }
+        }
+      }
+      return { success: false };
+    };
+    (window as any).__getCompassPointerLabels = () => lastCompassPointersRef.current;
+    (window as any).__setReduceMotion = (enabled: boolean) => {
+      setReduceMotionEnabled(enabled);
+    };
+    (window as any).__isReduceMotion = () => {
+      return isReduceMotionEnabled();
+    };
+    (window as any).__getCameraShake = () => {
+      return cameraShakeRef.current;
+    };
+    (window as any).__triggerCameraShake = (intensity = 3, duration = 0.2) => {
+      triggerCameraShake(intensity, duration);
+    };
+    (window as any).__checkSampleBiomes = (targetSeed?: number | string) => {
+      const s = targetSeed !== undefined ? targetSeed : config.seed;
+      const testWorld = new WorldChunkManager(s);
+      const testCollision = new CollisionSystem(testWorld);
+      const safeSpawn = testCollision.findSafeSpawnPoint();
+      const testPlacement = new EquipmentPlacementSystem(s, testWorld, safeSpawn.tileX, safeSpawn.tileY);
+      testPlacement.generate();
+      const samples = testPlacement.generateSamples();
+      const results = samples.map((sample) => {
+        const biome = testWorld.getTileBiome(sample.tileX, sample.tileY);
+        const matches = sample.def.preferredBiomes.includes(biome);
+        return {
+          id: sample.id,
+          name: sample.def.name,
+          rarity: sample.def.rarity,
+          biome,
+          preferredBiomes: sample.def.preferredBiomes,
+          matches,
+        };
+      });
+      const allMatch = results.every((r) => r.matches);
+      return { seed: s, allMatch, total: results.length, samples: results };
+    };
     return () => {
       delete (window as any).__teleportPlayer;
       delete (window as any).__getWorld;
@@ -514,9 +934,27 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       delete (window as any).__getPlayer;
       delete (window as any).__getNova;
       delete (window as any).__getSamplesList;
+      delete (window as any).__getLandmarksList;
+      delete (window as any).__getDiscoveredLandmarks;
+      delete (window as any).__getRecoveredLogs;
+      delete (window as any).__grantPart;
+      delete (window as any).__grantAllParts;
       delete (window as any).__getResearchPoints;
       delete (window as any).__getUpgrades;
       delete (window as any).__teleportToSample;
+      delete (window as any).__teleportToLandmark;
+      delete (window as any).__teleportNearLandmark;
+      delete (window as any).__dismissLandmarkToast;
+      delete (window as any).__teleportToBiome;
+      delete (window as any).__getCompassPointerLabels;
+      delete (window as any).__setReduceMotion;
+      delete (window as any).__isReduceMotion;
+      delete (window as any).__getCameraShake;
+      delete (window as any).__triggerCameraShake;
+      delete (window as any).__checkSampleBiomes;
+      delete (window as any).__getCameraTransform;
+      delete (window as any).__testChasmCollision;
+      delete (window as any).__testBFSReachability;
     };
   }, [teleportToEquipment]);
 
@@ -561,6 +999,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     novaRef.current.y = playerRef.current.y;
     cameraRef.current.x = playerRef.current.x;
     cameraRef.current.y = playerRef.current.y;
+    setNovaBubble(null);
+    novaBubbleTimerRef.current = 0;
     fogRef.current.revealArea(nearest.tileX, nearest.tileY, 18);
     sound.playHover();
   }, []);
@@ -583,6 +1023,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         shipRepaired: isShipRepairedRef.current,
         playTimeSeconds: playTimeRef.current,
         collectedSampleIds: collectedSamplesRef.current,
+        discoveredLandmarkIds: discoveredLandmarksRef.current,
+        recoveredLogIds: recoveredLogIdsRef.current,
         solTime: solTimeRef.current,
         researchPoints: researchPointsRef.current,
         upgrades: upgradesRef.current,
@@ -638,12 +1080,23 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       completedRef.current = saved.completedEquipmentIds || [];
       setCollectedSampleIds(saved.collectedSampleIds || []);
       collectedSamplesRef.current = saved.collectedSampleIds || [];
+      setDiscoveredLandmarkIds(saved.discoveredLandmarkIds || []);
+      discoveredLandmarksRef.current = saved.discoveredLandmarkIds || [];
+      const loadedLogs = Array.isArray(saved.recoveredLogIds)
+        ? saved.recoveredLogIds
+        : deriveLogIdsFromParts(saved.collectedPartIds || [], saved.completedEquipmentIds || []);
+      setRecoveredLogIds(loadedLogs);
+      recoveredLogIdsRef.current = loadedLogs;
       setResearchPoints(saved.researchPoints || 0);
       researchPointsRef.current = saved.researchPoints || 0;
+      const parseUpgradeLvl = (v: any): number => {
+        if (typeof v === 'number') return Math.min(2, Math.max(0, Math.floor(v)));
+        return v ? 1 : 0;
+      };
       const loadedUpgrades: PlayerUpgrades = {
-        jetpack: !!saved.upgrades?.jetpack,
-        scan: !!saved.upgrades?.scan,
-        minimap: !!saved.upgrades?.minimap,
+        jetpack: parseUpgradeLvl(saved.upgrades?.jetpack),
+        scan: parseUpgradeLvl(saved.upgrades?.scan),
+        minimap: parseUpgradeLvl(saved.upgrades?.minimap),
       };
       setUpgrades(loadedUpgrades);
       upgradesRef.current = loadedUpgrades;
@@ -679,10 +1132,14 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     completedRef.current = [];
     setCollectedSampleIds([]);
     collectedSamplesRef.current = [];
+    setDiscoveredLandmarkIds([]);
+    discoveredLandmarksRef.current = [];
+    setRecoveredLogIds([]);
+    recoveredLogIdsRef.current = [];
     setResearchPoints(0);
     researchPointsRef.current = 0;
-    setUpgrades({ jetpack: false, scan: false, minimap: false });
-    upgradesRef.current = { jetpack: false, scan: false, minimap: false };
+    setUpgrades({ jetpack: 0, scan: 0, minimap: 0 });
+    upgradesRef.current = { jetpack: 0, scan: 0, minimap: 0 };
     solTimeRef.current = 0.35;
     sprintEnergyRef.current = 100;
     setSprintEnergy(100);
@@ -704,7 +1161,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     sampleGlintTimerRef.current = 6.0; // Sonar scan reveals sample glints for ~6s
 
     const player = playerRef.current;
-    const maxRadius = upgradesRef.current.scan ? 350 : 280; // +25% Scan Radius upgrade
+    const scanLvl = typeof upgradesRef.current.scan === 'number' ? upgradesRef.current.scan : (upgradesRef.current.scan ? 1 : 0);
+    const maxRadius = scanLvl === 2 ? 420 : scanLvl === 1 ? 350 : 280; // +25% Scan Radius per level
     sonarWaveRef.current = {
       active: true,
       x: player.x,
@@ -716,7 +1174,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     // Temporarily reveal wide area in fog of war
     const currentTileX = Math.floor(player.x / 16);
     const currentTileY = Math.floor(player.y / 16);
-    const currentRevealRadius = upgradesRef.current.minimap ? 22 : 18;
+    const minimapLvl = typeof upgradesRef.current.minimap === 'number' ? upgradesRef.current.minimap : (upgradesRef.current.minimap ? 1 : 0);
+    const currentRevealRadius = minimapLvl === 2 ? 26 : minimapLvl === 1 ? 22 : 18;
     fogRef.current.revealArea(currentTileX, currentTileY, currentRevealRadius + 8);
   }, []);
 
@@ -765,6 +1224,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
   const triggerSampleCollect = useCallback((sample: PlacedSample) => {
     if (collectedSamplesRef.current.includes(sample.id)) return;
     sound.playCollectSample();
+    triggerCameraShake(2.5, 0.18);
 
     const nextSamples = Array.from(new Set([...collectedSamplesRef.current, sample.id]));
     setCollectedSampleIds(nextSamples);
@@ -795,15 +1255,24 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     generalBubbleCooldownRef.current = 15.0;
   }, [triggerAutoSave]);
 
-  // Buy Subsystem Upgrade at Crashed Spaceship
+  // Buy Subsystem Upgrade at Crashed Spaceship (2 levels each: costs 3/6, 4/8, 5/10 RP)
   const handleBuyUpgrade = useCallback((key: 'jetpack' | 'scan' | 'minimap') => {
-    const costs: Record<'jetpack' | 'scan' | 'minimap', number> = { jetpack: 2, scan: 3, minimap: 4 };
-    const cost = costs[key];
-    if (researchPointsRef.current < cost || upgradesRef.current[key]) return;
+    const costs: Record<'jetpack' | 'scan' | 'minimap', [number, number]> = {
+      jetpack: [3, 6],
+      scan: [4, 8],
+      minimap: [5, 10],
+    };
+    const currentVal = upgradesRef.current[key];
+    const currentLvl = typeof currentVal === 'number' ? currentVal : (currentVal ? 1 : 0);
+    if (currentLvl >= 2) return;
+
+    const cost = costs[key][currentLvl];
+    if (researchPointsRef.current < cost) return;
 
     sound.playSuccess();
     const nextPoints = researchPointsRef.current - cost;
-    const nextUpgrades: PlayerUpgrades = { ...upgradesRef.current, [key]: true };
+    const nextLvl = currentLvl + 1;
+    const nextUpgrades: PlayerUpgrades = { ...upgradesRef.current, [key]: nextLvl };
 
     setResearchPoints(nextPoints);
     researchPointsRef.current = nextPoints;
@@ -813,18 +1282,62 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     triggerAutoSave(true);
   }, [triggerAutoSave]);
 
+  // Debug Shortcut: Grant 1 Part to test incremental unlocks & story log toasts
+  const handleGrantOnePart = useCallback(() => {
+    sound.playSuccess();
+    for (const log of ORDERED_LOGS) {
+      if (!recoveredLogIdsRef.current.includes(log.id) || !collectedPartIdsRef.current.includes(log.partId)) {
+        const nextParts = Array.from(new Set([...collectedPartIdsRef.current, log.partId]));
+        const nextCompleted = Array.from(new Set([...completedRef.current, log.wreckId]));
+        const nextLogs = Array.from(new Set([...recoveredLogIdsRef.current, log.id]));
+
+        setCollectedPartIds(nextParts);
+        collectedPartIdsRef.current = nextParts;
+        setCompletedEquipmentIds(nextCompleted);
+        completedRef.current = nextCompleted;
+        setRecoveredLogIds(nextLogs);
+        recoveredLogIdsRef.current = nextLogs;
+
+        setLogToast({
+          number: nextLogs.length,
+          reaction: log.reaction,
+          probeName: log.probeName,
+        });
+        setTimeout(() => {
+          setLogToast(null);
+        }, 4000);
+
+        triggerAutoSave(true);
+        return;
+      }
+    }
+  }, [triggerAutoSave]);
+
   // Debug Shortcut: Instantly Grant All 8 Parts to test Ship Repair & Launch
   const handleGrantAllParts = useCallback(() => {
     sound.playSuccess();
     const allPartIds = Object.keys(SHIP_PARTS);
     const allEquipIds = equipmentListRef.current.map((e) => e.def.id);
+    const allLogIds = ORDERED_LOGS.map((l) => l.id);
 
     setCollectedPartIds(allPartIds);
     collectedPartIdsRef.current = allPartIds;
     setCompletedEquipmentIds(allEquipIds);
     completedRef.current = allEquipIds;
+    setRecoveredLogIds(allLogIds);
+    recoveredLogIdsRef.current = allLogIds;
     setResearchPoints(10);
     researchPointsRef.current = 10;
+
+    const lastLog = ORDERED_LOGS[ORDERED_LOGS.length - 1];
+    setLogToast({
+      number: allLogIds.length,
+      reaction: lastLog.reaction,
+      probeName: lastLog.probeName,
+    });
+    setTimeout(() => {
+      setLogToast(null);
+    }, 4000);
 
     triggerAutoSave(true);
     setNovaDialogue({
@@ -999,11 +1512,30 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     setCollectedPartIds(nextParts);
     collectedPartIdsRef.current = nextParts;
 
+    // Check if a story memory log unlocks with this part/wreck
+    const log = getLogForPart(def.rewardPartId) || getLogForWreck(equipId);
+    let logUnlocked = false;
+    if (log && !recoveredLogIdsRef.current.includes(log.id)) {
+      const nextLogs = Array.from(new Set([...recoveredLogIdsRef.current, log.id]));
+      setRecoveredLogIds(nextLogs);
+      recoveredLogIdsRef.current = nextLogs;
+      logUnlocked = true;
+
+      setLogToast({
+        number: nextLogs.length,
+        reaction: log.reaction,
+        probeName: log.probeName,
+      });
+      setTimeout(() => {
+        setLogToast(null);
+      }, 4000);
+    }
+
     // Trigger immediate autosave on part collected
     triggerAutoSave(true);
 
-    // Show Part Pickup Toast
-    if (part) {
+    // Show Part Pickup Toast only if no story log toast is shown
+    if (part && !logUnlocked) {
       setPartToast({
         partName: part.name,
         iconKey: part.iconKey,
@@ -1123,7 +1655,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
 
       if (wantsSprint && sprintEnergyRef.current > 5) {
         isSprinting = true;
-        const drainRate = upgradesRef.current.jetpack ? 16 : 28; // Longer duration with Jetpack upgrade
+        const jetpackLvl = typeof upgradesRef.current.jetpack === 'number' ? upgradesRef.current.jetpack : (upgradesRef.current.jetpack ? 1 : 0);
+        const drainRate = jetpackLvl === 2 ? 14 : jetpackLvl === 1 ? 20 : 28; // Longer duration with Jetpack upgrade
         sprintEnergyRef.current = Math.max(0, sprintEnergyRef.current - dt * drainRate);
       } else {
         sprintEnergyRef.current = Math.min(100, sprintEnergyRef.current + dt * 20);
@@ -1171,6 +1704,32 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
             maxLife: 0.25,
             shape: 'spark',
           });
+
+          // Ground dust puffs kicked up by thruster downblast (Juice C.2)
+          if (Math.random() < 0.65) {
+            const dustColor =
+              biomeType === 'snow'
+                ? 'rgba(226, 232, 240, 0.65)'
+                : biomeType === 'desert'
+                ? 'rgba(217, 119, 6, 0.65)'
+                : biomeType === 'grassland'
+                ? 'rgba(101, 163, 13, 0.55)'
+                : 'rgba(194, 65, 12, 0.65)';
+            const puffAngle = Math.random() * Math.PI * 2;
+            const puffSpeed = 10 + Math.random() * 22;
+            particlesRef.current.push({
+              x: player.x + (Math.random() - 0.5) * 8,
+              y: player.y + 2 + (Math.random() - 0.5) * 4,
+              vx: Math.cos(puffAngle) * puffSpeed,
+              vy: Math.sin(puffAngle) * puffSpeed * 0.4 - 3,
+              alpha: 0.65,
+              size: 2.2 + Math.random() * 1.8,
+              color: dustColor,
+              life: 0,
+              maxLife: 0.35 + Math.random() * 0.25,
+              shape: 'circle',
+            });
+          }
         }
 
         player.walkFrame += dt * (isSprinting ? 12 : 8);
@@ -1214,8 +1773,10 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
               alpha: 0.6,
               type: 'boot',
               color: fpColor,
+              lifetime: 4.0,
+              maxLifetime: 4.0,
             });
-            if (footprintsRef.current.length > 80) {
+            if (footprintsRef.current.length > 200) {
               footprintsRef.current.shift();
             }
           }
@@ -1313,8 +1874,10 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
                 alpha: 0.45,
                 type: 'paw',
                 color: fpColor,
+                lifetime: 4.0,
+                maxLifetime: 4.0,
               });
-              if (footprintsRef.current.length > 80) {
+              if (footprintsRef.current.length > 200) {
                 footprintsRef.current.shift();
               }
             }
@@ -1357,6 +1920,19 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       if (generalBubbleCooldownRef.current > 0) generalBubbleCooldownRef.current -= dt;
       if (sampleGlintTimerRef.current > 0) sampleGlintTimerRef.current -= dt;
 
+      // B.4: Clear any pending biome-comment bubble when player teleports or changes chunk by > 10 tiles
+      const curTileX = Math.floor(player.x / 16);
+      const curTileY = Math.floor(player.y / 16);
+      if (lastPlayerTileRef.current) {
+        const dTilesX = Math.abs(curTileX - lastPlayerTileRef.current.x);
+        const dTilesY = Math.abs(curTileY - lastPlayerTileRef.current.y);
+        if (dTilesX > 10 || dTilesY > 10) {
+          setNovaBubble(null);
+          novaBubbleTimerRef.current = 0;
+        }
+      }
+      lastPlayerTileRef.current = { x: curTileX, y: curTileY };
+
       // C.1: If uncollected sample within ~20 tiles (320px), Nova trots a few tiles toward it with chirp/"?"
       if (sampleBubbleCooldownRef.current <= 0 && !isPaused) {
         const samples = samplesListRef.current;
@@ -1383,6 +1959,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
           });
           novaBubbleTimerRef.current = 4.0;
           sampleBubbleCooldownRef.current = 25.0; // Cooldown 25s
+          generalBubbleCooldownRef.current = 15.0; // Max one bubble per 15s
           sound.playHover();
         }
       }
@@ -1421,6 +1998,63 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
             });
             novaBubbleTimerRef.current = 4.0;
             generalBubbleCooldownRef.current = 15.0;
+            break;
+          }
+        }
+      }
+
+      // Slow-moving dust devil animation drift
+      const dustDevil = landmarksListRef.current.find((lm) => lm.id === 'dust_devil');
+      if (dustDevil) {
+        if ((dustDevil as any).baseWorldX === undefined) {
+          (dustDevil as any).baseWorldX = dustDevil.worldX;
+          (dustDevil as any).baseWorldY = dustDevil.worldY;
+        }
+        dustDevil.worldX = (dustDevil as any).baseWorldX + Math.sin(time * 0.0006) * 36;
+        dustDevil.worldY = (dustDevil as any).baseWorldY + Math.cos(time * 0.0004) * 28;
+      }
+
+      // Landmark Discovery Check (walking within 5 tiles = 80px discovers once)
+      if (!isPaused) {
+        const landmarks = landmarksListRef.current;
+        for (let lIdx = 0; lIdx < landmarks.length; lIdx++) {
+          const lm = landmarks[lIdx];
+          if (discoveredLandmarksRef.current.includes(lm.id)) continue;
+          const dist = Math.hypot(player.x - lm.worldX, player.y - lm.worldY);
+          if (dist <= 80) {
+            const nextDiscovered = [...discoveredLandmarksRef.current, lm.id];
+            discoveredLandmarksRef.current = nextDiscovered;
+            setDiscoveredLandmarkIds(nextDiscovered);
+
+            const nextRP = researchPointsRef.current + 1;
+            researchPointsRef.current = nextRP;
+            setResearchPoints(nextRP);
+
+            setLandmarkToast({
+              name: lm.def.name,
+              fact: lm.def.scienceFact,
+            });
+            setTimeout(() => {
+              setLandmarkToast(null);
+            }, 5000);
+
+            const novaLines: Record<string, string> = {
+              canyon_rim: "Dizzying abyss... watch your step near the chasm edge!",
+              shield_volcano: "Ancient basalt caldera ahead. Low slopes, colossal scale.",
+              river_delta: "Branching channels! Ancient river systems once flowed here.",
+              ice_cave: "Subzero glacial cavern archway. Watch for falling icicles!",
+              dust_devil: "Spinning thermal dust vortex! Keep your visor seal tight.",
+            };
+            setNovaBubble({
+              text: novaLines[lm.id] || `Fascinating Martian geology: ${lm.def.name}!`,
+              mood: 'celebrate',
+            });
+            novaBubbleTimerRef.current = 4.5;
+            generalBubbleCooldownRef.current = 15.0;
+
+            sound.playLandmarkDiscovery();
+            triggerCameraShake(3.5, 0.28);
+            triggerAutoSave(true);
             break;
           }
         }
@@ -1529,12 +2163,24 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         }
       }
 
-      // Update Particles
+      // Update Footprints (Fade and remove after ~4s - Juice C.1)
+      for (let fIdx = footprintsRef.current.length - 1; fIdx >= 0; fIdx--) {
+        const fp = footprintsRef.current[fIdx];
+        fp.lifetime -= dt;
+        if (fp.lifetime <= 0) {
+          footprintsRef.current.splice(fIdx, 1);
+        }
+      }
+
+      // Update Particles (Dust puffs expand as they dissipate - Juice C.2)
       for (let pIdx = particlesRef.current.length - 1; pIdx >= 0; pIdx--) {
         const p = particlesRef.current[pIdx];
         p.life += dt;
         p.x += p.vx * dt;
         p.y += p.vy * dt;
+        if (p.shape === 'circle') {
+          p.size += dt * 3.5;
+        }
         p.alpha = Math.max(0, 1 - p.life / p.maxLife);
         if (p.life >= p.maxLife) {
           particlesRef.current.splice(pIdx, 1);
@@ -1542,13 +2188,41 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       }
 
       // ==========================================
-      // 4. CAMERA
+      // 4. CAMERA (Nudge / Shake - Juice C.3 & C.4)
       // ==========================================
-      camera.x += (player.x - camera.x) * 0.12;
-      camera.y += (player.y - camera.y) * 0.12;
+      let targetCamX = player.x;
+      let targetCamY = player.y;
 
-      const camRenderX = Math.round(camera.x);
-      const camRenderY = Math.round(camera.y);
+      // When near a landmark (within 12 tiles), frame smoothly between player and landmark center
+      const nearbyLandmark = landmarksListRef.current.find((lm) => {
+        const lmCenterY = lm.worldY - (lm.def.heightTiles * 16) / 2;
+        return Math.hypot(player.x - lm.worldX, player.y - lmCenterY) <= 12 * 16;
+      });
+      if (nearbyLandmark) {
+        const lmMinY = nearbyLandmark.worldY - (nearbyLandmark.def.heightTiles * 16);
+        targetCamX = nearbyLandmark.worldX;
+        targetCamY = Math.round(lmMinY + 80);
+      }
+
+      camera.x += (targetCamX - camera.x) * 0.15;
+      camera.y += (targetCamY - camera.y) * 0.15;
+
+      if (cameraShakeRef.current.time > 0) {
+        cameraShakeRef.current.time -= dt;
+        if (cameraShakeRef.current.time < 0) cameraShakeRef.current.time = 0;
+      }
+
+      let shakeOffsetX = 0;
+      let shakeOffsetY = 0;
+      if (cameraShakeRef.current.time > 0 && !isReduceMotionEnabled()) {
+        const progress = cameraShakeRef.current.time / cameraShakeRef.current.duration;
+        const currentMag = cameraShakeRef.current.intensity * progress;
+        shakeOffsetX = (Math.random() - 0.5) * 2 * currentMag;
+        shakeOffsetY = (Math.random() - 0.5) * 2 * currentMag;
+      }
+
+      const camRenderX = Math.round(camera.x + shakeOffsetX);
+      const camRenderY = Math.round(camera.y + shakeOffsetY);
 
       // ==========================================
       // 5. RENDERING PIPELINE
@@ -1621,6 +2295,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
           ctx.save();
           ctx.translate(fp.x, fp.y);
           ctx.rotate(fp.angle);
+          ctx.globalAlpha = Math.max(0, fp.alpha * (fp.lifetime / fp.maxLifetime));
           ctx.fillStyle = fp.color;
           if (fp.type === 'boot') {
             ctx.fillRect(-2, -3, 4, 2);
@@ -1696,6 +2371,68 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
                 c.fillStyle = '#38bdf8';
                 c.fillText(label, s.worldX, tagY + 10);
                 atlas.drawSprite(c, 'key_e', s.worldX - 6, tagY - 15, 12, 12);
+              }
+            },
+          });
+        }
+      }
+
+      // Add Procedural Natural Landmarks (5 per world, 6-10 tiles wide)
+      const visibleLandmarks = landmarksListRef.current;
+      for (let lIdx = 0; lIdx < visibleLandmarks.length; lIdx++) {
+        const lm = visibleLandmarks[lIdx];
+        const halfW = (lm.def.widthTiles * 16) / 2;
+        const h = lm.def.heightTiles * 16;
+        if (
+          lm.worldX + halfW >= minWorldX - 100 &&
+          lm.worldX - halfW <= maxWorldX + 100 &&
+          lm.worldY >= minWorldY - 100 &&
+          lm.worldY - h <= maxWorldY + 100
+        ) {
+          renderList.push({
+            type: 'landmark' as any,
+            sortY: lm.worldY,
+            render: (c) => {
+              drawLandmark(c, lm, time);
+
+              // If discovered, draw subtle holographic marker/nameplate only within 8 tiles (fading out between 6 and 8 tiles)
+              const isDiscovered = discoveredLandmarksRef.current.includes(lm.id);
+              const distToPlayer = Math.hypot(player.x - lm.worldX, player.y - lm.worldY);
+              const maxDist = 8 * 16; // 128px
+              const fadeStartDist = 6 * 16; // 96px
+              if (isDiscovered && distToPlayer <= maxDist) {
+                const tagAlpha = distToPlayer <= fadeStartDist
+                  ? 1.0
+                  : Math.max(0, 1.0 - (distToPlayer - fadeStartDist) / (maxDist - fadeStartDist));
+                c.save();
+                c.globalAlpha = tagAlpha;
+                c.font = 'bold 8px monospace';
+                c.textAlign = 'center';
+
+                const tagText = lm.def.name;
+                const tagW = c.measureText(tagText).width + 12;
+
+                // Requirement B.3: Landmark name tags must stay fully on screen (clamp below the HUD bar)
+                const naturalTagY = Math.round(lm.worldY - h - 14);
+                // Top HUD bar height is ~56px in screen space. Tag box top is tagY - 8.
+                // Screen Y = viewCenterH + (tagY - 8 - camRenderY) * CAMERA_SCALE >= 62
+                const minTagY = camRenderY + (62 - viewCenterH) / CAMERA_SCALE + 8;
+                const maxTagY = camRenderY + (canvas.height - 24 - viewCenterH) / CAMERA_SCALE - 5;
+                const tagY = Math.max(minTagY, Math.min(maxTagY, naturalTagY));
+
+                // Horizontal clamping within screen bounds
+                const minTagX = camRenderX + (16 - viewCenterW) / CAMERA_SCALE + tagW / 2;
+                const maxTagX = camRenderX + (canvas.width - 16 - viewCenterW) / CAMERA_SCALE - tagW / 2;
+                const tagX = Math.max(minTagX, Math.min(maxTagX, lm.worldX));
+
+                c.fillStyle = 'rgba(2, 6, 23, 0.85)';
+                c.strokeStyle = lm.def.iconColor || '#38bdf8';
+                c.lineWidth = 1;
+                c.fillRect(tagX - tagW / 2, tagY - 8, tagW, 13);
+                c.strokeRect(tagX - tagW / 2, tagY - 8, tagW, 13);
+                c.fillStyle = '#f8fafc';
+                c.fillText(tagText, tagX, tagY + 2);
+                c.restore();
               }
             },
           });
@@ -2173,6 +2910,21 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         const uncompleted = equipmentList.filter((e) => !completedRef.current.includes(e.def.id));
         const margin = 55;
 
+        interface EdgePointerItem {
+          borderX: number;
+          borderY: number;
+          angle: number;
+          distTiles: number;
+          labelText?: string;
+          labelW?: number;
+          labelH?: number;
+          labelX?: number;
+          labelY?: number;
+        }
+
+        const offscreenPointers: EdgePointerItem[] = [];
+        ctx.font = 'bold 9px monospace';
+
         for (let i = 0; i < uncompleted.length; i++) {
           const eq = uncompleted[i];
           const dx = (eq.worldX - camRenderX) * CAMERA_SCALE;
@@ -2188,32 +2940,36 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
             const borderX = Math.max(margin, Math.min(canvas.width - margin, viewCenterW + Math.cos(angle) * (viewCenterW - margin)));
             const borderY = Math.max(margin, Math.min(canvas.height - margin, viewCenterH + Math.sin(angle) * (viewCenterH - margin)));
 
-            ctx.save();
-            ctx.translate(borderX, borderY);
-            ctx.rotate(angle);
+            const item: EdgePointerItem = {
+              borderX,
+              borderY,
+              angle,
+              distTiles,
+            };
 
-            // Glowing arrow pointer
-            ctx.fillStyle = '#06b6d4';
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(12, 0);
-            ctx.lineTo(-6, -7);
-            ctx.lineTo(-2, 0);
-            ctx.lineTo(-6, 7);
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-            ctx.restore();
+            // Requirement A.5: Drop label text for pointers farther than 150m (arrow only)
+            if (distTiles <= 150) {
+              const shortName = eq.def.name.split('(')[0].trim();
+              const labelText = `${shortName} [${distTiles}m]`;
+              const textMetrics = ctx.measureText(labelText);
+              const labelW = textMetrics.width;
+              const labelH = 12;
 
-            // Text label
-            ctx.save();
-            ctx.font = 'bold 9px monospace';
-            ctx.fillStyle = '#22d3ee';
-            ctx.textAlign = 'center';
-            const shortName = eq.def.name.split('(')[0].trim();
-            ctx.fillText(`${shortName} [${distTiles}m]`, borderX, borderY + 16);
-            ctx.restore();
+              // Clamp inside screen bounds with inward offset away from border arrow (Requirement C)
+              const inwardDist = 20;
+              const inwardX = borderX - Math.cos(angle) * inwardDist;
+              const inwardY = borderY - Math.sin(angle) * inwardDist;
+              const clampedX = Math.max(labelW / 2 + 10, Math.min(canvas.width - labelW / 2 - 10, inwardX));
+              const clampedY = Math.max(22, Math.min(canvas.height - 16, inwardY));
+
+              item.labelText = labelText;
+              item.labelW = labelW;
+              item.labelH = labelH;
+              item.labelX = clampedX;
+              item.labelY = clampedY;
+            }
+
+            offscreenPointers.push(item);
           } else {
             // Target is on-screen: draw glowing bracket around it
             ctx.save();
@@ -2224,16 +2980,91 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
             ctx.restore();
           }
         }
+
+        // Requirement A.5: De-overlap labels (nudge or stack with a 2px gap)
+        const labeledItems = offscreenPointers.filter((p) => p.labelText && p.labelX !== undefined && p.labelY !== undefined);
+        for (let pass = 0; pass < 3; pass++) {
+          for (let a = 0; a < labeledItems.length; a++) {
+            for (let b = a + 1; b < labeledItems.length; b++) {
+              const pA = labeledItems[a];
+              const pB = labeledItems[b];
+              const overlapX = Math.abs(pA.labelX! - pB.labelX!) < (pA.labelW! + pB.labelW!) / 2 + 6;
+              const overlapY = Math.abs(pA.labelY! - pB.labelY!) < (pA.labelH! + pB.labelH!) / 2 + 2;
+
+              if (overlapX && overlapY) {
+                const reqSeparation = (pA.labelH! + pB.labelH!) / 2 + 2;
+                if (pA.labelY! <= pB.labelY!) {
+                  pA.labelY = Math.max(20, pA.labelY! - reqSeparation / 2);
+                  pB.labelY = Math.min(canvas.height - 12, pB.labelY! + reqSeparation / 2);
+                } else {
+                  pB.labelY = Math.max(20, pB.labelY! - reqSeparation / 2);
+                  pA.labelY = Math.min(canvas.height - 12, pA.labelY! + reqSeparation / 2);
+                }
+              }
+            }
+          }
+        }
+
+        lastCompassPointersRef.current = labeledItems.map((item) => ({
+          labelText: item.labelText,
+          x: item.labelX,
+          y: item.labelY,
+          w: item.labelW,
+          h: item.labelH,
+          distTiles: item.distTiles,
+        }));
+
+        // Requirement C: Render arrows in Pass 1, then all label text in Pass 2 ABOVE arrows so no arrow overlaps text
+        for (const p of offscreenPointers) {
+          ctx.save();
+          ctx.translate(p.borderX, p.borderY);
+          ctx.rotate(p.angle);
+
+          // Glowing arrow pointer
+          ctx.fillStyle = '#06b6d4';
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(12, 0);
+          ctx.lineTo(-6, -7);
+          ctx.lineTo(-2, 0);
+          ctx.lineTo(-6, 7);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // Pass 2: Labels drawn strictly above all arrow geometry
+        for (const p of labeledItems) {
+          if (p.labelText && p.labelX !== undefined && p.labelY !== undefined && p.labelW !== undefined) {
+            ctx.save();
+            ctx.font = 'bold 9px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = 'rgba(2, 6, 23, 0.88)';
+            ctx.strokeStyle = 'rgba(6, 182, 212, 0.4)';
+            ctx.lineWidth = 1;
+            const bgW = p.labelW + 8;
+            const bgH = 13;
+            ctx.fillRect(p.labelX - bgW / 2, p.labelY - 9, bgW, bgH);
+            ctx.strokeRect(p.labelX - bgW / 2, p.labelY - 9, bgW, bgH);
+            ctx.fillStyle = '#22d3ee';
+            ctx.fillText(p.labelText, p.labelX, p.labelY + 1);
+            ctx.restore();
+          }
+        }
       }
 
       // Reveal fog of war around player (expanded by Minimap Reveal upgrade if owned)
-      const currentReveal = upgradesRef.current.minimap ? 22 : REVEAL_RADIUS_TILES;
+      const minimapLvl = typeof upgradesRef.current.minimap === 'number' ? upgradesRef.current.minimap : (upgradesRef.current.minimap ? 1 : 0);
+      const currentReveal = minimapLvl === 2 ? 26 : minimapLvl === 1 ? 22 : REVEAL_RADIUS_TILES;
       fogRef.current.revealArea(currentTileX, currentTileY, currentReveal);
 
       // Render Sonar Sample Glints on world canvas during sampleGlintTimer (~6s)
       if (sampleGlintTimerRef.current > 0) {
         const samples = samplesListRef.current;
-        const currentScanRadius = upgradesRef.current.scan ? 350 : 280;
+        const scanLvl = typeof upgradesRef.current.scan === 'number' ? upgradesRef.current.scan : (upgradesRef.current.scan ? 1 : 0);
+        const currentScanRadius = scanLvl === 2 ? 420 : scanLvl === 1 ? 350 : 280;
         for (let i = 0; i < samples.length; i++) {
           const s = samples[i];
           if (collectedSamplesRef.current.includes(s.id)) continue;
@@ -2288,7 +3119,9 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
             time,
             samplesListRef.current,
             collectedSamplesRef.current,
-            sampleGlintTimerRef.current > 0
+            sampleGlintTimerRef.current > 0,
+            landmarksListRef.current,
+            discoveredLandmarksRef.current
           );
         }
       }
@@ -2311,7 +3144,9 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
             time,
             samplesListRef.current,
             collectedSamplesRef.current,
-            sampleGlintTimerRef.current > 0
+            sampleGlintTimerRef.current > 0,
+            landmarksListRef.current,
+            discoveredLandmarksRef.current
           );
         }
       }
@@ -2467,6 +3302,31 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         </div>
       )}
 
+      {/* Memory Log Recovered Toast Notification */}
+      {logToast && (
+        <div
+          data-testid="log-toast"
+          className="absolute top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-slate-950/95 border border-cyan-400 text-slate-100 shadow-[0_0_35px_rgba(6,182,212,0.5)] flex items-center gap-3 animate-in fade-in zoom-in-95 duration-200 max-w-md pointer-events-none select-none"
+        >
+          <div className="p-2 rounded-xl bg-cyan-950/80 border border-cyan-500/50 text-cyan-300 shrink-0">
+            <Radio className="w-5 h-5 text-cyan-400" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span data-testid="log-toast-title" className="text-xs font-bold text-white font-mono uppercase tracking-wider">
+                LOG {logToast.number}/8 recovered
+              </span>
+              <span data-testid="fiction-tag" className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase">
+                FICTION
+              </span>
+            </div>
+            <div data-testid="log-toast-reaction" className="text-[11px] text-cyan-200 font-mono italic mt-0.5 leading-snug">
+              Nova: "{logToast.reaction}"
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Part Pickup Toast Notification */}
       {partToast && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl bg-slate-950/95 border border-cyan-400 text-slate-100 shadow-[0_0_40px_rgba(6,182,212,0.6)] flex items-center gap-3.5 animate-in fade-in zoom-in-90 duration-200">
@@ -2496,6 +3356,26 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
             </div>
             <div className="text-sm font-bold text-white">
               {sampleToast.name}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Natural Landmark Discovered Toast Notification (Lower center above control hint bar) */}
+      {landmarkToast && (
+        <div
+          data-testid="landmark-toast"
+          className="absolute bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-slate-950/95 border border-indigo-400 text-slate-100 shadow-[0_0_35px_rgba(99,102,241,0.45)] flex items-center gap-3 animate-in fade-in zoom-in-95 duration-200 max-w-md pointer-events-none select-none"
+        >
+          <div className="p-2 rounded-xl bg-indigo-950/80 border border-indigo-500/50 text-indigo-300 shrink-0">
+            <Compass className="w-5 h-5 text-indigo-400" />
+          </div>
+          <div>
+            <div data-testid="landmark-toast-name" className="text-sm font-bold text-white leading-tight">
+              {landmarkToast.name}
+            </div>
+            <div data-testid="landmark-toast-fact" className="text-[11px] text-slate-300 font-mono mt-0.5 leading-snug">
+              {landmarkToast.fact}
             </div>
           </div>
         </div>
@@ -2645,9 +3525,16 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
               🔄 Reset Save
             </button>
             <button
+              data-testid="grant-one-part-btn"
+              onClick={handleGrantOnePart}
+              className="py-1 px-1.5 rounded bg-cyan-600/40 hover:bg-cyan-600/60 border border-cyan-400 text-cyan-200 font-mono text-[9px] font-bold text-center cursor-pointer transition-colors"
+            >
+              ⚡ Grant 1 Part
+            </button>
+            <button
               data-testid="grant-parts-btn"
               onClick={handleGrantAllParts}
-              className="py-1 px-1.5 rounded bg-amber-500/40 hover:bg-amber-500/60 border border-amber-400 text-amber-200 font-mono text-[9px] font-bold text-center cursor-pointer transition-colors shadow-[0_0_10px_rgba(245,158,11,0.3)]"
+              className="col-span-2 py-1 px-1.5 rounded bg-amber-500/40 hover:bg-amber-500/60 border border-amber-400 text-amber-200 font-mono text-[9px] font-bold text-center cursor-pointer transition-colors shadow-[0_0_10px_rgba(245,158,11,0.3)]"
             >
               ⚡ Grant 8 Parts
             </button>
@@ -2727,6 +3614,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         <MissionArchiveModal
           completedEquipmentIds={completedEquipmentIds}
           collectedSampleIds={collectedSampleIds}
+          discoveredLandmarkIds={discoveredLandmarkIds}
+          recoveredLogIds={recoveredLogIds}
           researchPoints={researchPoints}
           onClose={() => setShowCodex(false)}
         />
@@ -2814,96 +3703,147 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
                     </div>
                   </div>
                 </div>
-                <span className="text-[10px] text-slate-400">Earned from Science Samples</span>
+                <span className="text-[10px] text-slate-400">Earned from Science Samples & Landmarks</span>
               </div>
 
-              {/* 3 Upgrades List */}
+              {/* 3 Upgrades List (2 Levels Each) */}
               <div className="space-y-2.5 pt-1">
                 <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Subsystem Upgrades:</div>
 
                 {/* Upgrade 1: Jetpack Boost */}
-                <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between gap-3">
-                  <div className="space-y-0.5">
-                    <div className="font-bold text-white flex items-center gap-2">
-                      Jetpack Thruster Capacitor
-                      {upgrades.jetpack && <span className="text-emerald-400 text-[10px] font-bold">✓ OWNED</span>}
+                {(() => {
+                  const lvl = typeof upgrades.jetpack === 'number' ? upgrades.jetpack : (upgrades.jetpack ? 1 : 0);
+                  const isMax = lvl >= 2;
+                  const cost = isMax ? 0 : [3, 6][lvl];
+                  const canAfford = !isMax && researchPoints >= cost;
+                  const needed = isMax ? 0 : Math.max(0, cost - researchPoints);
+                  const effectText = lvl === 2 ? 'Sprint Drain: -50% (Lv.2 Max)' : lvl === 1 ? 'Sprint Drain: -30% (Lv.1)' : 'Sprint Drain: Standard (100%)';
+                  return (
+                    <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-white flex items-center gap-2">
+                          <span>Jetpack Thruster Capacitor</span>
+                          {isMax && <span className="text-emerald-400 text-[10px] font-bold">✓ MAX</span>}
+                        </div>
+                        <div className="flex items-center gap-1.5 py-0.5">
+                          <div className="flex items-center gap-1">
+                            <span className={`w-2 h-2 rounded-full ${lvl >= 1 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
+                            <span className={`w-2 h-2 rounded-full ${lvl >= 2 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-400">Level {lvl}/2</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400">Extended thruster sprint duration with reduced battery drain rate.</div>
+                        <div data-testid="effect-value-jetpack" className="text-[10px] text-cyan-300 font-bold">
+                          {effectText}
+                        </div>
+                      </div>
+                      <button
+                        data-testid="buy-upgrade-jetpack"
+                        onClick={() => handleBuyUpgrade('jetpack')}
+                        disabled={isMax || !canAfford}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono shrink-0 transition-colors ${
+                          isMax
+                            ? 'bg-slate-800 text-emerald-400 cursor-default border border-slate-700'
+                            : canAfford
+                            ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-md cursor-pointer'
+                            : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
+                        }`}
+                      >
+                        {isMax ? 'Owned' : canAfford ? `Buy (${cost} RP)` : `Need ${needed} more RP`}
+                      </button>
                     </div>
-                    <div className="text-[11px] text-slate-400">Extended thruster sprint duration with reduced battery drain rate.</div>
-                    <div data-testid="effect-value-jetpack" className="text-[10px] text-cyan-300 font-bold">
-                      {upgrades.jetpack ? 'Sprint Drain: -35% (Extended Duration)' : 'Sprint Drain: Standard (100%)'}
-                    </div>
-                  </div>
-                  <button
-                    data-testid="buy-upgrade-jetpack"
-                    onClick={() => handleBuyUpgrade('jetpack')}
-                    disabled={upgrades.jetpack || researchPoints < 2}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono shrink-0 cursor-pointer transition-colors ${
-                      upgrades.jetpack
-                        ? 'bg-slate-800 text-emerald-400 cursor-default border border-slate-700'
-                        : researchPoints >= 2
-                        ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-md'
-                        : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
-                    }`}
-                  >
-                    {upgrades.jetpack ? 'INSTALLED' : researchPoints >= 2 ? 'BUY (2 RP)' : 'LOCKED (2 RP)'}
-                  </button>
-                </div>
+                  );
+                })()}
 
                 {/* Upgrade 2: Scan Radius */}
-                <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between gap-3">
-                  <div className="space-y-0.5">
-                    <div className="font-bold text-white flex items-center gap-2">
-                      Deep Resonance Sonar Antenna
-                      {upgrades.scan && <span className="text-emerald-400 text-[10px] font-bold">✓ OWNED</span>}
+                {(() => {
+                  const lvl = typeof upgrades.scan === 'number' ? upgrades.scan : (upgrades.scan ? 1 : 0);
+                  const isMax = lvl >= 2;
+                  const cost = isMax ? 0 : [4, 8][lvl];
+                  const canAfford = !isMax && researchPoints >= cost;
+                  const needed = isMax ? 0 : Math.max(0, cost - researchPoints);
+                  const effectText = lvl === 2 ? 'Scan Radius: 420m (+50% Lv.2 Max)' : lvl === 1 ? 'Scan Radius: 350m (+25% Lv.1)' : 'Scan Radius: 280m (Standard)';
+                  return (
+                    <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-white flex items-center gap-2">
+                          <span>Deep Resonance Sonar Antenna</span>
+                          {isMax && <span className="text-emerald-400 text-[10px] font-bold">✓ MAX</span>}
+                        </div>
+                        <div className="flex items-center gap-1.5 py-0.5">
+                          <div className="flex items-center gap-1">
+                            <span className={`w-2 h-2 rounded-full ${lvl >= 1 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
+                            <span className={`w-2 h-2 rounded-full ${lvl >= 2 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-400">Level {lvl}/2</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400">Expands NOVA's acoustic radar ping wave radius.</div>
+                        <div data-testid="effect-value-scan" className="text-[10px] text-cyan-300 font-bold">
+                          {effectText}
+                        </div>
+                      </div>
+                      <button
+                        data-testid="buy-upgrade-scan"
+                        onClick={() => handleBuyUpgrade('scan')}
+                        disabled={isMax || !canAfford}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono shrink-0 transition-colors ${
+                          isMax
+                            ? 'bg-slate-800 text-emerald-400 cursor-default border border-slate-700'
+                            : canAfford
+                            ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-md cursor-pointer'
+                            : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
+                        }`}
+                      >
+                        {isMax ? 'Owned' : canAfford ? `Buy (${cost} RP)` : `Need ${needed} more RP`}
+                      </button>
                     </div>
-                    <div className="text-[11px] text-slate-400">Expands NOVA's acoustic radar ping wave radius by +25%.</div>
-                    <div data-testid="effect-value-scan" className="text-[10px] text-cyan-300 font-bold">
-                      {upgrades.scan ? 'Scan Radius: 350m (+25%)' : 'Scan Radius: 280m (Standard)'}
-                    </div>
-                  </div>
-                  <button
-                    data-testid="buy-upgrade-scan"
-                    onClick={() => handleBuyUpgrade('scan')}
-                    disabled={upgrades.scan || researchPoints < 3}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono shrink-0 cursor-pointer transition-colors ${
-                      upgrades.scan
-                        ? 'bg-slate-800 text-emerald-400 cursor-default border border-slate-700'
-                        : researchPoints >= 3
-                        ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-md'
-                        : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
-                    }`}
-                  >
-                    {upgrades.scan ? 'INSTALLED' : researchPoints >= 3 ? 'BUY (3 RP)' : 'LOCKED (3 RP)'}
-                  </button>
-                </div>
+                  );
+                })()}
 
                 {/* Upgrade 3: Minimap Reveal */}
-                <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between gap-3">
-                  <div className="space-y-0.5">
-                    <div className="font-bold text-white flex items-center gap-2">
-                      Orbital Cartography Uplink
-                      {upgrades.minimap && <span className="text-emerald-400 text-[10px] font-bold">✓ OWNED</span>}
+                {(() => {
+                  const lvl = typeof upgrades.minimap === 'number' ? upgrades.minimap : (upgrades.minimap ? 1 : 0);
+                  const isMax = lvl >= 2;
+                  const cost = isMax ? 0 : [5, 10][lvl];
+                  const canAfford = !isMax && researchPoints >= cost;
+                  const needed = isMax ? 0 : Math.max(0, cost - researchPoints);
+                  const effectText = lvl === 2 ? 'Reveal Radius: 26 tiles (+8 Lv.2 Max)' : lvl === 1 ? 'Reveal Radius: 22 tiles (+4 Lv.1)' : 'Reveal Radius: 18 tiles (Standard)';
+                  return (
+                    <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-white flex items-center gap-2">
+                          <span>Orbital Cartography Uplink</span>
+                          {isMax && <span className="text-emerald-400 text-[10px] font-bold">✓ MAX</span>}
+                        </div>
+                        <div className="flex items-center gap-1.5 py-0.5">
+                          <div className="flex items-center gap-1">
+                            <span className={`w-2 h-2 rounded-full ${lvl >= 1 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
+                            <span className={`w-2 h-2 rounded-full ${lvl >= 2 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-400">Level {lvl}/2</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400">Expands the fog-of-war exploration reveal radius.</div>
+                        <div data-testid="effect-value-minimap" className="text-[10px] text-cyan-300 font-bold">
+                          {effectText}
+                        </div>
+                      </div>
+                      <button
+                        data-testid="buy-upgrade-minimap"
+                        onClick={() => handleBuyUpgrade('minimap')}
+                        disabled={isMax || !canAfford}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono shrink-0 transition-colors ${
+                          isMax
+                            ? 'bg-slate-800 text-emerald-400 cursor-default border border-slate-700'
+                            : canAfford
+                            ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-md cursor-pointer'
+                            : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
+                        }`}
+                      >
+                        {isMax ? 'Owned' : canAfford ? `Buy (${cost} RP)` : `Need ${needed} more RP`}
+                      </button>
                     </div>
-                    <div className="text-[11px] text-slate-400">Expands the fog-of-war exploration reveal radius by +4 tiles.</div>
-                    <div data-testid="effect-value-minimap" className="text-[10px] text-cyan-300 font-bold">
-                      {upgrades.minimap ? 'Reveal Radius: 22 tiles (+4)' : 'Reveal Radius: 18 tiles (Standard)'}
-                    </div>
-                  </div>
-                  <button
-                    data-testid="buy-upgrade-minimap"
-                    onClick={() => handleBuyUpgrade('minimap')}
-                    disabled={upgrades.minimap || researchPoints < 4}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono shrink-0 cursor-pointer transition-colors ${
-                      upgrades.minimap
-                        ? 'bg-slate-800 text-emerald-400 cursor-default border border-slate-700'
-                        : researchPoints >= 4
-                        ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-md'
-                        : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
-                    }`}
-                  >
-                    {upgrades.minimap ? 'INSTALLED' : researchPoints >= 4 ? 'BUY (4 RP)' : 'LOCKED (4 RP)'}
-                  </button>
-                </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -2965,6 +3905,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
           totalParts={8}
           exploredTiles={fogRef.current.getExploredTilesCount()}
           seed={config.seed}
+          recoveredLogIds={recoveredLogIds}
           onPlayAgain={(newSeed) => {
             resetProgress();
             if (newSeed) {
@@ -3099,7 +4040,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         <div className="sm:hidden absolute bottom-4 left-4 right-4 z-20 flex items-end justify-between pointer-events-none">
           
           {/* Virtual D-Pad */}
-          <div className="flex flex-col items-center pointer-events-auto">
+          <div data-testid="virtual-dpad" className="flex flex-col items-center pointer-events-auto">
             <button
               onPointerDown={() => handleTouchDir('up', true)}
               onPointerUp={() => handleTouchDir('up', false)}

@@ -81,6 +81,15 @@ export default function App() {
     setNovaDialogue(null);
   };
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__getSavedProgress = getSavedProgress;
+    }
+    return () => {
+      delete (window as any).__getSavedProgress;
+    };
+  }, []);
+
   // Ambient setup for legacy lunar surface
   useEffect(() => {
     if (progress.currentChapter === 2) {
@@ -426,6 +435,7 @@ export default function App() {
             unlockedMissionIds={progress.unlockedMissions}
             completedEquipmentIds={progress.worldSave?.completedEquipmentIds || []}
             collectedSampleIds={progress.worldSave?.collectedSampleIds || []}
+            discoveredLandmarkIds={progress.worldSave?.discoveredLandmarkIds || []}
             researchPoints={progress.worldSave?.researchPoints || 0}
             onClose={() => setShowArchive(false)}
           />

@@ -4,6 +4,7 @@
 
 import { EquipmentDefinition, EQUIPMENT_DEFINITIONS } from '../data/equipment';
 import { ScienceSampleDefinition, SCIENCE_SAMPLES } from '../data/samples';
+import { LandmarkDefinition, LANDMARK_DEFINITIONS } from '../data/landmarks';
 import { WorldChunkManager, TILE_SIZE } from './chunk';
 import { SeededRNG } from './noise';
 
@@ -36,6 +37,18 @@ export interface PlacedSample {
   distanceFromSpawn: number;
 }
 
+export interface PlacedLandmark {
+  id: string;
+  def: LandmarkDefinition;
+  tileX: number;
+  tileY: number;
+  worldX: number;
+  worldY: number;
+  distanceFromSpawn: number;
+  widthTiles: number;
+  heightTiles: number;
+}
+
 // Distance rings for progressive placement
 interface RingTarget {
   id: string;
@@ -61,9 +74,11 @@ export class EquipmentPlacementSystem {
   private spawnTileY: number;
   private placedEquipment: PlacedEquipment[] = [];
   private placedSamples: PlacedSample[] = [];
+  private placedLandmarks: PlacedLandmark[] = [];
   private reachableTiles: Set<number> = new Set();
   private isGenerated = false;
   private isSamplesGenerated = false;
+  private isLandmarksGenerated = false;
 
   constructor(seed: string | number, world: WorldChunkManager, spawnTileX: number, spawnTileY: number) {
     this.seed = seed;
@@ -74,6 +89,12 @@ export class EquipmentPlacementSystem {
 
   private encodeCoord(x: number, y: number): number {
     return ((x + 2048) << 16) | ((y + 2048) & 0xffff);
+  }
+
+  private decodeCoord(encoded: number): { x: number; y: number } {
+    const x = (encoded >> 16) - 2048;
+    const y = (encoded & 0xffff) - 2048;
+    return { x, y };
   }
 
   /**
@@ -119,7 +140,7 @@ export class EquipmentPlacementSystem {
       return this.placedEquipment;
     }
 
-    this.computeReachableSet(PLAY_RADIUS_TILES + 10);
+    this.computeReachableSet(280);
     const rng = new SeededRNG(`${this.seed}_equip_placement`);
 
     for (const ring of PLACEMENT_RINGS) {
@@ -247,13 +268,14 @@ export class EquipmentPlacementSystem {
       const defKey = sampleKeys[i % sampleKeys.length];
       const def = SCIENCE_SAMPLES[defKey];
       const minDist = 12 + i * 4;
-      const maxDist = minDist + 16;
+      const maxDist = minDist + 24;
 
       let bestCand: { x: number; y: number } | null = null;
 
-      for (let attempt = 0; attempt < 60; attempt++) {
+      // 1. Radial stochastic search within preferred biomes
+      for (let attempt = 0; attempt < 80; attempt++) {
         const angle = rng.next() * Math.PI * 2;
-        const dist = minDist + rng.next() * (maxDist - minDist);
+        const dist = minDist + rng.next() * (maxDist - minDist + (attempt > 40 ? (attempt - 40) * 1.5 : 0));
         const cx = Math.round(this.spawnTileX + Math.cos(angle) * dist);
         const cy = Math.round(this.spawnTileY + Math.sin(angle) * dist);
 
@@ -261,20 +283,79 @@ export class EquipmentPlacementSystem {
         const biome = this.world.getTileBiome(cx, cy);
         if (biome === 'water') continue;
 
+        // Strictly enforce preferred biomes (e.g. Cryo-Ice Core ONLY in snow, Stromatolite ONLY in grassland)
+        if (!def.preferredBiomes.includes(biome)) continue;
+
         // Check distance to existing equipment and samples
-        const tooClose = existingCoords.some(([ex, ey]) => Math.hypot(cx - ex, cy - ey) < 7);
+        const tooClose = existingCoords.some(([ex, ey]) => Math.hypot(cx - ex, cy - ey) < 6);
         if (tooClose) continue;
 
-        if (def.preferredBiomes.includes(biome)) {
-          bestCand = { x: cx, y: cy };
-          break;
-        } else if (!bestCand) {
-          bestCand = { x: cx, y: cy };
+        bestCand = { x: cx, y: cy };
+        break;
+      }
+
+      // 2. Deterministic reachableTiles fallback if radial search did not find preferred biome
+      if (!bestCand) {
+        const matchingTiles: { x: number; y: number; dist: number }[] = [];
+        for (const encoded of this.reachableTiles) {
+          const { x, y } = this.decodeCoord(encoded);
+          const biome = this.world.getTileBiome(x, y);
+          if (def.preferredBiomes.includes(biome) && biome !== 'water') {
+            const tooClose = existingCoords.some(([ex, ey]) => Math.hypot(x - ex, y - ey) < 3.5);
+            if (!tooClose) {
+              const d = Math.hypot(x - this.spawnTileX, y - this.spawnTileY);
+              matchingTiles.push({ x, y, dist: d });
+            }
+          }
+        }
+        if (matchingTiles.length === 0) {
+          // Relax spacing if biome area is compact
+          for (const encoded of this.reachableTiles) {
+            const { x, y } = this.decodeCoord(encoded);
+            const biome = this.world.getTileBiome(x, y);
+            if (def.preferredBiomes.includes(biome) && biome !== 'water') {
+              const tooClose = existingCoords.some(([ex, ey]) => ex === x && ey === y);
+              if (!tooClose) {
+                const d = Math.hypot(x - this.spawnTileX, y - this.spawnTileY);
+                matchingTiles.push({ x, y, dist: d });
+              }
+            }
+          }
+        }
+        if (matchingTiles.length > 0) {
+          matchingTiles.sort((a, b) => Math.abs(a.dist - minDist) - Math.abs(b.dist - minDist));
+          const pickIndex = Math.floor(rng.next() * Math.min(matchingTiles.length, 12));
+          bestCand = { x: matchingTiles[pickIndex].x, y: matchingTiles[pickIndex].y };
+        }
+      }
+
+      // 3. Outward search in reachableTiles if preferred biome is located in farther regions
+      if (!bestCand) {
+        for (let r = minDist; r <= 280; r += 4) {
+          const numSamples = Math.max(16, Math.floor(r * 0.75));
+          const angleStep = (Math.PI * 2) / numSamples;
+          const angleOffset = rng.next() * Math.PI * 2;
+          for (let step = 0; step < numSamples; step++) {
+            const angle = angleOffset + step * angleStep;
+            const sx = Math.round(this.spawnTileX + Math.cos(angle) * r);
+            const sy = Math.round(this.spawnTileY + Math.sin(angle) * r);
+            if (!this.reachableTiles.has(this.encodeCoord(sx, sy))) continue;
+            const biome = this.world.getTileBiome(sx, sy);
+            if (def.preferredBiomes.includes(biome) && biome !== 'water') {
+              const tooClose = existingCoords.some(([ex, ey]) => Math.hypot(sx - ex, sy - ey) < 3);
+              if (!tooClose) {
+                bestCand = { x: sx, y: sy };
+                break;
+              }
+            }
+          }
+          if (bestCand) break;
         }
       }
 
       if (bestCand) {
         existingCoords.push([bestCand.x, bestCand.y]);
+        this.clearPropsAround(bestCand.x, bestCand.y, 0);
         this.placedSamples.push({
           id: `sample_${def.id}_${i}`,
           def,
@@ -296,6 +377,91 @@ export class EquipmentPlacementSystem {
       this.generateSamples();
     }
     return this.placedSamples;
+  }
+
+  /**
+   * Deterministic placement of 5 large Martian landmarks (6-10 tiles wide)
+   * Placed away from ship (>22 tiles), away from wrecks (>14 tiles), away from each other (>20 tiles),
+   * and verified reachable from spawn via BFS flood-fill.
+   */
+  public generateLandmarks(): PlacedLandmark[] {
+    if (this.isLandmarksGenerated) return this.placedLandmarks;
+    if (!this.isGenerated) this.generate();
+
+    const rng = new SeededRNG(typeof this.seed === 'number' ? this.seed + 77777 : this.seed + '_landmarks');
+    const landmarkKeys = Object.keys(LANDMARK_DEFINITIONS);
+    this.placedLandmarks = [];
+
+    // Avoid spawn, equipment, and other landmarks
+    const avoidCoords: [number, number, number][] = [
+      [this.spawnTileX, this.spawnTileY, 24], // keep >= 24 tiles from ship spawn
+      ...this.placedEquipment.map((e): [number, number, number] => [e.tileX, e.tileY, 15]), // keep >= 15 tiles from wrecks
+    ];
+
+    for (let i = 0; i < landmarkKeys.length; i++) {
+      const defKey = landmarkKeys[i];
+      const def = LANDMARK_DEFINITIONS[defKey];
+      // Progressive exploration distance: 28 to 110 tiles
+      const minDist = 26 + i * 16;
+      const maxDist = minDist + 24;
+
+      let bestCand: { x: number; y: number; score: number } | null = null;
+
+      for (let attempt = 0; attempt < 80; attempt++) {
+        const angle = rng.next() * Math.PI * 2;
+        const dist = minDist + rng.next() * (maxDist - minDist);
+        const cx = Math.round(this.spawnTileX + Math.cos(angle) * dist);
+        const cy = Math.round(this.spawnTileY + Math.sin(angle) * dist);
+
+        // 1. Must be reachable via flood-fill from spawn
+        if (!this.reachableTiles.has(this.encodeCoord(cx, cy))) continue;
+
+        // 2. Must not be in water
+        const biome = this.world.getTileBiome(cx, cy);
+        if (biome === 'water') continue;
+
+        // 3. Must be away from ship, wrecks, and other landmarks
+        const tooClose = avoidCoords.some(([ax, ay, minAllowed]) => Math.hypot(cx - ax, cy - ay) < minAllowed);
+        if (tooClose) continue;
+
+        let score = 100;
+        if (def.preferredBiomes.includes(biome)) score += 200;
+
+        if (!bestCand || score > bestCand.score) {
+          bestCand = { x: cx, y: cy, score };
+          if (score >= 300) break; // optimal biome match found
+        }
+      }
+
+      if (bestCand) {
+        avoidCoords.push([bestCand.x, bestCand.y, 22]);
+        const dist = Math.round(Math.hypot(bestCand.x - this.spawnTileX, bestCand.y - this.spawnTileY));
+        this.placedLandmarks.push({
+          id: def.id,
+          def,
+          tileX: bestCand.x,
+          tileY: bestCand.y,
+          worldX: bestCand.x * TILE_SIZE + (def.widthTiles * TILE_SIZE) / 2,
+          worldY: bestCand.y * TILE_SIZE + def.heightTiles * TILE_SIZE,
+          distanceFromSpawn: dist,
+          widthTiles: def.widthTiles,
+          heightTiles: def.heightTiles,
+        });
+
+        // Clear blocking props in landmark footprint so it has an open vista
+        this.clearPropsAround(bestCand.x, bestCand.y, Math.ceil(def.widthTiles / 2) + 1);
+      }
+    }
+
+    this.isLandmarksGenerated = true;
+    return this.placedLandmarks;
+  }
+
+  public getLandmarksList(): PlacedLandmark[] {
+    if (!this.isLandmarksGenerated) {
+      this.generateLandmarks();
+    }
+    return this.placedLandmarks;
   }
 }
 

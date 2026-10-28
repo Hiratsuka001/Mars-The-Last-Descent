@@ -258,12 +258,26 @@ export const PROCEDURAL_TILE_DEFS: ProceduralTileConfig[] = [
     key: 'tile_grass_path',
     name: 'Terraformed Soil / Trail Accent',
     biome: 'grassland',
-    baseColor: '#78350f',
-    pattern: (_x, _y, rng) => {
+    baseColor: '#365314', // Base olive grass color
+    pattern: (x, y, rng) => {
+      // Soft organic dithered soil patch inside grass (no hard rectangle edges)
+      const dx = (x - 7.5) / 6.2;
+      const dy = (y - 7.5) / 6.2;
+      const dist = Math.hypot(dx, dy);
+      const dither = BAYER_4X4[y % 4][x % 4];
+
+      // Outer boundary: blend seamlessly into grass #365314 using Bayer 4x4 dither
+      if (dist > 1.25) return null;
+      if (dist > 0.82) {
+        const blendThreshold = Math.round(((dist - 0.82) / 0.43) * 15);
+        if (dither < blendThreshold) return null; // grass pixel
+      }
+
+      // Soil core with subtle organic variation
       const r = rng();
       if (r < 0.10) return '#5e2a0b';
-      if (r < 0.20) return '#92400e';
-      return null;
+      if (r < 0.22) return '#92400e';
+      return '#78350f';
     },
   },
   {

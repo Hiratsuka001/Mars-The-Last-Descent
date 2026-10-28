@@ -283,28 +283,168 @@ function buildSpaceship(repaired: boolean): Pixel[] {
 // NATURE PROPS (Trees, Flowers, Grass Tuft)
 // ============================================================================
 
+const BAYER_4X4 = [
+  [ 0,  8,  2, 10],
+  [12,  4, 14,  6],
+  [ 3, 11,  1,  9],
+  [15,  7, 13,  5]
+];
+
 function buildTreeGreen(): Pixel[] {
   const pxs: Pixel[] = [];
-  // Trunk
-  pxs.push(...box(14, 22, 17, 34, '#78350f'));
-  pxs.push(...lineV(15, 23, 33, '#451a03'));
-  // Canopy
-  pxs.push(...box(6, 6, 25, 22, '#15803d'));
-  pxs.push(...box(8, 3, 23, 5, '#16a34a'));
-  pxs.push(...box(10, 8, 20, 16, '#4ade80')); // Highlight
-  pxs.push(...lineH(8, 23, 22, '#14532d')); // Shadow
+
+  // 1. Soft contact shadow on ground (dithered ellipse under trunk base)
+  for (let y = 32; y <= 35; y++) {
+    for (let x = 6; x <= 26; x++) {
+      const dx = (x - 16) / 10;
+      const dy = (y - 33.5) / 1.8;
+      const d = dx * dx + dy * dy;
+      if (d <= 1.0) {
+        const dither = BAYER_4X4[y % 4][x % 4];
+        if (d < 0.5) {
+          pxs.push({ x, y, color: 'rgba(0, 0, 0, 0.40)' });
+        } else if (dither < 10) {
+          pxs.push({ x, y, color: 'rgba(0, 0, 0, 0.22)' });
+        }
+      }
+    }
+  }
+
+  // 2. Trunk with flared roots and bark texture
+  pxs.push(...box(14, 20, 17, 33, '#78350f'));
+  pxs.push(...lineV(15, 20, 33, '#451a03'));
+  pxs.push(...lineV(16, 21, 32, '#5c2b09'));
+  pxs.push({ x: 13, y: 32, color: '#5c2b09' }); // Root left flare
+  pxs.push({ x: 13, y: 33, color: '#451a03' });
+  pxs.push({ x: 18, y: 32, color: '#92400e' }); // Root right flare
+  pxs.push({ x: 18, y: 33, color: '#78350f' });
+
+  // 3. Clustered organic rounded canopy lobes (No flat square canopies)
+  const lobes = [
+    { cx: 16, cy: 11, r: 10.5 },
+    { cx: 10, cy: 14, r: 7.2 },
+    { cx: 22, cy: 13, r: 7.5 },
+    { cx: 16, cy: 6, r: 6.2 },
+    { cx: 12, cy: 8, r: 5.5 },
+    { cx: 20, cy: 8, r: 5.5 },
+  ];
+
+  for (let y = 1; y <= 24; y++) {
+    for (let x = 2; x <= 29; x++) {
+      let inFoliage = false;
+      let minNormDist = 999;
+      let lobeWeight = 0;
+
+      for (const lobe of lobes) {
+        const dx = (x - lobe.cx) / lobe.r;
+        const dy = (y - lobe.cy) / lobe.r;
+        const normDist = dx * dx + dy * dy;
+        if (normDist <= 1.0) {
+          inFoliage = true;
+          if (normDist < minNormDist) minNormDist = normDist;
+          lobeWeight += (1 - normDist);
+        }
+      }
+
+      if (!inFoliage) continue;
+
+      // Directional light from upper-left (sun vector)
+      const lightFactor = ((16 - x) * 0.45 + (16 - y) * 0.70) / 16;
+      const dither = BAYER_4X4[y % 4][x % 4];
+
+      if (lightFactor > 0.42) {
+        // Bright sunlight highlight (toned-down olive highlight)
+        pxs.push({ x, y, color: dither < 6 ? '#a3e635' : '#84cc16' });
+      } else if (lightFactor > 0.05) {
+        // Upper canopy midtone (savanna olive)
+        pxs.push({ x, y, color: dither < 8 ? '#65a30d' : '#4d7c0f' });
+      } else if (lightFactor > -0.35) {
+        // Core grounded olive green
+        pxs.push({ x, y, color: dither < 7 ? '#3f6212' : '#365314' });
+      } else {
+        // Underside deep canopy shadow
+        pxs.push({ x, y, color: dither < 9 ? '#273a0e' : '#1a2608' });
+      }
+    }
+  }
+
   return pxs;
 }
 
 function buildTreePine(): Pixel[] {
   const pxs: Pixel[] = [];
-  // Trunk
-  pxs.push(...box(10, 26, 13, 34, '#78350f'));
-  // Pine tiers
-  pxs.push(...box(8, 4, 15, 11, '#064e3b'));
-  pxs.push(...box(5, 11, 18, 19, '#047857'));
-  pxs.push(...box(3, 19, 20, 26, '#065f46'));
-  pxs.push({ x: 11, y: 3, color: '#a7f3d0' }); // Frost tip
+
+  // 1. Soft contact shadow on ground (dithered ellipse under trunk base)
+  for (let y = 32; y <= 35; y++) {
+    for (let x = 6; x <= 18; x++) {
+      const dx = (x - 12) / 6;
+      const dy = (y - 33.5) / 1.6;
+      const d = dx * dx + dy * dy;
+      if (d <= 1.0) {
+        const dither = BAYER_4X4[y % 4][x % 4];
+        if (d < 0.5) {
+          pxs.push({ x, y, color: 'rgba(0, 0, 0, 0.40)' });
+        } else if (dither < 10) {
+          pxs.push({ x, y, color: 'rgba(0, 0, 0, 0.20)' });
+        }
+      }
+    }
+  }
+
+  // 2. Trunk with bark texture
+  pxs.push(...box(11, 24, 13, 33, '#5c2b09'));
+  pxs.push(...lineV(11, 24, 33, '#3b1a03'));
+  pxs.push(...lineV(12, 25, 33, '#78350f'));
+
+  // 3. Tapered conical evergreen silhouette with serrated needle boughs & dithered shading
+  const tiers = [
+    { startY: 2, endY: 7, startW: 0.5, endW: 3.5 },
+    { startY: 6, endY: 13, startW: 2.0, endW: 6.5 },
+    { startY: 12, endY: 20, startW: 3.5, endW: 9.0 },
+    { startY: 18, endY: 27, startW: 4.5, endW: 11.0 },
+  ];
+
+  for (let y = 2; y <= 27; y++) {
+    for (let x = 1; x <= 23; x++) {
+      let insideTier = false;
+
+      for (const t of tiers) {
+        if (y >= t.startY && y <= t.endY) {
+          const progress = (y - t.startY) / (t.endY - t.startY);
+          let w = t.startW + progress * (t.endW - t.startW);
+          // Serrate needle bough tips
+          if (y % 2 === 0) w += 0.8;
+          if (Math.abs(x - 12) <= w) {
+            insideTier = true;
+            break;
+          }
+        }
+      }
+
+      if (!insideTier) continue;
+
+      const relX = (x - 12);
+      const dither = BAYER_4X4[y % 4][x % 4];
+
+      if (y <= 3) {
+        // Soft pale lichen tip at crown
+        pxs.push({ x, y, color: '#bef264' });
+      } else if (relX < -3) {
+        // Lit left needle bough (sunlit olive)
+        pxs.push({ x, y, color: dither < 6 ? '#84cc16' : '#65a30d' });
+      } else if (relX < 2) {
+        // Center pine midtone (forest olive)
+        pxs.push({ x, y, color: dither < 8 ? '#4d7c0f' : '#3f6212' });
+      } else if (relX < 6) {
+        // Shadowed right bough (deep olive)
+        pxs.push({ x, y, color: dither < 8 ? '#365314' : '#273a0e' });
+      } else {
+        // Deep under-bough shadow
+        pxs.push({ x, y, color: '#162007' });
+      }
+    }
+  }
+
   return pxs;
 }
 

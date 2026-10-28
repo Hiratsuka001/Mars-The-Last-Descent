@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { sound } from '../systems/audio';
-import { resetProgress } from '../systems/saveManager';
-import { X, Volume2, VolumeX, RotateCcw, Keyboard, Sliders } from 'lucide-react';
+import { resetProgress, isReduceMotionEnabled, setReduceMotionEnabled } from '../systems/saveManager';
+import { X, Volume2, VolumeX, RotateCcw, Keyboard, Sliders, Eye } from 'lucide-react';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -12,6 +12,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onResetSa
   const [isMuted, setIsMuted] = useState(sound.getMuted());
   const [musicVol, setMusicVol] = useState(sound.getMusicVolume());
   const [sfxVol, setSfxVol] = useState(sound.getSfxVolume());
+  const [reduceMotion, setReduceMotion] = useState(isReduceMotionEnabled());
   const [confirmReset, setConfirmReset] = useState(false);
 
   const toggleSound = () => {
@@ -29,6 +30,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onResetSa
     setSfxVol(val);
     sound.setSfxVolume(val);
     sound.playHover();
+  };
+
+  const handleToggleReduceMotion = () => {
+    const nextVal = !reduceMotion;
+    setReduceMotion(nextVal);
+    setReduceMotionEnabled(nextVal);
+    sound.playClick();
   };
 
   const handleReset = () => {
@@ -142,6 +150,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onResetSa
                 <span className="text-white">[M] or [C]</span>
               </div>
             </div>
+          </div>
+
+          {/* Accessibility: Reduce Motion */}
+          <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800 flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <Eye className="w-4 h-4 text-cyan-400" />
+                <span className="text-sm font-semibold text-white">Reduce Motion</span>
+              </div>
+              <div className="text-slate-400 mt-0.5">
+                Disable camera shake, nudges, and intense visual tremors
+              </div>
+            </div>
+            <button
+              data-testid="reduce-motion-toggle"
+              onClick={handleToggleReduceMotion}
+              className={`px-3 py-1.5 rounded-lg border font-mono font-bold text-xs transition-colors cursor-pointer shrink-0 ${
+                reduceMotion
+                  ? 'bg-cyan-950 border-cyan-500/60 text-cyan-300'
+                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {reduceMotion ? 'ENABLED' : 'DISABLED'}
+            </button>
           </div>
 
           {/* Save Management */}

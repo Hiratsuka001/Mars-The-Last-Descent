@@ -5,11 +5,12 @@
  */
 
 import { SerializedFogOfWar } from '../render/minimap';
+import { deriveLogIdsFromParts } from '../data/logs';
 
 export interface PlayerUpgrades {
-  jetpack?: boolean;
-  scan?: boolean;
-  minimap?: boolean;
+  jetpack?: number; // 0, 1, 2
+  scan?: number;    // 0, 1, 2
+  minimap?: number; // 0, 1, 2
 }
 
 export interface WorldSaveData {
@@ -25,6 +26,8 @@ export interface WorldSaveData {
   playTimeSeconds: number;
   lastSavedAt: number;
   collectedSampleIds?: string[];
+  discoveredLandmarkIds?: string[];
+  recoveredLogIds?: string[];
   solTime?: number;
   researchPoints?: number;
   upgrades?: PlayerUpgrades;
@@ -82,20 +85,30 @@ export function formatPlayTime(seconds: number): string {
   return `${secs}s`;
 }
 
+function parseUpgradeLevel(v: any): number {
+  if (typeof v === 'number') return Math.min(2, Math.max(0, Math.round(v)));
+  if (v === true) return 1;
+  return 0;
+}
+
 /**
  * Migrate legacy WorldSaveData (v1/v2) to v3
  */
 function migrateWorldSave(world: any): WorldSaveData {
+  const derivedLogs = deriveLogIdsFromParts(world.collectedPartIds || [], world.completedEquipmentIds || []);
+  const recoveredLogIds = Array.isArray(world.recoveredLogIds) ? world.recoveredLogIds : derivedLogs;
   return {
     ...world,
     version: 3,
-    collectedSampleIds: world.collectedSampleIds || [],
+    collectedSampleIds: Array.isArray(world.collectedSampleIds) ? world.collectedSampleIds : [],
+    discoveredLandmarkIds: Array.isArray(world.discoveredLandmarkIds) ? world.discoveredLandmarkIds : [],
+    recoveredLogIds,
     solTime: typeof world.solTime === 'number' ? world.solTime : 0.35,
     researchPoints: typeof world.researchPoints === 'number' ? world.researchPoints : 0,
     upgrades: {
-      jetpack: !!world.upgrades?.jetpack,
-      scan: !!world.upgrades?.scan,
-      minimap: !!world.upgrades?.minimap,
+      jetpack: parseUpgradeLevel(world.upgrades?.jetpack),
+      scan: parseUpgradeLevel(world.upgrades?.scan),
+      minimap: parseUpgradeLevel(world.upgrades?.minimap),
     },
   };
 }
@@ -180,9 +193,11 @@ export const saveWorldProgress = (worldData: Partial<WorldSaveData>, force = fal
     playTimeSeconds: 0,
     lastSavedAt: Date.now(),
     collectedSampleIds: [],
+    discoveredLandmarkIds: [],
+    recoveredLogIds: [],
     solTime: 0.35,
     researchPoints: 0,
-    upgrades: { jetpack: false, scan: false, minimap: false },
+    upgrades: { jetpack: 0, scan: 0, minimap: 0 },
   };
 
   const updatedWorld: WorldSaveData = {
@@ -212,6 +227,34 @@ export const hasSavedWorldRun = (): boolean => {
       progress.worldSave.playTimeSeconds > 5 ||
       (progress.worldSave.exploredFog?.revealedCount ?? 0) > 20)
   );
+};
+
+/**
+ * Accessibility: Reduce Motion Preference
+ */
+const REDUCE_MOTION_STORAGE_KEY = 'mars_reduce_motion';
+
+export const isReduceMotionEnabled = (): boolean => {
+  try {
+    const stored = localStorage.getItem(REDUCE_MOTION_STORAGE_KEY);
+    if (stored !== null) {
+      return stored === 'true';
+    }
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    }
+  } catch {
+    // fallback
+  }
+  return false;
+};
+
+export const setReduceMotionEnabled = (enabled: boolean): void => {
+  try {
+    localStorage.setItem(REDUCE_MOTION_STORAGE_KEY, String(enabled));
+  } catch (err) {
+    console.warn('[SaveManager] Failed to save reduce-motion setting:', err);
+  }
 };
 
 /**
