@@ -10,9 +10,10 @@ import { drawLandmark } from '../render/landmarkRender';
 import { ORDERED_LOGS, getLogForPart, getLogForWreck, deriveLogIdsFromParts } from '../data/logs';
 import { PartsHUD } from './PartsHUD';
 import { NovaDialogue } from './NovaDialogue';
-import { SojournerRoverPuzzle } from './MiniGames/SojournerRoverPuzzle';
+import { SojournerRoverGame } from './MiniGames/SojournerRoverGame';
 import { OpportunityWaterPuzzle } from './MiniGames/OpportunityWaterPuzzle';
-import { InSightSeismicPuzzle } from './MiniGames/InSightSeismicPuzzle';
+import { NovaMarathonGame } from './MiniGames/NovaMarathonGame';
+import { InSightSeismicGame } from './MiniGames/InSightSeismicGame';
 import { FieldQuizModal } from './FieldQuizModal';
 import { TileDebugModal } from './TileDebugModal';
 import { MinimapHUD } from './MinimapHUD';
@@ -180,6 +181,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
   // Research Points & Upgrades Progression Loop (2 levels each)
   const [researchPoints, setResearchPoints] = useState<number>(0);
   const researchPointsRef = useRef<number>(0);
+  const [bonusRpWreckIds, setBonusRpWreckIds] = useState<string[]>([]);
+  const bonusRpWreckIdsRef = useRef<string[]>([]);
   const [upgrades, setUpgrades] = useState<PlayerUpgrades>({
     jetpack: 0,
     scan: 0,
@@ -260,7 +263,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
 
   const [activeMiniGame, setActiveMiniGame] = useState<{
     equipId: string;
-    type: 'sojourner' | 'opportunity' | 'insight' | 'quiz';
+    type: EquipmentDefinition['miniGameType'];
     def: EquipmentDefinition;
   } | null>(null);
 
@@ -413,6 +416,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       recoveredLogIdsRef.current = loadedLogs;
       setResearchPoints(worldSave.researchPoints || 0);
       researchPointsRef.current = worldSave.researchPoints || 0;
+      setBonusRpWreckIds(worldSave.bonusRpWreckIds || []);
+      bonusRpWreckIdsRef.current = worldSave.bonusRpWreckIds || [];
       const parseUpgradeLvl = (v: any): number => {
         if (typeof v === 'number') return Math.min(2, Math.max(0, Math.floor(v)));
         return v ? 1 : 0;
@@ -549,6 +554,22 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     (window as any).__getDiscoveredLandmarks = () => discoveredLandmarksRef.current;
     (window as any).__getResearchPoints = () => researchPointsRef.current;
     (window as any).__getUpgrades = () => upgradesRef.current;
+    (window as any).__getCollectedPartIds = () => collectedPartIdsRef.current;
+    (window as any).__getRecoveredLogIds = () => recoveredLogIdsRef.current;
+    (window as any).__getBonusRpWreckIds = () => bonusRpWreckIdsRef.current;
+    (window as any).__teleportToWreck = (wreckIdOrIndex: string | number) => {
+      const list = equipmentListRef.current;
+      const target = typeof wreckIdOrIndex === 'number'
+        ? list[wreckIdOrIndex]
+        : list.find((e) => e.def.id === wreckIdOrIndex);
+      if (target) {
+        teleportToEquipment(target.tileX, target.tileY);
+        fogRef.current.revealArea(target.tileX, target.tileY, 18);
+        sound.playHover();
+        return { success: true, id: target.def.id, name: target.def.name };
+      }
+      return { success: false };
+    };
     (window as any).__teleportToSample = (index: number = 0) => {
       const uncollected = samplesListRef.current.filter((s) => !collectedSamplesRef.current.includes(s.id));
       const target = uncollected[index] || samplesListRef.current[index];
@@ -941,6 +962,10 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       delete (window as any).__grantAllParts;
       delete (window as any).__getResearchPoints;
       delete (window as any).__getUpgrades;
+      delete (window as any).__getCollectedPartIds;
+      delete (window as any).__getRecoveredLogIds;
+      delete (window as any).__getBonusRpWreckIds;
+      delete (window as any).__teleportToWreck;
       delete (window as any).__teleportToSample;
       delete (window as any).__teleportToLandmark;
       delete (window as any).__teleportNearLandmark;
@@ -1028,6 +1053,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         solTime: solTimeRef.current,
         researchPoints: researchPointsRef.current,
         upgrades: upgradesRef.current,
+        bonusRpWreckIds: bonusRpWreckIdsRef.current,
       },
       force
     );
@@ -1089,6 +1115,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       recoveredLogIdsRef.current = loadedLogs;
       setResearchPoints(saved.researchPoints || 0);
       researchPointsRef.current = saved.researchPoints || 0;
+      setBonusRpWreckIds(saved.bonusRpWreckIds || []);
+      bonusRpWreckIdsRef.current = saved.bonusRpWreckIds || [];
       const parseUpgradeLvl = (v: any): number => {
         if (typeof v === 'number') return Math.min(2, Math.max(0, Math.floor(v)));
         return v ? 1 : 0;
@@ -1138,6 +1166,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     recoveredLogIdsRef.current = [];
     setResearchPoints(0);
     researchPointsRef.current = 0;
+    setBonusRpWreckIds([]);
+    bonusRpWreckIdsRef.current = [];
     setUpgrades({ jetpack: 0, scan: 0, minimap: 0 });
     upgradesRef.current = { jetpack: 0, scan: 0, minimap: 0 };
     solTimeRef.current = 0.35;
@@ -1566,6 +1596,24 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     setActiveMiniGame(null);
   }, []);
 
+  // Award Bonus RP for 3-star mini-game performance (once per wreck)
+  const handleAwardBonusRp = useCallback((wreckId: string): boolean => {
+    if (bonusRpWreckIdsRef.current.includes(wreckId)) {
+      return false;
+    }
+    const nextList = [...bonusRpWreckIdsRef.current, wreckId];
+    bonusRpWreckIdsRef.current = nextList;
+    setBonusRpWreckIds(nextList);
+
+    const nextPoints = researchPointsRef.current + 1;
+    researchPointsRef.current = nextPoints;
+    setResearchPoints(nextPoints);
+
+    sound.playSuccess();
+    triggerAutoSave(true);
+    return true;
+  }, [triggerAutoSave]);
+
   // Main 60 FPS Game Loop
   useEffect(() => {
     let animId: number;
@@ -1843,18 +1891,28 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
 
           if (tDist > 0.5) {
             // Smooth speed matching player speed
-            const followSpeed = distToPlayer > 45 ? 90 : 75;
+            const followSpeed = distToPlayer > 50 ? 95 : 78;
             const step = Math.min(tDist, followSpeed * dt);
             nova.x += (tdx / tDist) * step;
             nova.y += (tdy / tDist) * step;
 
-            // Facing direction from movement vector
-            if (Math.abs(tdx) > Math.abs(tdy) * 1.2) {
-              nova.facing = tdx > 0 ? 'right' : 'left';
-            } else if (Math.abs(tdy) > Math.abs(tdx) * 1.2) {
-              nova.facing = tdy > 0 ? 'down' : 'up';
+            // Directional hysteresis prevents rapid facing flutter during diagonal movement
+            const absX = Math.abs(tdx);
+            const absY = Math.abs(tdy);
+            const isHoriz = nova.facing === 'left' || nova.facing === 'right';
+
+            if (isHoriz) {
+              if (absY > absX * 1.35 && absY > 1.5) {
+                nova.facing = tdy > 0 ? 'down' : 'up';
+              } else if (absX > 0.5) {
+                nova.facing = tdx > 0 ? 'right' : 'left';
+              }
             } else {
-              nova.facing = target.facing;
+              if (absX > absY * 1.35 && absX > 1.5) {
+                nova.facing = tdx > 0 ? 'right' : 'left';
+              } else if (absY > 0.5) {
+                nova.facing = tdy > 0 ? 'down' : 'up';
+              }
             }
 
             nova.walkFrame += dt * 6.5;
@@ -1901,7 +1959,13 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
               nova.walkFrame += dt * 6.0;
               nova.x += (tdx / tDist) * Math.min(tDist, 35 * dt);
               nova.y += (tdy / tDist) * Math.min(tDist, 35 * dt);
-              nova.facing = Math.abs(tdx) > Math.abs(tdy) ? (tdx > 0 ? 'right' : 'left') : (tdy > 0 ? 'down' : 'up');
+              const absX = Math.abs(tdx);
+              const absY = Math.abs(tdy);
+              if (absX > absY * 1.3) {
+                nova.facing = tdx > 0 ? 'right' : 'left';
+              } else if (absY > absX * 1.3) {
+                nova.facing = tdy > 0 ? 'down' : 'up';
+              }
             } else {
               novaTrotTargetRef.current = null;
             }
@@ -2670,14 +2734,14 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
           }
           debugSpritesRef.current.novaSprite = spriteKey;
 
-          c.fillStyle = 'rgba(0, 0, 0, 0.3)';
+          c.fillStyle = 'rgba(0, 0, 0, 0.32)';
           c.beginPath();
           c.ellipse(Math.round(nova.x), Math.round(nova.y), 7, 3, 0, 0, Math.PI * 2);
           c.fill();
 
-          const drawX = Math.round(nova.x - 9);
-          const drawY = Math.round(nova.y - 15);
-          atlas.drawSprite(c, spriteKey, drawX, drawY, 18, 16);
+          const drawX = Math.round(nova.x - 13);
+          const drawY = Math.round(nova.y - 24);
+          atlas.drawSprite(c, spriteKey, drawX, drawY, 26, 26);
         },
       });
 
@@ -2817,7 +2881,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
 
           // 2. Cut out NOVA eye spotlight
           const novaScreenX = viewCenterW + (nova.x - camRenderX) * CAMERA_SCALE;
-          const novaScreenY = viewCenterH + (nova.y - 8 - camRenderY) * CAMERA_SCALE;
+          const novaScreenY = viewCenterH + (nova.y - 10 - camRenderY) * CAMERA_SCALE;
           const novaGrad = lCtx.createRadialGradient(novaScreenX, novaScreenY, 4, novaScreenX, novaScreenY, 70);
           novaGrad.addColorStop(0, 'rgba(0, 0, 0, 0.9)');
           novaGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
@@ -3154,7 +3218,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       // Update Nova speech bubble position smoothly
       if (novaBubbleElementRef.current) {
         const nx = viewCenterW + (nova.x - camRenderX) * CAMERA_SCALE;
-        const ny = viewCenterH + (nova.y - 18 - camRenderY) * CAMERA_SCALE;
+        const ny = viewCenterH + (nova.y - 24 - camRenderY) * CAMERA_SCALE;
         novaBubbleElementRef.current.style.transform = `translate3d(${Math.round(nx)}px, ${Math.round(ny)}px, 0)`;
       }
 
@@ -3417,9 +3481,12 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
 
       {/* MINI-GAMES MODAL CONTAINER */}
       {activeMiniGame?.type === 'sojourner' && (
-        <SojournerRoverPuzzle
+        <SojournerRoverGame
+          wreckId={activeMiniGame.equipId}
           onSuccess={handleMiniGameSuccess}
           onClose={handleMiniGameClose}
+          onAwardBonusRp={() => handleAwardBonusRp(activeMiniGame.equipId)}
+          hasBonusRp={bonusRpWreckIds.includes(activeMiniGame.equipId)}
         />
       )}
 
@@ -3430,10 +3497,23 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         />
       )}
 
-      {activeMiniGame?.type === 'insight' && (
-        <InSightSeismicPuzzle
+      {activeMiniGame?.type === 'marathon' && (
+        <NovaMarathonGame
+          wreckId={activeMiniGame.equipId}
           onSuccess={handleMiniGameSuccess}
           onClose={handleMiniGameClose}
+          onAwardBonusRp={() => handleAwardBonusRp(activeMiniGame.equipId)}
+          hasBonusRp={bonusRpWreckIds.includes(activeMiniGame.equipId)}
+        />
+      )}
+
+      {activeMiniGame?.type === 'insight' && (
+        <InSightSeismicGame
+          wreckId={activeMiniGame.equipId}
+          onSuccess={handleMiniGameSuccess}
+          onClose={handleMiniGameClose}
+          onAwardBonusRp={() => handleAwardBonusRp(activeMiniGame.equipId)}
+          hasBonusRp={bonusRpWreckIds.includes(activeMiniGame.equipId)}
         />
       )}
 

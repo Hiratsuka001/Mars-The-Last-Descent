@@ -21,7 +21,7 @@ export interface EquipmentDefinition {
   spriteKey: string;
   strippedSpriteKey: string;
   preferredBiomes: BiomeType[];
-  miniGameType: 'sojourner' | 'opportunity' | 'insight' | 'quiz';
+  miniGameType: 'sojourner' | 'opportunity' | 'insight' | 'quiz' | 'marathon';
   miniGameParams?: {
     difficulty?: 'easy' | 'normal' | 'hard';
     quiz?: QuizChallenge;
@@ -111,7 +111,7 @@ export const EQUIPMENT_DEFINITIONS: Record<string, EquipmentDefinition> = {
     spriteKey: 'wreck_opportunity',
     strippedSpriteKey: 'wreck_opportunity_stripped',
     preferredBiomes: ['desert', 'rocky'],
-    miniGameType: 'opportunity',
+    miniGameType: 'marathon',
     rewardPartId: 'part_solar_bus',
     oneLineHint: 'Opportunity explored Meridiani for 14 years. Analyze its paleowater rock samples to extract the solar power bus!',
     codex: {

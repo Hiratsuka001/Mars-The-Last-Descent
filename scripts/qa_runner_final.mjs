@@ -769,9 +769,17 @@ async function runTestPass(browser, config) {
   await snap('05_wreck_approach');
 
   // -------------------------------------------------------------------------
-  // 6. MINI-GAME PUZZLE
+  // 6. SOJOURNER ROUTE MINI-GAME (TACTILE CONTROLS, AUTOPLAY, 3 STARS, FACT REVEAL)
   // -------------------------------------------------------------------------
-  console.log('6. Interacting to Open Mini-Game / Quiz...');
+  console.log('6. Testing Sojourner Route Mini-Game...');
+  const tpSojournerResult = await page.evaluate(() => window.__teleportToWreck('eq_sojourner'));
+  console.log('  Teleport to Sojourner:', tpSojournerResult);
+  if (!tpSojournerResult?.success) {
+    throw new Error('Failed to teleport to Sojourner wreck eq_sojourner');
+  }
+  await page.waitForTimeout(600);
+
+  await interactPrompt.waitFor({ state: 'visible', timeout: 6000 });
   await interactPrompt.click();
 
   // If Nova's dialogue appears with action button, click it to launch simulator
@@ -781,34 +789,416 @@ async function runTestPass(browser, config) {
     await novaActionBtn.click();
   } catch {}
 
-  // Wait for puzzle modal / quiz modal
+  // Wait for puzzle modal (MiniGameShell with sojourner-grid)
+  const sojournerShell = page.locator('[data-testid="minigame-shell"]');
+  await sojournerShell.waitFor({ state: 'visible', timeout: 8000 });
+  const sojournerGrid = page.locator('[data-testid="sojourner-grid"]');
+  await sojournerGrid.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Sojourner route game opened with minigame-shell and grid');
+
+  // Verify touch buttons have min 44px (touch target guideline)
+  const fwdBtn = page.locator('[data-testid="sojourner-btn-forward"]');
+  const fwdBox = await fwdBtn.boundingBox();
+  console.log(`  Forward Button Box: h=${fwdBox?.height}, w=${fwdBox?.width}`);
+  if (!fwdBox || fwdBox.height < 44) {
+    throw new Error(`Forward button height < 44px: ${fwdBox?.height}`);
+  }
+  console.log('  [PASS] Tactile control buttons meet touch target guidelines');
+
+  // Test queuing and undoing commands
+  await fwdBtn.click();
+  const leftBtn = page.locator('[data-testid="sojourner-btn-left"]');
+  await leftBtn.click();
+  const undoBtn = page.locator('[data-testid="sojourner-btn-undo"]');
+  await undoBtn.click();
+
+  // Test autoplay hook for 3 stars
+  console.log('  Testing Sojourner autoplay hook for 3 stars...');
+  await page.evaluate(() => window.__sojournerAutoplay?.());
+
+  const sojournerWin = page.locator('[data-testid="minigame-win"]');
+  await sojournerWin.waitFor({ state: 'visible', timeout: 6000 });
+
+  const sojournerStarsEl = page.locator('[data-testid="minigame-stars"]');
+  const sojournerStarsVal = await sojournerStarsEl.getAttribute('data-stars');
+  console.log(`  Sojourner Stars earned: ${sojournerStarsVal}`);
+  if (sojournerStarsVal !== '3') {
+    throw new Error(`Expected 3 stars on Sojourner autoplay, got: ${sojournerStarsVal}`);
+  }
+
+  // Bonus RP toast
+  const sojournerBonusToast = page.locator('[data-testid="bonus-rp-toast"]');
+  await sojournerBonusToast.waitFor({ state: 'visible', timeout: 5000 });
+  const sojournerBonusToastText = await sojournerBonusToast.textContent();
+  console.log(`  Sojourner Bonus RP toast text: "${sojournerBonusToastText}"`);
+  if (!sojournerBonusToastText.includes('+1 RP')) {
+    throw new Error(`Bonus RP toast does not contain "+1 RP": ${sojournerBonusToastText}`);
+  }
+  console.log('  [PASS] 3 stars achieved, bonus RP toast displayed for Sojourner');
+
+  // Fact reveal
+  const sojournerFactBtn = page.locator('[data-testid="minigame-fact"]');
+  await sojournerFactBtn.click();
+  await page.waitForTimeout(300);
+  const sojournerFactText = await sojournerFactBtn.textContent();
+  console.log(`  Sojourner Fact Text: "${sojournerFactText}"`);
+  const expectedSojournerFact = "Sojourner was the first rover to drive on Mars, in 1997. It stayed close to its lander.";
+  if (!sojournerFactText.includes(expectedSojournerFact)) {
+    throw new Error(`Did-you-know fact does not match expected Sojourner line. Got: ${sojournerFactText}`);
+  }
+  console.log('  [PASS] Exact Did-You-Know fact displayed for Sojourner');
+  await snap('06_sojourner_win_stars_fact');
+
+  // Test retry button
+  const sojournerRetryBtn = page.locator('[data-testid="minigame-retry"]');
+  await sojournerRetryBtn.click();
+  await sojournerWin.waitFor({ state: 'detached', timeout: 5000 });
+  await sojournerGrid.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Retry button reset Sojourner to grid');
+
+  // Close puzzle
   const puzzleExitBtn = page.locator('[data-testid="puzzle-exit-btn"]');
-  await puzzleExitBtn.waitFor({ state: 'visible', timeout: 8000 });
+  await puzzleExitBtn.click();
+  await sojournerShell.waitFor({ state: 'detached', timeout: 5000 });
+  await page.waitForTimeout(500);
+  console.log('  [PASS] Sojourner puzzle closed cleanly');
+
+  // -------------------------------------------------------------------------
+  // 6-INSIGHT. INSIGHT MARSQUAKE TUNER MINI-GAME (DOME, FREQ TUNE, AUTOPLAY, 3 STARS, FACT)
+  // -------------------------------------------------------------------------
+  console.log('6-InSight. Testing InSight Marsquake Tuner Mini-Game...');
+  const tpInsightResult = await page.evaluate(() => window.__teleportToWreck('eq_insight'));
+  console.log('  Teleport to InSight:', tpInsightResult);
+  if (!tpInsightResult?.success) {
+    throw new Error('Failed to teleport to InSight wreck eq_insight');
+  }
   await page.waitForTimeout(600);
-  await snap('06_mini_game_puzzle');
+
+  await interactPrompt.waitFor({ state: 'visible', timeout: 6000 });
+  await interactPrompt.click();
+
+  // If Nova's dialogue appears with action button, click it to launch simulator
+  try {
+    await novaActionBtn.waitFor({ state: 'visible', timeout: 3000 });
+    await novaActionBtn.click();
+  } catch {}
+
+  // Wait for InSight modal (MiniGameShell with insight-game and insight-seismic-canvas)
+  const insightShell = page.locator('[data-testid="minigame-shell"]');
+  await insightShell.waitFor({ state: 'visible', timeout: 8000 });
+  const insightCanvas = page.locator('[data-testid="insight-seismic-canvas"]');
+  await insightCanvas.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] InSight mini-game opened with minigame-shell and seismic canvas');
+
+  // Verify touch buttons have min 44px / 48px touch targets
+  const domeBtn = page.locator('[data-testid="insight-btn-dome"]');
+  const domeBox = await domeBtn.boundingBox();
+  console.log(`  Dome Button Box: h=${domeBox?.height}, w=${domeBox?.width}`);
+  if (!domeBox || domeBox.height < 44) {
+    throw new Error(`Dome button height < 44px: ${domeBox?.height}`);
+  }
+
+  const tuneDownBtn = page.locator('[data-testid="insight-btn-tune-down"]');
+  const tuneDownBox = await tuneDownBtn.boundingBox();
+  console.log(`  Tune Down Button Box: h=${tuneDownBox?.height}, w=${tuneDownBox?.width}`);
+  if (!tuneDownBox || tuneDownBox.height < 44) {
+    throw new Error(`Tune button height < 44px: ${tuneDownBox?.height}`);
+  }
+  console.log('  [PASS] InSight tactile control buttons meet touch target guidelines');
+
+  // Test toggling dome and stepping frequency
+  await domeBtn.click();
+  await tuneDownBtn.click();
+  const tuneUpBtn = page.locator('[data-testid="insight-btn-tune-up"]');
+  await tuneUpBtn.click();
+  await page.waitForTimeout(300);
+  await snap('06_insight_active_game');
+
+  // Test InSight autoplay hook for 3 stars
+  console.log('  Testing InSight autoplay hook for 3 stars...');
+  await page.evaluate(() => window.__insightAutoplay?.());
+
+  const insightWin = page.locator('[data-testid="minigame-win"]');
+  await insightWin.waitFor({ state: 'visible', timeout: 6000 });
+
+  const insightStarsEl = page.locator('[data-testid="minigame-stars"]');
+  const insightStarsVal = await insightStarsEl.getAttribute('data-stars');
+  console.log(`  InSight Stars earned: ${insightStarsVal}`);
+  if (insightStarsVal !== '3') {
+    throw new Error(`Expected 3 stars on InSight autoplay, got: ${insightStarsVal}`);
+  }
+
+  // Bonus RP toast
+  const insightBonusToast = page.locator('[data-testid="bonus-rp-toast"]');
+  await insightBonusToast.waitFor({ state: 'visible', timeout: 5000 });
+  const insightBonusToastText = await insightBonusToast.textContent();
+  console.log(`  InSight Bonus RP toast text: "${insightBonusToastText}"`);
+  if (!insightBonusToastText.includes('+1 RP')) {
+    throw new Error(`Bonus RP toast does not contain "+1 RP": ${insightBonusToastText}`);
+  }
+  console.log('  [PASS] 3 stars achieved, bonus RP toast displayed for InSight');
+
+  // Fact reveal
+  const insightFactBtn = page.locator('[data-testid="minigame-fact"]');
+  await insightFactBtn.click();
+  await page.waitForTimeout(300);
+  const insightFactText = await insightFactBtn.textContent();
+  console.log(`  InSight Fact Text: "${insightFactText}"`);
+  const expectedInsightFact = "InSight listened to marsquakes and found that Mars has a liquid core. It recorded over 1,300 quakes.";
+  if (!insightFactText.includes(expectedInsightFact)) {
+    throw new Error(`Did-you-know fact does not match expected InSight line. Got: ${insightFactText}`);
+  }
+  console.log('  [PASS] Exact Did-You-Know fact displayed for InSight');
+  await snap('06_insight_win_stars_fact');
+
+  // Test retry button
+  const insightRetryBtn = page.locator('[data-testid="minigame-retry"]');
+  await insightRetryBtn.click();
+  await insightWin.waitFor({ state: 'detached', timeout: 5000 });
+  await insightCanvas.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Retry button reset InSight to canvas');
 
   // Close puzzle
   await puzzleExitBtn.click();
-  await puzzleExitBtn.waitFor({ state: 'detached', timeout: 5000 });
+  await insightShell.waitFor({ state: 'detached', timeout: 5000 });
   await page.waitForTimeout(500);
+  console.log('  [PASS] InSight puzzle closed cleanly');
 
   // -------------------------------------------------------------------------
-  // 6B. VERIFY STORY MEMORY LOG UNLOCK (GRANT 1 PART, TOAST, CODEX, D-PAD NON-COLLISION)
+  // 6A. OPPORTUNITY MARATHON ROVER MINI-GAME (STARS, RETRY, BONUS RP, AUTOPLAY, CLAIM)
   // -------------------------------------------------------------------------
-  console.log('6B. Verifying Story Memory Log Unlock via Grant 1 Part...');
-  // Open debug panel
-  await page.keyboard.press('F3');
-  await debugPanel.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('6A. Testing Opportunity Marathon Rover Mini-Game...');
+  // Debug teleport to Opportunity wreck
+  const tpOppResult = await page.evaluate(() => window.__teleportToWreck('eq_opportunity'));
+  console.log('  Teleport to Opportunity:', tpOppResult);
+  if (!tpOppResult?.success) {
+    throw new Error('Failed to teleport to Opportunity wreck eq_opportunity');
+  }
+  await page.waitForTimeout(600);
 
-  const grantOnePartBtn = page.locator('[data-testid="grant-one-part-btn"]');
-  await grantOnePartBtn.click();
-  await page.waitForTimeout(400);
+  // Assert interaction prompt is active and open dialogue
+  await interactPrompt.waitFor({ state: 'visible', timeout: 6000 });
+  await interactPrompt.click();
 
-  // Close debug panel to inspect toasts and controls
-  await page.keyboard.press('F3');
-  await debugPanel.waitFor({ state: 'detached', timeout: 5000 });
+  // Launch Opportunity mini-game simulator
+  await novaActionBtn.waitFor({ state: 'visible', timeout: 4000 });
+  await novaActionBtn.click();
 
-  // 1. Assert Grant 1 Part unlocks LOG 1/8, shows toast, does not collide with the mobile D-pad on 390x844
+  // Assert minigame-shell appears with marathon canvas
+  const minigameShell = page.locator('[data-testid="minigame-shell"]');
+  await minigameShell.waitFor({ state: 'visible', timeout: 6000 });
+  const marathonCanvas = page.locator('[data-testid="marathon-canvas"]');
+  await marathonCanvas.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] minigame-shell and marathon-canvas visible');
+
+  // Verify canvas dimensions on desktop (>=60% of viewport) and mobile (>=340px, no page scroll)
+  const canvasBox = await marathonCanvas.boundingBox();
+  console.log(`  Marathon Canvas Bounding Box: w=${canvasBox?.width}, h=${canvasBox?.height}`);
+  if (!canvasBox) {
+    throw new Error('Could not get marathon canvas bounding box');
+  }
+
+  if (!isMobile) {
+    const desktopRatio = canvasBox.width / 1366;
+    console.log(`  Desktop canvas width ratio: ${(desktopRatio * 100).toFixed(1)}% (${canvasBox.width}px / 1366px)`);
+    if (desktopRatio < 0.60) {
+      throw new Error(`Desktop canvas width < 60% of viewport: ${(desktopRatio * 100).toFixed(1)}% (${canvasBox.width}px / 1366px)`);
+    }
+    console.log('  [PASS] Desktop canvas width is >= 60% of viewport');
+  } else {
+    console.log(`  Mobile canvas width: ${canvasBox.width}px`);
+    if (canvasBox.width < 340) {
+      throw new Error(`Mobile canvas width < 340px: ${canvasBox.width}px`);
+    }
+    console.log('  [PASS] Mobile canvas width >= 340px');
+
+    const noScroll = await page.evaluate(() => {
+      const doc = document.documentElement;
+      return doc.scrollHeight <= window.innerHeight + 2 && window.scrollY === 0;
+    });
+    if (!noScroll) {
+      const heights = await page.evaluate(() => ({
+        scrollHeight: document.documentElement.scrollHeight,
+        innerHeight: window.innerHeight,
+        scrollY: window.scrollY,
+      }));
+      throw new Error(`Mobile page scroll detected during mini-game: ${JSON.stringify(heights)}`);
+    }
+    console.log('  [PASS] No mobile page scroll during mini-game');
+
+    // Check Exit button height
+    const exitBtn = page.locator('[data-testid="puzzle-exit-btn"]');
+    const exitBox = await exitBtn.boundingBox();
+    console.log(`  Mobile Exit Button Box: h=${exitBox?.height}, w=${exitBox?.width}`);
+    if (!exitBox || exitBox.height < 44) {
+      throw new Error(`Exit button height < 44px on mobile: ${exitBox?.height}`);
+    }
+    console.log('  [PASS] Exit button >= 44px on mobile');
+
+    // Trigger assist button to check height
+    await page.evaluate(() => window.__triggerMiniGameAssist?.());
+    const assistBtn = page.locator('[data-testid="minigame-assist"]');
+    await assistBtn.waitFor({ state: 'visible', timeout: 3000 });
+    const assistBox = await assistBtn.boundingBox();
+    console.log(`  Mobile Assist Button Box: h=${assistBox?.height}, w=${assistBox?.width}`);
+    if (!assistBox || assistBox.height < 44) {
+      throw new Error(`Assist button height < 44px on mobile: ${assistBox?.height}`);
+    }
+    console.log('  [PASS] Assist button >= 44px on mobile');
+  }
+
+  // 1. Run with NO input; assert it finishes with 1 star and win screen appears
+  console.log('  Running Marathon Rover with no input (should hit obstacles and finish with 1 star)...');
+  await page.evaluate(() => {
+    window.__marathonSpeedMultiplier = 4;
+    window.__marathonAutoplay = false;
+  });
+
+  const minigameWin = page.locator('[data-testid="minigame-win"]');
+  await minigameWin.waitFor({ state: 'visible', timeout: 25000 });
+  console.log('  [PASS] Runner finished, minigame-win visible');
+
+  // Assert debug hook reports airtime (0.85 to 1.0 s) and run duration (22 to 32 s)
+  const stats = await page.evaluate(() => window.__marathonStats || window.__novaMarathonStats);
+  console.log('  Marathon stats reported by debug hook:', stats);
+  if (!stats) {
+    throw new Error('window.__marathonStats hook was not found');
+  }
+  if (typeof stats.airtime !== 'number' || stats.airtime < 0.85 || stats.airtime > 1.0) {
+    throw new Error(`Expected jump airtime between 0.85 and 1.0s, got: ${stats.airtime}`);
+  }
+  console.log(`  [PASS] Floatier jump airtime: ${stats.airtime.toFixed(3)}s (between 0.85s and 1.0s)`);
+  if (typeof stats.runDuration !== 'number' || stats.runDuration < 22 || stats.runDuration > 32) {
+    throw new Error(`Expected no-input run duration between 22 and 32s, got: ${stats.runDuration}`);
+  }
+  console.log(`  [PASS] No-input run duration: ${stats.runDuration.toFixed(2)}s (between 22s and 32s)`);
+
+  const starsEl = page.locator('[data-testid="minigame-stars"]');
+  const stars1 = await starsEl.getAttribute('data-stars');
+  const stars1Text = await starsEl.textContent();
+  console.log(`  Stars with no input: ${stars1} (${stars1Text})`);
+  if (stars1 !== '1') {
+    throw new Error(`Expected 1 star on run with no input, got: ${stars1}`);
+  }
+  const bonusToast1 = page.locator('[data-testid="bonus-rp-toast"]');
+  if (await bonusToast1.isVisible()) {
+    throw new Error('Bonus RP toast should NOT be shown for 1 star result');
+  }
+  console.log('  [PASS] Finished with 1 star and no bonus RP toast');
+  await snap('06a_marathon_1_star');
+
+  // 2. Assert the "Try again for 3 stars" button works before claiming
+  const retryBtn = page.locator('[data-testid="minigame-retry"]');
+  const retryBox = await retryBtn.boundingBox();
+  console.log(`  Retry Button Box: h=${retryBox?.height}, w=${retryBox?.width}`);
+  if (!retryBox || retryBox.height < 44) {
+    throw new Error(`Retry button height < 44px: ${retryBox?.height}`);
+  }
+  if (retryBox.height < 48) {
+    throw new Error(`Retry button height < 48px: ${retryBox?.height}`);
+  }
+  console.log('  [PASS] Retry button >= 48px tall');
+
+  await retryBtn.click();
+  await minigameWin.waitFor({ state: 'detached', timeout: 5000 });
+  await marathonCanvas.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Retry button restarted runner successfully');
+
+  // 3. Test autoplay flag (jumps over obstacles) -> 3 stars, bonus RP toast, RP +1
+  console.log('  Testing autoplay flag for 3 stars and +1 bonus RP...');
+  const rpBefore = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP before 3-star run: ${rpBefore}`);
+
+  await page.evaluate(() => {
+    window.__marathonSpeedMultiplier = 4;
+    window.__marathonAutoplay = true;
+  });
+
+  await minigameWin.waitFor({ state: 'visible', timeout: 25000 });
+  const stars3 = await starsEl.getAttribute('data-stars');
+  console.log(`  Stars with autoplay: ${stars3}`);
+  if (stars3 !== '3') {
+    throw new Error(`Expected 3 stars with autoplay, got: ${stars3}`);
+  }
+
+  const bonusToast = page.locator('[data-testid="bonus-rp-toast"]');
+  await bonusToast.waitFor({ state: 'visible', timeout: 5000 });
+  const bonusToastText = await bonusToast.textContent();
+  console.log(`  Bonus RP toast text: "${bonusToastText}"`);
+  if (!bonusToastText.includes('+1 RP')) {
+    throw new Error(`Bonus RP toast does not contain "+1 RP": ${bonusToastText}`);
+  }
+
+  const rpAfter = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP after 3-star run: ${rpAfter} (expected: ${rpBefore + 1})`);
+  if (rpAfter !== rpBefore + 1) {
+    throw new Error(`Expected RP to increase by 1, before: ${rpBefore}, after: ${rpAfter}`);
+  }
+  console.log('  [PASS] 3 stars achieved, bonus RP toast displayed, RP increased by +1');
+  await snap('06a_marathon_3_stars');
+
+  // 4. Assert a second run does NOT give another +1 RP
+  console.log('  Running a second 3-star attempt to verify RP is NOT awarded twice...');
+  await retryBtn.click();
+  await minigameWin.waitFor({ state: 'detached', timeout: 5000 });
+  await marathonCanvas.waitFor({ state: 'visible', timeout: 5000 });
+
+  await page.evaluate(() => {
+    window.__marathonSpeedMultiplier = 4;
+    window.__marathonAutoplay = true;
+  });
+
+  await minigameWin.waitFor({ state: 'visible', timeout: 25000 });
+  const rpSecondRun = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP after second 3-star run: ${rpSecondRun} (expected: ${rpAfter})`);
+  if (rpSecondRun !== rpAfter) {
+    throw new Error(`Second 3-star run awarded extra RP! Expected ${rpAfter}, got ${rpSecondRun}`);
+  }
+  console.log('  [PASS] Second run did NOT give another +1 RP');
+
+  // 5. Tap "Did you know?", assert exact updated eq_opportunity line is visible
+  const factBtn = page.locator('[data-testid="minigame-fact"]');
+  await factBtn.click();
+  await page.waitForTimeout(300);
+  const factText = await factBtn.textContent();
+  console.log(`  Did You Know Fact Text: "${factText}"`);
+  const expectedFact = "Opportunity drove over 45 km on Mars, farther than a marathon, and worked for about 14 years.";
+  if (!factText.includes(expectedFact)) {
+    throw new Error(`Did-you-know fact does not match expected mission line. Got: ${factText}`);
+  }
+  console.log('  [PASS] Exact Did-You-Know fact displayed for Opportunity');
+  await snap('06a_marathon_fact_revealed');
+  await snap('06a_marathon_win_stars_fact');
+
+  // 6. Claim the part; assert part count goes to 1/8 and Opportunity story log is recovered
+  console.log('  Claiming part from Opportunity...');
+  const claimPartBtn = page.locator('[data-testid="claim-part-btn"]');
+  await claimPartBtn.click();
+  await minigameShell.waitFor({ state: 'detached', timeout: 5000 });
+  await page.waitForTimeout(600);
+
+  // Assert collected parts count is 1
+  const parts = await page.evaluate(() => window.__getCollectedPartIds ? window.__getCollectedPartIds() : []);
+  console.log(`  Collected parts after Opportunity claim:`, parts);
+  if (!parts.includes('part_solar_bus') || parts.length !== 1) {
+    throw new Error(`Expected collectedPartIds to contain 'part_solar_bus' with length 1, got: ${JSON.stringify(parts)}`);
+  }
+
+  // Assert recovered log includes 'log_opportunity'
+  const logs = await page.evaluate(() => window.__getRecoveredLogIds ? window.__getRecoveredLogIds() : []);
+  console.log(`  Recovered logs after Opportunity claim:`, logs);
+  if (!logs.includes('log_opportunity') || logs.length !== 1) {
+    throw new Error(`Expected recoveredLogIds to contain 'log_opportunity' with length 1, got: ${JSON.stringify(logs)}`);
+  }
+  console.log('  [PASS] Part count is 1/8 and Opportunity story log recovered');
+  await snap('06b_marathon_part_claimed');
+
+  // -------------------------------------------------------------------------
+  // 6B. VERIFY STORY MEMORY LOG UNLOCK (TOAST, CODEX, D-PAD NON-COLLISION)
+  // -------------------------------------------------------------------------
+  console.log('6B. Verifying Story Memory Log Unlock from Claimed Opportunity...');
+
+  // 1. Assert claiming Opportunity unlocked LOG 1/8, shows toast, does not collide with the mobile D-pad on 390x844
   const logToast = page.locator('[data-testid="log-toast"]');
   await logToast.waitFor({ state: 'visible', timeout: 5000 });
   const logToastText = await logToast.textContent();
@@ -858,21 +1248,21 @@ async function runTestPass(browser, config) {
   await logsTabBtn.click();
   await page.waitForTimeout(400);
 
-  // Assert 1 unlocked entry with FICTION tag and exact text
-  const log1TextEl = codexModal.locator('[data-testid="log-text-1"]');
-  if (!(await log1TextEl.isVisible())) {
-    throw new Error('Log #1 text is not visible in Codex Logs tab');
+  // Assert unlocked Opportunity log entry with FICTION tag and exact text
+  const log2TextEl = codexModal.locator('[data-testid="log-text-2"]');
+  if (!(await log2TextEl.isVisible())) {
+    throw new Error('Log #2 text is not visible in Codex Logs tab');
   }
-  const log1Text = await log1TextEl.textContent();
-  console.log(`  Log #1 Text: "${log1Text}"`);
-  if (!log1Text.includes("Another power fault. My memory resets every few sols. I'm leaving notes on old probes so I can rebuild the ship.")) {
-    throw new Error(`Log #1 text does not match exact premise text: ${log1Text}`);
+  const log2Text = await log2TextEl.textContent();
+  console.log(`  Log #2 Text: "${log2Text}"`);
+  if (!log2Text.includes("This rover worked for years beyond its plan. Lesson: keep going past the plan.")) {
+    throw new Error(`Log #2 text does not match exact premise text: ${log2Text}`);
   }
 
-  const log1Entry = codexModal.locator('[data-testid="codex-log-entry-1"]');
-  const log1FictionTag = log1Entry.locator('[data-testid="fiction-tag"]');
-  if (!(await log1FictionTag.isVisible())) {
-    throw new Error('FICTION tag missing from unlocked Log #1 in Codex');
+  const log2Entry = codexModal.locator('[data-testid="codex-log-entry-2"]');
+  const log2FictionTag = log2Entry.locator('[data-testid="fiction-tag"]');
+  if (!(await log2FictionTag.isVisible())) {
+    throw new Error('FICTION tag missing from unlocked Log #2 in Codex');
   }
 
   // Assert 7 locked slots
@@ -901,9 +1291,9 @@ async function runTestPass(browser, config) {
   await logsTabBtn.click();
   await page.waitForTimeout(400);
 
-  const reloadedLog1El = codexModal.locator('[data-testid="log-text-1"]');
-  if (!(await reloadedLog1El.isVisible())) {
-    throw new Error('After reload, Log #1 text is not visible (was not preserved)');
+  const reloadedLog2El = codexModal.locator('[data-testid="log-text-2"]');
+  if (!(await reloadedLog2El.isVisible())) {
+    throw new Error('After reload, Log #2 text is not visible (was not preserved)');
   }
   const reloadedLockedCount = await codexModal.locator('[data-testid^="codex-log-locked-"]').count();
   if (reloadedLockedCount !== 7) {
@@ -913,6 +1303,14 @@ async function runTestPass(browser, config) {
 
   await codexCloseBtn.click();
   await codexModal.waitFor({ state: 'detached', timeout: 5000 });
+
+  // Assert bonusRpWreckIds persisted after reload
+  const persistedBonusIds = await page.evaluate(() => window.__getBonusRpWreckIds ? window.__getBonusRpWreckIds() : []);
+  console.log('  Persisted bonusRpWreckIds after reload:', persistedBonusIds);
+  if (!persistedBonusIds.includes('eq_opportunity')) {
+    throw new Error(`bonusRpWreckIds not persisted after reload. Got: ${JSON.stringify(persistedBonusIds)}`);
+  }
+  console.log('  [PASS] bonusRpWreckIds persisted after reload');
 
   // -------------------------------------------------------------------------
   // 7. COMPLETE ALL 8 PARTS (PARTS HUD COMPLETE)
