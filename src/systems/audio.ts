@@ -184,10 +184,11 @@ class SoundSystem {
           break;
         }
         case 'grass': {
-          // Light terraformed turf rustle
+          // Crispy dry clay crust / shale step
           filter.type = 'bandpass';
-          filter.frequency.setValueAtTime(1100 + Math.random() * 200, now);
-          gain.gain.setValueAtTime(0.04 * this.sfxVolume, now);
+          filter.frequency.setValueAtTime(850 + Math.random() * 200, now);
+          filter.Q.setValueAtTime(1.8, now);
+          gain.gain.setValueAtTime(0.05 * this.sfxVolume, now);
           gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
           break;
         }
@@ -259,8 +260,8 @@ class SoundSystem {
           targetFreq = 1200; // Icy blizzard draft
           targetQ = 3.0;
         } else if (biome === 'grassland') {
-          targetFreq = 300; // Gentle meadow rustle
-          targetQ = 0.8;
+          targetFreq = 340; // Hollow dry basin draft
+          targetQ = 1.4;
         }
         this.windFilter.frequency.exponentialRampToValueAtTime(targetFreq, now + 1.2);
         this.windFilter.Q.exponentialRampToValueAtTime(targetQ, now + 1.2);
@@ -755,6 +756,69 @@ class SoundSystem {
       gain.connect(this.ctx.destination);
       osc.start(now);
       osc.stop(now + 1.3);
+    } catch {}
+  }
+
+  public playCanyonEcho() {
+    if (this.isMuted || this.sfxVolume <= 0) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // 1. Initial low-frequency seismic acoustic boom
+      const boom = this.ctx.createOscillator();
+      const boomGain = this.ctx.createGain();
+      boom.type = 'sine';
+      boom.frequency.setValueAtTime(140, now);
+      boom.frequency.exponentialRampToValueAtTime(38, now + 0.6);
+      boomGain.gain.setValueAtTime(0.24 * this.sfxVolume, now);
+      boomGain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+      boom.connect(boomGain);
+      boomGain.connect(this.ctx.destination);
+      boom.start(now);
+      boom.stop(now + 0.75);
+
+      // 2. High-tech acoustic telemetry chirp
+      const chirp = this.ctx.createOscillator();
+      const chirpGain = this.ctx.createGain();
+      chirp.type = 'triangle';
+      chirp.frequency.setValueAtTime(1200, now);
+      chirp.frequency.exponentialRampToValueAtTime(2400, now + 0.15);
+      chirpGain.gain.setValueAtTime(0.12 * this.sfxVolume, now);
+      chirpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      chirp.connect(chirpGain);
+      chirpGain.connect(this.ctx.destination);
+      chirp.start(now);
+      chirp.stop(now + 0.22);
+
+      // 3. Three reverberating canyon echoes with increasing delay & low-pass filtering
+      const echoDelays = [0.28, 0.58, 0.92];
+      const echoFreqs = [480, 360, 260];
+      const echoGains = [0.10, 0.06, 0.03];
+
+      echoDelays.forEach((delay, idx) => {
+        const echo = this.ctx!.createOscillator();
+        const echoG = this.ctx!.createGain();
+        const filter = this.ctx!.createBiquadFilter();
+
+        echo.type = 'sine';
+        echo.frequency.setValueAtTime(echoFreqs[idx], now + delay);
+        echo.frequency.exponentialRampToValueAtTime(echoFreqs[idx] * 0.7, now + delay + 0.35);
+
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(600 - idx * 120, now + delay);
+
+        echoG.gain.setValueAtTime(echoGains[idx] * this.sfxVolume, now + delay);
+        echoG.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.38);
+
+        echo.connect(filter);
+        filter.connect(echoG);
+        echoG.connect(this.ctx!.destination);
+
+        echo.start(now + delay);
+        echo.stop(now + delay + 0.4);
+      });
     } catch {}
   }
 

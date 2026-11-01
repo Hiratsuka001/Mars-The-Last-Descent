@@ -17,7 +17,7 @@ export const ENABLE_SIGNAL_BLIP = true;  // Toggle for proximity signal blip
 export const MINIMAP_BIOME_COLORS: Record<BiomeType, string> = {
   rocky: '#a8432b',      // Mars Regolith ochre
   desert: '#d99d57',     // Golden dune sand
-  grassland: '#4d8e3b',  // Terraformed bio-green
+  grassland: '#6c2e12',  // Sedimentary clay basin
   snow: '#dff0f8',       // Polar cryo ice
   water: '#1d4ed8',      // Deep basin water (impassable)
 };

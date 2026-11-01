@@ -154,6 +154,11 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
   const [discoveredLandmarkIds, setDiscoveredLandmarkIds] = useState<string[]>([]);
   const discoveredLandmarksRef = useRef<string[]>([]);
   discoveredLandmarksRef.current = discoveredLandmarkIds;
+  const [soundedLandmarkIds, setSoundedLandmarkIds] = useState<string[]>([]);
+  const soundedLandmarksRef = useRef<string[]>([]);
+  soundedLandmarksRef.current = soundedLandmarkIds;
+  const [canProbeCanyon, setCanProbeCanyon] = useState<boolean>(false);
+  const canProbeCanyonRef = useRef<boolean>(false);
   const [landmarkToast, setLandmarkToast] = useState<{ name: string; fact: string } | null>(null);
   const lastPlayerTileRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -409,6 +414,12 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       collectedSamplesRef.current = worldSave.collectedSampleIds || [];
       setDiscoveredLandmarkIds(worldSave.discoveredLandmarkIds || []);
       discoveredLandmarksRef.current = worldSave.discoveredLandmarkIds || [];
+      const loadedSounded = Array.isArray(worldSave.soundedLandmarkIds) ? worldSave.soundedLandmarkIds : [];
+      setSoundedLandmarkIds(loadedSounded);
+      soundedLandmarksRef.current = loadedSounded;
+      landmarksListRef.current.forEach((lm) => {
+        if (loadedSounded.includes(lm.id)) lm.isSounded = true;
+      });
       const loadedLogs = Array.isArray(worldSave.recoveredLogIds)
         ? worldSave.recoveredLogIds
         : deriveLogIdsFromParts(worldSave.collectedPartIds || [], worldSave.completedEquipmentIds || []);
@@ -1049,6 +1060,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         playTimeSeconds: playTimeRef.current,
         collectedSampleIds: collectedSamplesRef.current,
         discoveredLandmarkIds: discoveredLandmarksRef.current,
+        soundedLandmarkIds: soundedLandmarksRef.current,
         recoveredLogIds: recoveredLogIdsRef.current,
         solTime: solTimeRef.current,
         researchPoints: researchPointsRef.current,
@@ -1284,6 +1296,42 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     novaBubbleTimerRef.current = 4.0;
     generalBubbleCooldownRef.current = 15.0;
   }, [triggerAutoSave]);
+
+  // Deploy Depth Sounder Probe into Valles Marineris Abyss (+3 RP)
+  const triggerCanyonProbe = useCallback(() => {
+    if (soundedLandmarksRef.current.includes('canyon_rim')) return;
+    const canyon = landmarksListRef.current.find((lm) => lm.id === 'canyon_rim');
+    if (!canyon) return;
+
+    const nextSounded = [...soundedLandmarksRef.current, 'canyon_rim'];
+    soundedLandmarksRef.current = nextSounded;
+    setSoundedLandmarkIds(nextSounded);
+    canyon.isSounded = true;
+
+    sound.playCanyonEcho();
+    triggerCameraShake(4.5, 0.45);
+
+    const nextPoints = researchPointsRef.current + 3;
+    setResearchPoints(nextPoints);
+    researchPointsRef.current = nextPoints;
+
+    triggerAutoSave(true);
+
+    setLandmarkToast({
+      name: 'Valles Marineris Depth Sounder',
+      fact: 'Descent probe verified 7,420 m depth. Ancient crustal basalt strata & echo profile recorded! (+3 RP)',
+    });
+    setTimeout(() => {
+      setLandmarkToast(null);
+    }, 5500);
+
+    setNovaBubble({
+      text: 'Acoustic telemetry return confirmed! Canyon floor is 7.4 km down. Deep core data secured!',
+      mood: 'celebrate',
+    });
+    novaBubbleTimerRef.current = 5.0;
+    generalBubbleCooldownRef.current = 15.0;
+  }, [triggerAutoSave, triggerCameraShake]);
 
   // Buy Subsystem Upgrade at Crashed Spaceship (2 levels each: costs 3/6, 4/8, 5/10 RP)
   const handleBuyUpgrade = useCallback((key: 'jetpack' | 'scan' | 'minimap') => {
@@ -1761,7 +1809,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
                 : biomeType === 'desert'
                 ? 'rgba(217, 119, 6, 0.65)'
                 : biomeType === 'grassland'
-                ? 'rgba(101, 163, 13, 0.55)'
+                ? 'rgba(180, 83, 9, 0.55)'
                 : 'rgba(194, 65, 12, 0.65)';
             const puffAngle = Math.random() * Math.PI * 2;
             const puffSpeed = 10 + Math.random() * 22;
@@ -1800,12 +1848,14 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
           }
 
           // Leave Footprint Decals on terrain
-          if (biomeType !== 'water' && biomeType !== 'grassland') {
+          if (biomeType !== 'water') {
             const fpColor =
               biomeType === 'snow'
                 ? 'rgba(148, 163, 184, 0.45)'
                 : biomeType === 'desert'
                 ? 'rgba(180, 83, 9, 0.35)'
+                : biomeType === 'grassland'
+                ? 'rgba(113, 41, 13, 0.42)'
                 : 'rgba(124, 45, 18, 0.4)';
             footprintsRef.current.push({
               x: player.x,
@@ -1917,13 +1967,15 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
 
             nova.walkFrame += dt * 6.5;
 
-            // Occasional pawprint in sand/snow/regolith
-            if (Math.random() < 0.22 && biomeType !== 'water' && biomeType !== 'grassland') {
+            // Occasional pawprint in sand/snow/regolith/clay
+            if (Math.random() < 0.22 && biomeType !== 'water') {
               const fpColor =
                 biomeType === 'snow'
                   ? 'rgba(148, 163, 184, 0.35)'
                   : biomeType === 'desert'
                   ? 'rgba(180, 83, 9, 0.28)'
+                  : biomeType === 'grassland'
+                  ? 'rgba(113, 41, 13, 0.32)'
                   : 'rgba(124, 45, 18, 0.3)';
               footprintsRef.current.push({
                 x: nova.x,
@@ -2035,7 +2087,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
           const biomeMsgs: Record<string, string> = {
             desert: 'Vast dunes detected. Sand might slow our stride.',
             snow: 'Subsurface polar frost detected. Extreme cold ahead!',
-            grassland: 'Terraformed vegetation verified. Liquid water must exist!',
+            grassland: 'Ancient sedimentary clay basin detected. Rich in layered delta deposits!',
             rocky: 'Regolith plains detected. High concentration of minerals.',
           };
           const msg = biomeMsgs[biomeType];
@@ -2166,6 +2218,18 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       }
       setNearbySample(nearestSample);
 
+      // Check proximity to Valles Marineris canyon rim for depth sounder probe
+      const canyon = landmarksListRef.current.find((lm) => lm.id === 'canyon_rim');
+      let nearCanyonProbe = false;
+      if (canyon && !soundedLandmarksRef.current.includes('canyon_rim')) {
+        const distToCanyon = Math.hypot(player.x - canyon.worldX, player.y - (canyon.worldY - 26));
+        if (distToCanyon < 64) {
+          nearCanyonProbe = true;
+        }
+      }
+      setCanProbeCanyon(nearCanyonProbe);
+      canProbeCanyonRef.current = nearCanyonProbe;
+
       // Check [E] / Enter key interaction trigger
       const isInteract = heldKeysRef.current.has('KeyE') || heldKeysRef.current.has('Enter') || touchStateRef.current.interact;
       if (isInteract) {
@@ -2180,6 +2244,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
             triggerShipInteract();
           } else if (nearestSample) {
             triggerSampleCollect(nearestSample);
+          } else if (canProbeCanyonRef.current) {
+            triggerCanyonProbe();
           }
         }
       }
@@ -2194,6 +2260,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
             triggerShipInteract();
           } else if (nearestSample) {
             triggerSampleCollect(nearestSample);
+          } else if (canProbeCanyonRef.current) {
+            triggerCanyonProbe();
           } else {
             triggerSonarScan();
           }
@@ -3265,8 +3333,10 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       triggerShipInteract();
     } else if (nearbySample) {
       triggerSampleCollect(nearbySample);
+    } else if (canProbeCanyon) {
+      triggerCanyonProbe();
     }
-  }, [nearbyEquipment, isNearShip, nearbySample, triggerEquipmentInteract, triggerShipInteract, triggerSampleCollect]);
+  }, [nearbyEquipment, isNearShip, nearbySample, canProbeCanyon, triggerEquipmentInteract, triggerShipInteract, triggerSampleCollect, triggerCanyonProbe]);
 
   return (
     <div data-testid="world-scene" className="relative w-full h-full select-none overflow-hidden bg-black flex flex-col items-center justify-center font-sans">
@@ -4090,7 +4160,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       )}
 
       {/* Desktop Proximity Interaction Prompt Banner */}
-      {!isLaunching && !showEnding && (nearbyEquipment || isNearShip || nearbySample) && (
+      {!isLaunching && !showEnding && (nearbyEquipment || isNearShip || nearbySample || canProbeCanyon) && (
         <div
           data-testid="interact-prompt"
           onClick={handleTouchInteract}
@@ -4110,6 +4180,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
                 : 'INSPECT CRASHED SPACECRAFT'
               : nearbySample
               ? `COLLECT ${nearbySample.def.name.toUpperCase()}`
+              : canProbeCanyon
+              ? 'DEPLOY DEPTH SOUNDER PROBE (+3 RP)'
               : 'INTERACT'}
           </span>
         </div>
@@ -4197,7 +4269,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
             </div>
 
             {/* Mobile Touch Interact Button */}
-            {(nearbyEquipment || isNearShip || nearbySample) && (
+            {(nearbyEquipment || isNearShip || nearbySample || canProbeCanyon) && (
               <button
                 data-testid="touch-interact-btn"
                 onClick={handleTouchInteract}
@@ -4212,6 +4284,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
                       : 'bg-amber-400 active:bg-amber-300 text-slate-950 shadow-[0_0_20px_rgba(251,191,36,0.6)]'
                     : nearbySample
                     ? 'bg-emerald-400 active:bg-emerald-300 text-slate-950 shadow-[0_0_20px_rgba(16,185,129,0.6)]'
+                    : canProbeCanyon
+                    ? 'bg-indigo-400 active:bg-indigo-300 text-slate-950 shadow-[0_0_20px_rgba(129,140,248,0.6)]'
                     : 'bg-cyan-400 active:bg-cyan-300 text-slate-950 shadow-[0_0_20px_rgba(6,182,212,0.6)]'
                 }`}
               >
@@ -4226,6 +4300,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
                       : '[E] INSPECT SHIP'
                     : nearbySample
                     ? '[E] SAMPLE'
+                    : canProbeCanyon
+                    ? '[E] PROBE'
                     : '[E] INTERACT'}
                 </span>
               </button>

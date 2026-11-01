@@ -27,6 +27,7 @@ export interface WorldSaveData {
   lastSavedAt: number;
   collectedSampleIds?: string[];
   discoveredLandmarkIds?: string[];
+  soundedLandmarkIds?: string[];
   recoveredLogIds?: string[];
   solTime?: number;
   researchPoints?: number;

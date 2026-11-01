@@ -221,74 +221,74 @@ export const PROCEDURAL_TILE_DEFS: ProceduralTileConfig[] = [
   },
 
   // ==========================================
-  // TERRAFORMED SAVANNA / GRASSLAND
-  // Palette: Grounded Martian lichen & hardy olive moss
+  // SEDIMENTARY CLAY BASIN / ANCIENT DELTA
+  // Palette: Rich terracotta iron clay, cracked mudstone & silt deposits
   // ==========================================
   {
     key: 'tile_grass_base',
-    name: 'Terraformed Grass Base',
+    name: 'Sedimentary Clay Base',
     biome: 'grassland',
-    baseColor: '#365314', // deep hardy olive lichen
+    baseColor: '#6c2e12', // Deep ferruginous clay / dried mudstone
     pattern: (_x, _y, rng) => {
       const r = rng();
-      if (r < 0.08) return '#283c0e'; // darker moss shadow
-      if (r < 0.15) return '#4d7c0f'; // olive blade highlight
+      if (r < 0.08) return '#451a03'; // Desiccation mud crack shadow
+      if (r < 0.15) return '#92400e'; // Silt crust highlight
       return null;
     },
   },
   {
     key: 'tile_grass_variant',
-    name: 'Terraformed Grass Tuft Variant',
+    name: 'Sedimentary Mudstone Variant',
     biome: 'grassland',
-    baseColor: '#365314',
+    baseColor: '#6c2e12',
     pattern: (_x, _y, rng) => {
       const r = rng();
-      if (r < 0.06) return '#283c0e';
-      if (r < 0.12) return '#4d7c0f';
+      if (r < 0.06) return '#451a03';
+      if (r < 0.12) return '#92400e';
       return null;
     },
     pixels: [
-      { x: 5, y: 6, color: '#1e2e0a' },
-      { x: 5, y: 7, color: '#1e2e0a' },
-      { x: 6, y: 6, color: '#65a30d' },
-      { x: 12, y: 11, color: '#1e2e0a' },
+      { x: 5, y: 6, color: '#3b1402' },
+      { x: 5, y: 7, color: '#3b1402' },
+      { x: 6, y: 6, color: '#9a3412' },
+      { x: 12, y: 11, color: '#3b1402' },
     ],
   },
   {
     key: 'tile_grass_path',
-    name: 'Terraformed Soil / Trail Accent',
+    name: 'Sedimentary Silt / Trail Accent',
     biome: 'grassland',
-    baseColor: '#365314', // Base olive grass color
+    baseColor: '#6c2e12', // Base clay color
     pattern: (x, y, rng) => {
-      // Soft organic dithered soil patch inside grass (no hard rectangle edges)
+      // Soft organic dithered silt patch inside clay
       const dx = (x - 7.5) / 6.2;
       const dy = (y - 7.5) / 6.2;
       const dist = Math.hypot(dx, dy);
       const dither = BAYER_4X4[y % 4][x % 4];
 
-      // Outer boundary: blend seamlessly into grass #365314 using Bayer 4x4 dither
+      // Outer boundary: blend seamlessly into clay #6c2e12 using Bayer 4x4 dither
       if (dist > 1.25) return null;
       if (dist > 0.82) {
         const blendThreshold = Math.round(((dist - 0.82) / 0.43) * 15);
-        if (dither < blendThreshold) return null; // grass pixel
+        if (dither < blendThreshold) return null; // clay pixel
       }
 
-      // Soil core with subtle organic variation
+      // Silt sediment core with subtle organic variation
       const r = rng();
-      if (r < 0.10) return '#5e2a0b';
-      if (r < 0.22) return '#92400e';
+      if (r < 0.10) return '#3b1402';
+      if (r < 0.22) return '#a14417';
       return '#78350f';
     },
   },
   {
     key: 'tile_grass_dark_patch',
-    name: 'Terraformed Grass Grove Patch',
+    name: 'Sedimentary Clay Deep Patch',
     biome: 'grassland',
-    baseColor: '#283c0e',
+    baseColor: '#4a1d08',
     pattern: (_x, _y, rng) => {
       const r = rng();
-      if (r < 0.08) return '#1e2e0a';
-      if (r < 0.16) return '#365314';
+      if (r < 0.08) return '#341303';
+      if (r < 0.16) return '#5e250b';
       return null;
     },
   },
@@ -398,14 +398,14 @@ export const PROCEDURAL_TILE_DEFS: ProceduralTileConfig[] = [
   },
   {
     key: 'tile_border_mars_grass',
-    name: 'Transition: Mars Regolith to Savanna',
+    name: 'Transition: Mars Regolith to Clay Basin',
     biome: 'rocky',
     baseColor: '#9c3f25',
     pattern: (x, y, _rng) => {
       const dither = BAYER_4X4[y % 4][x % 4];
-      if (dither < 5) return '#365314';
-      if (dither < 8) return '#4d7c0f';
-      if (dither < 10) return '#6b3f20';
+      if (dither < 5) return '#6c2e12';
+      if (dither < 8) return '#78350f';
+      if (dither < 10) return '#85421c';
       return null;
     },
   },
@@ -453,14 +453,14 @@ export const PROCEDURAL_TILE_DEFS: ProceduralTileConfig[] = [
   },
   {
     key: 'tile_border_sand_grass',
-    name: 'Transition: Sand to Savanna',
+    name: 'Transition: Sand Dunes to Clay Basin',
     biome: 'desert',
     baseColor: '#d99d57',
     pattern: (x, y, _rng) => {
       const dither = BAYER_4X4[y % 4][x % 4];
-      if (dither < 5) return '#365314';
-      if (dither < 8) return '#4d7c0f';
-      if (dither < 11) return '#857038';
+      if (dither < 5) return '#6c2e12';
+      if (dither < 8) return '#78350f';
+      if (dither < 11) return '#a16228';
       return null;
     },
   },
@@ -538,45 +538,45 @@ export const PROCEDURAL_TILE_DEFS: ProceduralTileConfig[] = [
     ],
   },
 
-  // Grassland Details
+  // Sedimentary Clay Basin Details
   {
     key: 'decor_grass_flower_red',
-    name: 'Grassland Red Poppy Detail',
+    name: 'Clay Mud Crack Detail',
     biome: 'grassland',
     pixels: [
-      { x: 6, y: 7, color: '#f43f5e' }, { x: 7, y: 7, color: '#f43f5e' },
-      { x: 6, y: 8, color: '#be123c' }, { x: 7, y: 8, color: '#fef08a' },
-      { x: 7, y: 9, color: '#2d5a1e' },
+      { x: 5, y: 7, color: '#3b1402' }, { x: 6, y: 7, color: '#3b1402' },
+      { x: 6, y: 8, color: '#260c01' }, { x: 7, y: 8, color: '#3b1402' },
+      { x: 7, y: 9, color: '#3b1402' }, { x: 8, y: 9, color: '#260c01' },
     ],
   },
   {
     key: 'decor_grass_flower_yellow',
-    name: 'Grassland Yellow Buttercup Detail',
+    name: 'Sulfur Sediment Bleed Detail',
     biome: 'grassland',
     pixels: [
-      { x: 9, y: 5, color: '#facc15' }, { x: 10, y: 5, color: '#facc15' },
-      { x: 9, y: 6, color: '#ca8a04' }, { x: 10, y: 6, color: '#ffffff' },
-      { x: 10, y: 7, color: '#2d5a1e' },
+      { x: 9, y: 5, color: '#b45309' }, { x: 10, y: 5, color: '#d97706' },
+      { x: 9, y: 6, color: '#92400e' }, { x: 10, y: 6, color: '#b45309' },
+      { x: 11, y: 6, color: '#78350f' },
     ],
   },
   {
     key: 'decor_grass_flower_white',
-    name: 'Grassland White Daisy Detail',
+    name: 'Evaporite Mineral Fleck Detail',
     biome: 'grassland',
     pixels: [
-      { x: 4, y: 10, color: '#ffffff' }, { x: 5, y: 10, color: '#ffffff' },
-      { x: 4, y: 11, color: '#e2e8f0' }, { x: 5, y: 11, color: '#fef08a' },
-      { x: 5, y: 12, color: '#2d5a1e' },
+      { x: 4, y: 10, color: '#e2e8f0' }, { x: 5, y: 10, color: '#f8fafc' },
+      { x: 4, y: 11, color: '#94a3b8' }, { x: 5, y: 11, color: '#cbd5e1' },
+      { x: 6, y: 11, color: '#64748b' },
     ],
   },
   {
     key: 'decor_grass_tuft',
-    name: 'Grassland Grass Blade Detail',
+    name: 'Layered Shale Shard Detail',
     biome: 'grassland',
     pixels: [
-      { x: 5, y: 6, color: '#2d5a1e' }, { x: 5, y: 7, color: '#387326' },
-      { x: 6, y: 7, color: '#5eb04a' }, { x: 6, y: 8, color: '#2d5a1e' },
-      { x: 7, y: 8, color: '#387326' },
+      { x: 5, y: 6, color: '#9a3412' }, { x: 6, y: 6, color: '#7c2d12' },
+      { x: 5, y: 7, color: '#7c2d12' }, { x: 6, y: 7, color: '#431407' },
+      { x: 7, y: 7, color: '#9a3412' }, { x: 7, y: 8, color: '#431407' },
     ],
   },
 

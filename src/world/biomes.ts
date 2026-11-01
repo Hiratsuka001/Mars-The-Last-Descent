@@ -40,21 +40,20 @@ export const BIOMES: Record<BiomeType, BiomeConfig> = {
 
   grassland: {
     id: 'grassland',
-    name: 'Terraformed Savanna',
+    name: 'Sedimentary Clay Basin',
     baseTile: 'tile_grass_base',
     variantTile: 'tile_grass_variant',
     accentTile: 'tile_grass_path',
-    walkSpeed: 1.0,
-    propDensity: 0.05,
+    walkSpeed: 0.96,
+    propDensity: 0.04,
     props: [
-      { spriteKey: 'prop_tree_green', weight: 3, blocksMovement: true, width: 32, height: 36, offsetY: -20 },
-      { spriteKey: 'prop_tree_pine', weight: 2, blocksMovement: true, width: 24, height: 36, offsetY: -20 },
-      { spriteKey: 'prop_flower_red', weight: 4, blocksMovement: false, width: 12, height: 12, offsetY: 2 },
-      { spriteKey: 'prop_flower_yellow', weight: 4, blocksMovement: false, width: 12, height: 12, offsetY: 2 },
-      { spriteKey: 'prop_flower_blue', weight: 4, blocksMovement: false, width: 12, height: 12, offsetY: 2 },
-      { spriteKey: 'prop_grass_tuft', weight: 5, blocksMovement: false, width: 14, height: 14, offsetY: 2 },
+      { spriteKey: 'prop_outcrop_cluster', weight: 4, blocksMovement: true, width: 24, height: 20, offsetY: -4 },
+      { spriteKey: 'prop_boulder_mars', weight: 3, blocksMovement: true, width: 20, height: 20, offsetY: -4 },
+      { spriteKey: 'prop_rock_dark', weight: 4, blocksMovement: true, width: 16, height: 16, offsetY: 0 },
+      { spriteKey: 'prop_crater_small', weight: 2, blocksMovement: false, width: 20, height: 20, offsetY: 0 },
+      { spriteKey: 'prop_sand_ventifact', weight: 3, blocksMovement: true, width: 16, height: 18, offsetY: -4 },
     ],
-    dustColor: 'rgba(77, 124, 15, 0.15)',
+    dustColor: 'rgba(180, 83, 9, 0.25)',
   },
 
   desert: {
@@ -99,9 +98,9 @@ export const BIOMES: Record<BiomeType, BiomeConfig> = {
     walkSpeed: 0.88,
     propDensity: 0.03,
     props: [
-      { spriteKey: 'prop_ice_crystal_cluster', weight: 3, blocksMovement: true, width: 16, height: 20, offsetY: -4 },
+      { spriteKey: 'prop_ice_crystal_cluster', weight: 4, blocksMovement: true, width: 16, height: 20, offsetY: -4 },
       { spriteKey: 'prop_rock_dark', weight: 3, blocksMovement: true, width: 16, height: 16, offsetY: 0 },
-      { spriteKey: 'prop_tree_pine', weight: 2, blocksMovement: true, width: 24, height: 36, offsetY: -20 },
+      { spriteKey: 'prop_boulder_mars', weight: 2, blocksMovement: true, width: 20, height: 20, offsetY: -4 },
     ],
     dustColor: 'rgba(224, 242, 254, 0.25)',
   },
@@ -124,7 +123,7 @@ export function getBiomeAt(elevation: number, moisture: number, temperature: num
   if (moisture < 0.40 && temperature > 0.46) {
     return BIOMES.desert;
   }
-  // High moisture = terraformed green biosphere savanna
+  // High moisture = ancient sedimentary clay basin & lake delta deposits
   if (moisture > 0.54 && temperature > 0.30 && temperature < 0.78) {
     return BIOMES.grassland;
   }

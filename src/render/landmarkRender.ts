@@ -12,7 +12,7 @@ export function drawLandmark(c: CanvasRenderingContext2D, lm: PlacedLandmark, ti
 
   switch (lm.id) {
     case 'canyon_rim':
-      drawCanyonRim(c, x, y, time);
+      drawCanyonRim(c, x, y, time, lm.isSounded);
       break;
     case 'shield_volcano':
       drawShieldVolcano(c, x, y, time);
@@ -41,7 +41,7 @@ export function drawLandmark(c: CanvasRenderingContext2D, lm: PlacedLandmark, ti
  * - Deep depth gradient plunging into darkness
  * - Walkable around, not over
  */
-function drawCanyonRim(c: CanvasRenderingContext2D, x: number, y: number, time: number): void {
+function drawCanyonRim(c: CanvasRenderingContext2D, x: number, y: number, time: number, isSounded?: boolean): void {
   const w = 144;
   const left = Math.round(x - w / 2);
   const bottom = Math.round(y);
@@ -163,6 +163,46 @@ function drawCanyonRim(c: CanvasRenderingContext2D, x: number, y: number, time: 
   c.beginPath();
   c.ellipse(x, bottom - 19, w * 0.32, 6, 0, 0, Math.PI * 2);
   c.fill();
+
+  // 8. Deployed Depth Sounder Telemetry Station (if sounded)
+  if (isSounded) {
+    const stationX = Math.round(x);
+    const stationY = Math.round(bottom - 16);
+
+    // Tether line descending into the deep abyss
+    c.strokeStyle = '#06b6d4';
+    c.lineWidth = 1.5;
+    c.setLineDash([2, 2]);
+    c.beginPath();
+    c.moveTo(stationX, stationY);
+    c.lineTo(stationX, stationY - 8);
+    c.stroke();
+    c.setLineDash([]);
+
+    // Tripod mount on rim lip
+    c.fillStyle = '#475569';
+    c.fillRect(stationX - 3, stationY, 6, 2);
+    c.fillRect(stationX - 1, stationY - 4, 2, 4);
+
+    // Instrument box & sensor dish
+    c.fillStyle = '#0ea5e9';
+    c.fillRect(stationX - 2, stationY - 6, 4, 3);
+    c.fillStyle = '#f8fafc';
+    c.fillRect(stationX - 1, stationY - 7, 2, 1);
+
+    // Blinking telemetry beacon LED
+    const isBlink = Math.sin(time * 0.008) > 0;
+    c.fillStyle = isBlink ? '#38bdf8' : '#0369a1';
+    c.fillRect(stationX, stationY - 8, 1, 1);
+
+    // Subtle cyan telemetry glow halo
+    if (isBlink) {
+      c.fillStyle = 'rgba(56, 189, 248, 0.25)';
+      c.beginPath();
+      c.arc(stationX, stationY - 7, 5, 0, Math.PI * 2);
+      c.fill();
+    }
+  }
 }
 
 /**
