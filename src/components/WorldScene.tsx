@@ -12,7 +12,7 @@ import { PartsHUD } from './PartsHUD';
 import { NovaDialogue } from './NovaDialogue';
 import { SojournerRoverGame } from './MiniGames/SojournerRoverGame';
 import { OpportunityWaterPuzzle } from './MiniGames/OpportunityWaterPuzzle';
-import { NovaMarathonGame } from './MiniGames/NovaMarathonGame';
+import { OpportunityBlueberryGame } from './MiniGames/OpportunityBlueberryGame';
 import { InSightSeismicGame } from './MiniGames/InSightSeismicGame';
 import { FieldQuizModal } from './FieldQuizModal';
 import { TileDebugModal } from './TileDebugModal';
@@ -3498,7 +3498,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       )}
 
       {activeMiniGame?.type === 'marathon' && (
-        <NovaMarathonGame
+        <OpportunityBlueberryGame
           wreckId={activeMiniGame.equipId}
           onSuccess={handleMiniGameSuccess}
           onClose={handleMiniGameClose}

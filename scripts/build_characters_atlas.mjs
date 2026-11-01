@@ -6,11 +6,11 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
 
-  const pB64 = fs.readFileSync('src/assets/new assets/player_walk4.png').toString('base64');
+  const pB64 = fs.readFileSync('src/assets/new assets/player_sheet_user.jpg').toString('base64');
   const nB64 = fs.readFileSync('src/assets/new assets/nova_walk.png').toString('base64');
 
   await page.setContent(`<!DOCTYPE html><html><body>
-    <img id="p" src="data:image/png;base64,${pB64}">
+    <img id="p" src="data:image/jpeg;base64,${pB64}">
     <img id="n" src="data:image/png;base64,${nB64}">
   </body></html>`);
   await page.waitForFunction(() => document.getElementById('p').complete && document.getElementById('n').complete);
@@ -25,142 +25,195 @@ async function main() {
     const pSrcCtx = pSrcCanvas.getContext('2d');
     pSrcCtx.drawImage(pImg, 0, 0);
 
-    // Extraction function for Player with robust cluster bounding & edge isolation
-    function extractPlayerSprite(cellX, cellY, cellW, cellH, targetW, targetH, mirrorX = false) {
-      const ix = cellX + 15;
-      const iy = cellY + 15;
-      const iw = cellW - 30;
-      const ih = cellH - 30;
+    const W = pSrcCanvas.width;
+    const H = pSrcCanvas.height;
+    const pData = pSrcCtx.getImageData(0, 0, W, H).data;
 
-      const d = pSrcCtx.getImageData(ix, iy, iw, ih).data;
-
-      // Group columns with alpha > 150 into clusters
-      const colCounts = new Array(iw).fill(0);
-      for (let y = 0; y < ih; y++) {
-        for (let x = 0; x < iw; x++) {
-          const idx = (y * iw + x) * 4;
-          if (d[idx + 3] > 150) colCounts[x]++;
-        }
+    function isBg(r, g, b) {
+      if (Math.hypot(r - 57, g - 70, b - 90) < 30) return true;
+      if (Math.hypot(r - 78, g - 95, b - 116) < 30) return true;
+      if (r >= 45 && r <= 88 && g >= 58 && g <= 108 && b >= 75 && b <= 135) {
+        if (b > g + 8 && g > r + 6) return true;
       }
+      return false;
+    }
 
-      // Find clusters separated by empty columns to discard border bleed lines
-      const clusters = [];
-      let cur = null;
-      for (let x = 0; x < iw; x++) {
-        if (colCounts[x] > 0) {
-          if (!cur) cur = { minX: x, maxX: x, totalPixels: colCounts[x] };
-          else { cur.maxX = x; cur.totalPixels += colCounts[x]; }
-        } else if (cur) {
-          clusters.push(cur);
-          cur = null;
-        }
-      }
-      if (cur) clusters.push(cur);
-
-      if (clusters.length === 0) {
-        return document.createElement('canvas');
-      }
-
-      // Select main character body cluster (highest pixel count)
-      clusters.sort((a, b) => b.totalPixels - a.totalPixels);
-      const main = clusters[0];
-      const minX = main.minX;
-      const maxX = main.maxX;
-
-      // Find vertical bounds within main body cluster
-      let minY = ih, maxY = 0;
-      for (let y = 0; y < ih; y++) {
-        for (let x = minX; x <= maxX; x++) {
-          const idx = (y * iw + x) * 4;
-          if (d[idx + 3] > 150) {
+    function extractBody(x0, y0, w0, h0) {
+      let minX = w0, maxX = 0, minY = h0, maxY = 0;
+      for (let y = 0; y < h0; y++) {
+        for (let x = 0; x < w0; x++) {
+          const idx = ((y0 + y) * W + (x0 + x)) * 4;
+          const r = pData[idx], g = pData[idx+1], b = pData[idx+2];
+          if (!isBg(r, g, b)) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
             if (y < minY) minY = y;
             if (y > maxY) maxY = y;
           }
         }
       }
 
-      const bodyW = maxX - minX + 1;
-      const bodyH = maxY - minY + 1;
+      const sw = maxX - minX + 1;
+      const sh = maxY - minY + 1;
+      const c = document.createElement('canvas');
+      c.width = sw;
+      c.height = sh;
+      const cCtx = c.getContext('2d');
+      const out = cCtx.createImageData(sw, sh);
+      const od = out.data;
 
-      // Extract body
-      const bodyCanvas = document.createElement('canvas');
-      bodyCanvas.width = bodyW;
-      bodyCanvas.height = bodyH;
-      const bCtx = bodyCanvas.getContext('2d');
-      const bodyImgData = pSrcCtx.getImageData(ix + minX, iy + minY, bodyW, bodyH);
-      const bd = bodyImgData.data;
-
-      for (let i = 0; i < bd.length; i += 4) {
-        if (bd[i + 3] < 140) {
-          bd[i + 3] = 0;
+      for (let y = 0; y < sh; y++) {
+        for (let x = 0; x < sw; x++) {
+          const sIdx = ((y0 + minY + y) * W + (x0 + minX + x)) * 4;
+          const oIdx = (y * sw + x) * 4;
+          const r = pData[sIdx], g = pData[sIdx+1], b = pData[sIdx+2];
+          if (!isBg(r, g, b)) {
+            od[oIdx] = r;
+            od[oIdx+1] = g;
+            od[oIdx+2] = b;
+            od[oIdx+3] = 255;
+          } else {
+            od[oIdx+3] = 0;
+          }
         }
       }
-      bCtx.putImageData(bodyImgData, 0, 0);
+      cCtx.putImageData(out, 0, 0);
+      return { canvas: c, w: sw, h: sh };
+    }
 
-      // Draw onto target canvas
-      const dstCanvas = document.createElement('canvas');
-      dstCanvas.width = targetW;
-      dstCanvas.height = targetH;
-      const dstCtx = dstCanvas.getContext('2d');
-      dstCtx.imageSmoothingEnabled = true;
-      dstCtx.imageSmoothingQuality = 'high';
+    // Downscale sprite onto 20x28 with crisp pixel art palette snapping & 100% opacity
+    function renderCrispSprite(raw, targetW = 20, targetH = 28, targetDrawH = 26, mirrorX = false) {
+      const c = document.createElement('canvas');
+      c.width = targetW;
+      c.height = targetH;
+      const cCtx = c.getContext('2d');
 
-      if (mirrorX) {
-        dstCtx.translate(targetW, 0);
-        dstCtx.scale(-1, 1);
-      }
-
-      // Scale with guaranteed 1px padding on left/right outer columns
-      const scale = Math.min((targetW - 2) / bodyW, (targetH - 1) / bodyH);
-      const drawW = Math.max(1, Math.round(bodyW * scale));
-      const drawH = Math.max(1, Math.round(bodyH * scale));
+      const scale = targetDrawH / raw.h;
+      const drawW = Math.min(targetW - 2, Math.round(raw.w * scale));
+      const drawH = Math.min(targetH, Math.round(raw.h * scale));
       const drawX = Math.round((targetW - drawW) / 2);
       const drawY = targetH - drawH; // bottom baseline grounded
 
-      dstCtx.drawImage(bodyCanvas, drawX, drawY, drawW, drawH);
-      return dstCanvas;
+      const srcCtx = raw.canvas.getContext('2d');
+      const sd = srcCtx.getImageData(0, 0, raw.w, raw.h).data;
+      const out = cCtx.createImageData(targetW, targetH);
+      const od = out.data;
+
+      for (let dy = 0; dy < drawH; dy++) {
+        for (let dx = 0; dx < drawW; dx++) {
+          const actualDx = mirrorX ? (drawW - 1 - dx) : dx;
+          const sx0 = Math.floor(actualDx / scale);
+          const sx1 = Math.min(raw.w - 1, Math.floor((actualDx + 1) / scale) - 1);
+          const sy0 = Math.floor(dy / scale);
+          const sy1 = Math.min(raw.h - 1, Math.floor((dy + 1) / scale) - 1);
+
+          let rSum = 0, gSum = 0, bSum = 0, count = 0, opaqueCount = 0;
+
+          for (let sy = sy0; sy <= sy1; sy++) {
+            for (let sx = sx0; sx <= sx1; sx++) {
+              count++;
+              const idx = (sy * raw.w + sx) * 4;
+              if (sd[idx + 3] > 100) {
+                opaqueCount++;
+                rSum += sd[idx];
+                gSum += sd[idx + 1];
+                bSum += sd[idx + 2];
+              }
+            }
+          }
+
+          if (opaqueCount / count >= 0.28) {
+            let r = Math.round(rSum / opaqueCount);
+            let g = Math.round(gSum / opaqueCount);
+            let b = Math.round(bSum / opaqueCount);
+
+            // Palette snapping for authentic 16-bit pixel art
+            if (r < 40 && g < 40 && b < 40) {
+              // Solid dark outline
+              r = 10; g = 12; b = 18;
+            } else if (r > 190 && g > 190 && b > 190) {
+              // White spacesuit
+              r = 250; g = 252; b = 255;
+            } else if (r > 130 && g < 80 && b < 80) {
+              // Red mission stripe / patch
+              r = 220; g = 38; b = 38;
+            } else if (b > r + 15 && b > g + 10 && (r + g + b) < 160) {
+              // Dark navy visor interior
+              r = 25; g = 36; b = 58;
+            } else if (b > r + 20 && b > g + 15 && (r + g + b) >= 160 && (r + g + b) < 320) {
+              // Cyan/blue visor highlight
+              r = 75; g = 110; b = 160;
+            } else if (r > 130 && g > 130 && b > 130 && Math.abs(r - g) < 20 && Math.abs(g - b) < 20) {
+              // Grey suit shading
+              r = 160; g = 165; b = 175;
+            }
+
+            const oIdx = ((drawY + dy) * targetW + (drawX + dx)) * 4;
+            od[oIdx] = r;
+            od[oIdx + 1] = g;
+            od[oIdx + 2] = b;
+            od[oIdx + 3] = 255;
+          }
+        }
+      }
+
+      cCtx.putImageData(out, 0, 0);
+      return c;
     }
 
     const pW = 20, pH = 28;
-    const colW = (1180 - 60) / 4; // ~280
     const playerSprites = {};
 
-    // 1. Walk Down (Row 1 Left Group, 0..3)
-    for (let i = 0; i < 4; i++) {
-      const rx = Math.round(60 + i * colW);
-      playerSprites[`player_walk_down_${i}`] = extractPlayerSprite(rx, 170, Math.round(colW), 380, pW, pH);
-    }
-    // Idle Down: Row 3 Col 0 (Standing Front)
-    playerSprites['player_idle_down'] = extractPlayerSprite(250, 1200, 300, 460, pW, pH);
+    // 1. Walk Down & Idle Down
+    const rawWalkDown = [
+      extractBody(46, 80, 87, 149),
+      extractBody(158, 80, 88, 149),
+      extractBody(266, 80, 93, 149),
+      extractBody(384, 80, 87, 149),
+    ];
+    const rawIdleDown = extractBody(107, 515, 119, 190);
 
-    // 2. Walk Up (Row 1 Right Group, 0..3 with precise column starts to prevent 2320px border bleed)
-    const walkUpStarts = [1290, 1555, 1810, 2075];
     for (let i = 0; i < 4; i++) {
-      playerSprites[`player_walk_up_${i}`] = extractPlayerSprite(walkUpStarts[i], 170, 235, 380, pW, pH);
+      playerSprites[`player_walk_down_${i}`] = renderCrispSprite(rawWalkDown[i], pW, pH, 26);
     }
-    // Idle Up: Row 3 Col 1 (Standing Back)
-    playerSprites['player_idle_up'] = extractPlayerSprite(785, 1200, 300, 460, pW, pH);
+    playerSprites['player_idle_down'] = renderCrispSprite(rawIdleDown, pW, pH, 26);
 
-    // 3. Walk Right (Row 2 Left Group, 0..3 - visually verified 100% RIGHT facing)
-    for (let i = 0; i < 4; i++) {
-      const rx = Math.round(60 + i * colW);
-      playerSprites[`player_walk_right_${i}`] = extractPlayerSprite(rx, 730, Math.round(colW), 340, pW, pH);
-    }
-    // Idle Right: Row 3 Col 2 (Standing Right)
-    playerSprites['player_idle_right'] = extractPlayerSprite(1350, 1200, 260, 460, pW, pH);
+    // 2. Walk Up & Idle Up
+    const rawWalkUp = [
+      extractBody(553, 80, 92, 149),
+      extractBody(670, 80, 83, 149),
+      extractBody(778, 80, 87, 149),
+      extractBody(891, 80, 87, 149),
+    ];
+    const rawIdleUp = extractBody(338, 510, 118, 195);
 
-    // 4. Walk Left: Row 2 Left Group mirrored horizontally (100% clean LEFT facing, zero mixed frames)
     for (let i = 0; i < 4; i++) {
-      const rx = Math.round(60 + i * colW);
-      playerSprites[`player_walk_left_${i}`] = extractPlayerSprite(rx, 730, Math.round(colW), 340, pW, pH, true);
+      playerSprites[`player_walk_up_${i}`] = renderCrispSprite(rawWalkUp[i], pW, pH, 26);
     }
-    // Idle Left: Row 3 Col 2 mirrored horizontally (guarantees perfect symmetry with idle right)
-    playerSprites['player_idle_left'] = extractPlayerSprite(1350, 1200, 260, 460, pW, pH, true);
+    playerSprites['player_idle_up'] = renderCrispSprite(rawIdleUp, pW, pH, 26);
+
+    // 3. Walk Right & Idle Right
+    const rawWalkRight = [
+      extractBody(56, 321, 72, 123),
+      extractBody(164, 321, 72, 123),
+      extractBody(271, 321, 72, 123),
+      extractBody(389, 321, 72, 123),
+    ];
+    const rawIdleRight = extractBody(573, 510, 108, 195);
+
+    for (let i = 0; i < 4; i++) {
+      playerSprites[`player_walk_right_${i}`] = renderCrispSprite(rawWalkRight[i], pW, pH, 22);
+    }
+    playerSprites['player_idle_right'] = renderCrispSprite(rawIdleRight, pW, pH, 26);
+
+    // 4. Walk Left & Idle Left (Mirrored from Right for 100% clean left-facing & zero jitter)
+    for (let i = 0; i < 4; i++) {
+      playerSprites[`player_walk_left_${i}`] = renderCrispSprite(rawWalkRight[i], pW, pH, 22, true);
+    }
+    playerSprites['player_idle_left'] = renderCrispSprite(rawIdleRight, pW, pH, 26, true);
 
     // ----------------------------------------------------
-    // NOVA SPRITES (18x16) - Topey from nova_walk.png
-    // Fixed landmark anchoring & uniform scaling per direction (Zero Jitter)
-    // Front-walk frames for "down", side-view frames reused for "up", same feet baseline (targetY=15)
+    // NOVA SPRITES (18x16) - Intact from nova_walk.png
     // ----------------------------------------------------
     const nW = 18, nH = 16;
     const novaSprites = {};
@@ -206,7 +259,6 @@ async function main() {
       return cCanvas;
     }
 
-    // Down: Front 0, 1, 2, 1
     const catDownFrames = [
       extractCatCell(catFrameDefs.down[0]),
       extractCatCell(catFrameDefs.down[1]),
@@ -216,7 +268,6 @@ async function main() {
     for (let i = 0; i < 4; i++) novaSprites[`nova_walk_down_${i}`] = catDownFrames[i];
     novaSprites['nova_idle_down'] = catDownFrames[0];
 
-    // Left: Left 0, 1, 0, 1 loop
     const catLeftFrames = [
       extractCatCell(catFrameDefs.left[0]),
       extractCatCell(catFrameDefs.left[1]),
@@ -226,7 +277,6 @@ async function main() {
     for (let i = 0; i < 4; i++) novaSprites[`nova_walk_left_${i}`] = catLeftFrames[i];
     novaSprites['nova_idle_left'] = catLeftFrames[0];
 
-    // Right: Right 0, 1, 2, 1 ping-pong
     const catRightFrames = [
       extractCatCell(catFrameDefs.right[0]),
       extractCatCell(catFrameDefs.right[1]),
@@ -236,7 +286,6 @@ async function main() {
     for (let i = 0; i < 4; i++) novaSprites[`nova_walk_right_${i}`] = catRightFrames[i];
     novaSprites['nova_idle_right'] = catRightFrames[0];
 
-    // Up: Reuse side-view frames for "up" (same feet baseline targetY=15, eliminates tall tail-up)
     const catUpFrames = [
       catRightFrames[0],
       catRightFrames[1],
@@ -279,11 +328,6 @@ async function main() {
     }
 
     // Nova Rows:
-    // Start X: 105
-    // Row 0: Down (y: 0..16)
-    // Row 1: Up (y: 16..32)
-    // Row 2: Left (y: 32..48)
-    // Row 3: Right (y: 48..64)
     const nStartX = 105;
     for (let r = 0; r < 4; r++) {
       const dir = dirs[r];
@@ -318,8 +362,8 @@ async function main() {
       let visorSumX = 0, visorCount = 0;
       let headMinX = pW, headMaxX = 0;
 
-      // Head is in upper 40% (y = 0..11)
-      for (let y = 0; y < 12; y++) {
+      // Head is in upper 40% (y = 0..12)
+      for (let y = 0; y < 13; y++) {
         for (let x = 0; x < pW; x++) {
           const idx = (y * pW + x) * 4;
           const a = d[idx + 3];
@@ -327,8 +371,8 @@ async function main() {
             if (x < headMinX) headMinX = x;
             if (x > headMaxX) headMaxX = x;
             const r = d[idx], g = d[idx + 1], b = d[idx + 2];
-            // Dark visor pixels: low red/green, darker shade
-            if (r < 80 && g < 100 && b > 30) {
+            // Visor pixels: dark navy or cyan highlight
+            if ((r < 80 && g < 100 && b > 30) || (b > r + 15 && b > g + 10)) {
               visorSumX += x;
               visorCount++;
             }
@@ -384,7 +428,6 @@ async function main() {
         const xBase = 180 + c * 110;
         const sprite = playerSprites[key];
 
-        // Draw 2x magnified sprite
         const magW = pW * 2;
         const magH = pH * 2;
         cCtx.strokeStyle = '#334155';
@@ -392,7 +435,6 @@ async function main() {
         cCtx.imageSmoothingEnabled = false;
         cCtx.drawImage(sprite, xBase, yBase, magW, magH);
 
-        // Label below
         cCtx.fillStyle = '#38bdf8';
         cCtx.font = '10px monospace';
         const shortName = key.replace(`player_`, '').replace(`${dl.dir}_`, '');

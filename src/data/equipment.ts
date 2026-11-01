@@ -113,7 +113,7 @@ export const EQUIPMENT_DEFINITIONS: Record<string, EquipmentDefinition> = {
     preferredBiomes: ['desert', 'rocky'],
     miniGameType: 'marathon',
     rewardPartId: 'part_solar_bus',
-    oneLineHint: 'Opportunity explored Meridiani for 14 years. Analyze its paleowater rock samples to extract the solar power bus!',
+    oneLineHint: 'Opportunity explored Meridiani for 14 years. Abrade its sulfate outcrop and zap the Martian Blueberries to extract the solar power bus!',
     codex: {
       year: '2004 – 2018',
       status: 'Completed',
