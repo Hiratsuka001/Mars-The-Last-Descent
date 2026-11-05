@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MiniGameShell } from './MiniGameShell';
 import { sound } from '../../systems/audio';
 import { isReduceMotionEnabled } from '../../systems/saveManager';
-import { Scissors, Sparkles, Wrench, Hand, Award, CheckCircle2, Zap } from 'lucide-react';
+import { Wrench, Award, CheckCircle2, ShieldCheck, Gauge, Zap } from 'lucide-react';
 
 interface SurveyorSalvageGameProps {
   wreckId?: string;
@@ -10,25 +10,6 @@ interface SurveyorSalvageGameProps {
   onClose: () => void;
   onAwardBonusRp?: () => boolean;
   hasBonusRp?: boolean;
-}
-
-interface DustSpot {
-  id: number;
-  x: number;
-  y: number;
-  radius: number;
-  cleared: boolean;
-  opacity: number;
-  label: string;
-}
-
-interface Pin {
-  id: number;
-  x: number;
-  y: number;
-  unlatched: boolean;
-  label: string;
-  recoilY: number;
 }
 
 interface Particle {
@@ -61,19 +42,19 @@ export const SurveyorSalvageGame: React.FC<SurveyorSalvageGameProps> = ({
 }) => {
   const [retryNonce, setRetryNonce] = useState(0);
   const [reactionText, setReactionText] = useState(
-    'Surveyor 3 reached in Oceanus Procellarum! Brush away 31 months of lunar dust, unlatch collar pins, and snip the sample arm!'
+    'Surveyor 3 Surface Sampler online! Dig the lunar trench to reach bedrock, then press down with 400 PSI to prove the Moon is safe for landing!'
   );
 
   const handleRetry = useCallback(() => {
     setRetryNonce((n) => n + 1);
-    setReactionText('Apollo 12 tool kit ready! Clear lunar dust, unpin the bracket, and sever the wiring harness!');
+    setReactionText('Robotic pantograph reset! Drag the scoop to carve the trench, then hold bearing pressure in the green safe zone!');
   }, []);
 
   return (
     <MiniGameShell
       wreckId={wreckId}
-      title="The Apollo 12 Salvage"
-      instruction="Retrieve Surveyor 3's historic surface sampler! 1: Brush off lunar dust. 2: Unlatch 3 collar pins. 3: Snip the wiring harness!"
+      title="The Bedrock Bearing Test"
+      instruction="Operate Surveyor 3's motorized robotic arm! Dig through lunar regolith to reach basalt bedrock, then hold 400 PSI bearing pressure to confirm the Moon is safe for Apollo!"
       onWin={onSuccess}
       onExit={onClose}
       onRetry={handleRetry}
@@ -82,7 +63,7 @@ export const SurveyorSalvageGame: React.FC<SurveyorSalvageGameProps> = ({
       footerReaction={reactionText}
     >
       {({ win, fail, assistActive }) => (
-        <SurveyorSalvageContent
+        <SurveyorBearingContent
           key={retryNonce}
           onWinTrigger={win}
           onFailTrigger={fail}
@@ -96,7 +77,7 @@ export const SurveyorSalvageGame: React.FC<SurveyorSalvageGameProps> = ({
 
 export default SurveyorSalvageGame;
 
-interface SurveyorSalvageContentProps {
+interface SurveyorBearingContentProps {
   onWinTrigger: (result: { stars: 1 | 2 | 3 }) => void;
   onFailTrigger: () => void;
   onReactionChange: (text: string) => void;
@@ -106,105 +87,48 @@ interface SurveyorSalvageContentProps {
 const CANVAS_WIDTH = 640;
 const CANVAS_HEIGHT = 300;
 
-export const SurveyorSalvageContent: React.FC<SurveyorSalvageContentProps> = ({
+export const SurveyorBearingContent: React.FC<SurveyorBearingContentProps> = ({
   onWinTrigger,
   onFailTrigger,
   onReactionChange,
   assistActive = false,
 }) => {
-  // 3 sequential steps: 'brushing' -> 'unpinning' -> 'snipping' -> 'won'
-  const [step, setStep] = useState<'brushing' | 'unpinning' | 'snipping' | 'won'>('brushing');
-  const [dustProgress, setDustProgress] = useState(0);
-  const [pinsUnlatchedCount, setPinsUnlatchedCount] = useState(0);
-  const [snipProgress, setSnipProgress] = useState(0);
+  // Phase 1: 'digging' (trenching soil) -> Phase 2: 'bearing' (pressure test) -> 'won'
+  const [phase, setPhase] = useState<'digging' | 'bearing' | 'won'>('digging');
+  const [trenchProgress, setTrenchProgress] = useState(0);
+  const [bearingPsi, setBearingPsi] = useState(0);
+  const [holdTimeSeconds, setHoldTimeSeconds] = useState(0);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const reduceMotion = useRef(isReduceMotionEnabled()).current;
 
   // Real-time animation references
-  const stepRef = useRef<'brushing' | 'unpinning' | 'snipping' | 'won'>('brushing');
-  stepRef.current = step;
+  const phaseRef = useRef<'digging' | 'bearing' | 'won'>('digging');
+  phaseRef.current = phase;
 
-  // Glove / Tool tracking position
-  const glovePosRef = useRef({ x: 380, y: 220 });
-  const targetGlovePosRef = useRef({ x: 380, y: 220 });
-  const isInteractingRef = useRef(false);
+  // Pantograph Arm Kinematics & Position
+  const armXRef = useRef(320);
+  const armYRef = useRef(180);
+  const targetXRef = useRef(320);
+  const targetYRef = useRef(180);
+  const scoopAngleRef = useRef(0.2); // Angle of bucket
+  const isDraggingRef = useRef(false);
+  const isPressingForceRef = useRef(false);
   const shakeRef = useRef(0);
-  const armSagRef = useRef(0); // Scissor arm visibly sags as pins are removed!
-  const flashAlphaRef = useRef(0);
 
-  // Phase 1: Dust Spots to scrub
-  const dustSpotsRef = useRef<DustSpot[]>([
-    { id: 1, x: 260, y: 135, radius: 38, cleared: false, opacity: 0.95, label: 'TV Camera' },
-    { id: 2, x: 330, y: 95, radius: 42, cleared: false, opacity: 0.95, label: 'Solar Mast' },
-    { id: 3, x: 410, y: 170, radius: 44, cleared: false, opacity: 0.92, label: 'Scissor Arm Hinge' },
-    { id: 4, x: 285, y: 195, radius: 40, cleared: false, opacity: 0.88, label: 'Electronics Box' },
-  ]);
+  // Excavation Trench Model: 16 discrete soil depth nodes along X in [180, 520]
+  const trenchDepthsRef = useRef<number[]>(new Array(16).fill(0)); // 0 = surface, 35 = bedrock
 
-  // Phase 2: 3 Quick-Release Retaining Collar Pins
-  const pinsRef = useRef<Pin[]>([
-    { id: 1, x: 325, y: 115, unlatched: false, label: 'Upper Mast Pin', recoilY: 0 },
-    { id: 2, x: 385, y: 155, unlatched: false, label: 'Pivot Bracket Pin', recoilY: 0 },
-    { id: 3, x: 445, y: 195, unlatched: false, label: 'Lower Strut Pin', recoilY: 0 },
-  ]);
+  // Bearing Pressure Test
+  const currentPsiRef = useRef(0);
+  const targetPsiRef = useRef(0);
+  const holdProgressRef = useRef(0); // 0 to 3.0 seconds
 
-  // Phase 3: Cable Snip Pressure
-  const cutPressureRef = useRef(0);
   const particlesRef = useRef<Particle[]>([]);
   const floatingTextsRef = useRef<FloatingText[]>([]);
 
-  // Synthesize rich procedural audio effects
-  const playBrushSwoosh = useCallback(() => {
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(360, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(120, ctx.currentTime + 0.14);
-
-      gain.gain.setValueAtTime(0.14, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.14);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start();
-      osc.stop(ctx.currentTime + 0.14);
-    } catch {
-      // Audio fallback
-    }
-  }, []);
-
-  const playPinClink = useCallback(() => {
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(940, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(1480, ctx.currentTime + 0.16);
-
-      gain.gain.setValueAtTime(0.28, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start();
-      osc.stop(ctx.currentTime + 0.2);
-    } catch {
-      sound.playSonarPing();
-    }
-  }, []);
-
-  const playBiteCrunch = useCallback(() => {
+  // Synthesize procedural audio effects
+  const playMotorHum = useCallback((pitch = 180) => {
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
@@ -213,23 +137,23 @@ export const SurveyorSalvageContent: React.FC<SurveyorSalvageContentProps> = ({
       const gain = ctx.createGain();
 
       osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(180, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.1);
+      osc.frequency.setValueAtTime(pitch, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(pitch * 1.15, ctx.currentTime + 0.12);
 
-      gain.gain.setValueAtTime(0.25, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       osc.start();
-      osc.stop(ctx.currentTime + 0.1);
+      osc.stop(ctx.currentTime + 0.12);
     } catch {
       // Audio fallback
     }
   }, []);
 
-  const playShearSnap = useCallback(() => {
+  const playSoilCrunch = useCallback(() => {
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
@@ -237,20 +161,45 @@ export const SurveyorSalvageContent: React.FC<SurveyorSalvageContentProps> = ({
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(240, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(45, ctx.currentTime + 0.25);
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(90, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(45, ctx.currentTime + 0.15);
 
-      gain.gain.setValueAtTime(0.4, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28);
+      gain.gain.setValueAtTime(0.18, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       osc.start();
-      osc.stop(ctx.currentTime + 0.28);
+      osc.stop(ctx.currentTime + 0.15);
     } catch {
-      sound.playSuccess();
+      // Audio fallback
+    }
+  }, []);
+
+  const playChimeLock = useCallback(() => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(784, ctx.currentTime);
+      osc.frequency.setValueAtTime(1046, ctx.currentTime + 0.1);
+
+      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start();
+      osc.stop(ctx.currentTime + 0.35);
+    } catch {
+      sound.playSonarPing();
     }
   }, []);
 
@@ -258,16 +207,16 @@ export const SurveyorSalvageContent: React.FC<SurveyorSalvageContentProps> = ({
   const spawnParticles = useCallback((x: number, y: number, count: number, color: string) => {
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const speed = Math.random() * 3.8 + 1.0;
+      const speed = Math.random() * 3.2 + 0.8;
       particlesRef.current.push({
         x,
         y,
         vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed - 0.4,
+        vy: Math.sin(angle) * speed - 0.5,
         radius: Math.random() * 2.8 + 1.2,
         color,
         alpha: 1.0,
-        decay: 0.038 + Math.random() * 0.025,
+        decay: 0.04 + Math.random() * 0.025,
       });
     }
   }, []);
@@ -284,121 +233,6 @@ export const SurveyorSalvageContent: React.FC<SurveyorSalvageContentProps> = ({
     });
   }, []);
 
-  // Handle pointer scrub / clicks across all phases
-  const handlePointerAction = useCallback((canvasX: number, canvasY: number) => {
-    targetGlovePosRef.current = { x: canvasX, y: canvasY };
-
-    // -------------------------------------------------------------
-    // STEP 1: BRUSHING LUNAR DUST
-    // -------------------------------------------------------------
-    if (stepRef.current === 'brushing') {
-      let anyCleaned = false;
-      for (const spot of dustSpotsRef.current) {
-        const dist = Math.hypot(canvasX - spot.x, canvasY - spot.y);
-        if (dist < spot.radius + 24 && spot.opacity > 0) {
-          const scrubRate = assistActive ? 0.38 : 0.22;
-          spot.opacity = Math.max(0, spot.opacity - scrubRate);
-          anyCleaned = true;
-
-          // Silver lunar dust puff particles
-          spawnParticles(canvasX, canvasY, 3, '#cbd5e1');
-
-          if (spot.opacity <= 0.05 && !spot.cleared) {
-            spot.cleared = true;
-            spot.opacity = 0;
-            sound.playSuccess();
-            spawnParticles(spot.x, spot.y, 14, '#38bdf8');
-            addFloatingText(spot.x, spot.y - 15, `✨ ${spot.label} Clean!`, '#38bdf8');
-          }
-        }
-      }
-
-      if (anyCleaned) {
-        playBrushSwoosh();
-        const totalRemaining = dustSpotsRef.current.reduce((sum, s) => sum + s.opacity, 0);
-        const maxDust = dustSpotsRef.current.length * 0.95;
-        const percent = Math.min(100, Math.round(((maxDust - totalRemaining) / maxDust) * 100));
-        setDustProgress(percent);
-
-        if (percent >= 88) {
-          stepRef.current = 'unpinning';
-          setStep('unpinning');
-          sound.playSuccess();
-          onReactionChange('Dust cleared! 3 retaining collar pins exposed! Tap each pin to unlatch!');
-          spawnParticles(320, 150, 30, '#38bdf8');
-        }
-      }
-    }
-
-    // -------------------------------------------------------------
-    // STEP 2: UNPINNING COLLAR PINS
-    // -------------------------------------------------------------
-    else if (stepRef.current === 'unpinning') {
-      for (const pin of pinsRef.current) {
-        if (!pin.unlatched) {
-          const dist = Math.hypot(canvasX - pin.x, canvasY - pin.y);
-          if (dist < 38) {
-            pin.unlatched = true;
-            pin.recoilY = -35;
-            armSagRef.current += 5; // Scissor arm visibly droops loose!
-            playPinClink();
-            if (!reduceMotion) shakeRef.current = 6;
-            spawnParticles(pin.x, pin.y, 18, '#eab308');
-            addFloatingText(pin.x, pin.y - 20, `⚡ PIN POPPED!`, '#eab308');
-
-            const unlatchedCount = pinsRef.current.filter((p) => p.unlatched).length;
-            setPinsUnlatchedCount(unlatchedCount);
-            onReactionChange(`UNLATCHED ${pin.label.toUpperCase()}! [ ${unlatchedCount}/3 ]`);
-
-            if (unlatchedCount >= 3) {
-              stepRef.current = 'snipping';
-              setStep('snipping');
-              sound.playSuccess();
-              onReactionChange('Collar pins released! Squeeze bolt cutters to sever the wiring harness!');
-              spawnParticles(320, 150, 30, '#22c55e');
-            }
-            break;
-          }
-        }
-      }
-    }
-
-    // -------------------------------------------------------------
-    // STEP 3: SNIPPING WIRING HARNESS
-    // -------------------------------------------------------------
-    else if (stepRef.current === 'snipping') {
-      const cutTargetX = 425;
-      const cutTargetY = 180;
-      const dist = Math.hypot(canvasX - cutTargetX, canvasY - cutTargetY);
-
-      if (dist < 90) {
-        cutPressureRef.current = Math.min(100, cutPressureRef.current + (assistActive ? 35 : 25));
-        setSnipProgress(cutPressureRef.current);
-        playBiteCrunch();
-        if (!reduceMotion) shakeRef.current = 4;
-        spawnParticles(cutTargetX, cutTargetY, 8, '#f59e0b');
-
-        if (cutPressureRef.current >= 100) {
-          stepRef.current = 'won';
-          setStep('won');
-          armSagRef.current = 24; // Arm drops free into hands!
-          flashAlphaRef.current = 0.8;
-          playShearSnap();
-          sound.playSuccess();
-          if (!reduceMotion) shakeRef.current = 16;
-          spawnParticles(cutTargetX, cutTargetY, 40, '#38bdf8');
-          spawnParticles(cutTargetX, cutTargetY, 25, '#fbbf24');
-          addFloatingText(cutTargetX, cutTargetY - 30, `✂️ CABLE SEVERED! +100%`, '#22c55e');
-
-          onReactionChange(
-            'SNAP! WIRING HARNESS SEVERED! Surveyor 3 surface sampler secured for Earth return!'
-          );
-          onWinTrigger({ stars: 3 });
-        }
-      }
-    }
-  }, [addFloatingText, assistActive, onReactionChange, onWinTrigger, playBiteCrunch, playBrushSwoosh, playPinClink, playShearSnap, reduceMotion, spawnParticles]);
-
   // Main canvas animation and rendering loop
   useEffect(() => {
     let animId: number;
@@ -409,40 +243,131 @@ export const SurveyorSalvageContent: React.FC<SurveyorSalvageContentProps> = ({
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      // Smooth glove follow
-      glovePosRef.current.x += (targetGlovePosRef.current.x - glovePosRef.current.x) * 0.25;
-      glovePosRef.current.y += (targetGlovePosRef.current.y - glovePosRef.current.y) * 0.25;
+      // Smooth kinematic interpolation
+      armXRef.current += (targetXRef.current - armXRef.current) * 0.22;
+      armYRef.current += (targetYRef.current - armYRef.current) * 0.22;
 
-      // Update screen shake
+      // Screen shake decay
       if (shakeRef.current > 0) {
         shakeRef.current = Math.max(0, shakeRef.current - 0.6);
       }
       const shakeX = shakeRef.current > 0 ? (Math.random() - 0.5) * shakeRef.current : 0;
       const shakeY = shakeRef.current > 0 ? (Math.random() - 0.5) * shakeRef.current : 0;
 
+      // -------------------------------------------------------------
+      // 1. UPDATE PHASE LOGIC
+      // -------------------------------------------------------------
+      if (phaseRef.current === 'digging') {
+        // Check if arm scoop is interacting with the trench soil
+        const scoopX = armXRef.current;
+        const scoopY = armYRef.current;
+
+        // Trench boundary: X in [200, 520], surface Y around 195
+        if (scoopX >= 200 && scoopX <= 520 && scoopY >= 185) {
+          const nodeIndex = Math.min(
+            15,
+            Math.max(0, Math.floor(((scoopX - 200) / 320) * 16))
+          );
+          const currentDepth = trenchDepthsRef.current[nodeIndex];
+          const digRate = assistActive ? 2.5 : 1.4;
+
+          if (currentDepth < 36) {
+            trenchDepthsRef.current[nodeIndex] = Math.min(36, currentDepth + digRate);
+            playMotorHum(160);
+            playSoilCrunch();
+            if (!reduceMotion && Math.random() < 0.4) shakeRef.current = 2.5;
+
+            // Soil gravel particles spraying in 1/6g
+            spawnParticles(scoopX, scoopY, 2, '#94a3b8');
+
+            // Calculate total excavation progress across all nodes
+            const totalExcavated = trenchDepthsRef.current.reduce((sum, d) => sum + d, 0);
+            const maxExcavated = 16 * 36;
+            const percent = Math.min(100, Math.round((totalExcavated / (maxExcavated * 0.72)) * 100));
+            setTrenchProgress(percent);
+
+            if (percent >= 100) {
+              phaseRef.current = 'bearing';
+              setPhase('bearing');
+              playChimeLock();
+              sound.playSuccess();
+              if (!reduceMotion) shakeRef.current = 10;
+              spawnParticles(scoopX, scoopY, 30, '#38bdf8');
+              addFloatingText(scoopX, scoopY - 30, 'BEDROCK REACHED! ⛏️', '#38bdf8');
+              onReactionChange('Basalt bedrock reached! Press and hold 400 PSI bearing force to confirm Apollo safety!');
+
+              // Rest position in center of trench
+              targetXRef.current = 360;
+              targetYRef.current = 228;
+            }
+          }
+        }
+      } else if (phaseRef.current === 'bearing') {
+        // -------------------------------------------------------------
+        // PHASE 2: BEARING PRESSURE GAUGING
+        // -------------------------------------------------------------
+        const isPressing = isPressingForceRef.current || isDraggingRef.current;
+        targetPsiRef.current = isPressing ? 385 + (Math.sin(Date.now() / 180) * 30) : 0;
+
+        // Smooth needle physics
+        currentPsiRef.current += (targetPsiRef.current - currentPsiRef.current) * 0.12;
+        const psi = Math.max(0, Math.round(currentPsiRef.current));
+        setBearingPsi(psi);
+
+        // Optimal green zone is between 320 and 440 PSI
+        const inGreenZone = psi >= 310 && psi <= 450;
+
+        if (inGreenZone) {
+          holdProgressRef.current = Math.min(3.0, holdProgressRef.current + 0.016);
+          setHoldTimeSeconds(parseFloat(holdProgressRef.current.toFixed(1)));
+          if (Math.random() < 0.25) {
+            spawnParticles(armXRef.current, armYRef.current, 1, '#22c55e');
+          }
+
+          if (holdProgressRef.current >= 3.0) {
+            phaseRef.current = 'won';
+            setPhase('won');
+            sound.playSuccess();
+            if (!reduceMotion) shakeRef.current = 14;
+            spawnParticles(armXRef.current, armYRef.current, 40, '#22c55e');
+            spawnParticles(armXRef.current, armYRef.current, 25, '#fbbf24');
+            addFloatingText(armXRef.current, 140, 'BEARING LOAD CONFIRMED! 🏆', '#22c55e');
+
+            onReactionChange(
+              'VICTORY! Bearing strength verified at 400 PSI! Lunar soil confirmed solid bedrock—safe for Apollo astronauts!'
+            );
+            onWinTrigger({ stars: 3 });
+          }
+        } else {
+          // Slowly decay if pressure drops below target
+          holdProgressRef.current = Math.max(0, holdProgressRef.current - 0.02);
+          setHoldTimeSeconds(parseFloat(holdProgressRef.current.toFixed(1)));
+        }
+      }
+
       ctx.save();
       ctx.translate(shakeX, shakeY);
       ctx.clearRect(-10, -10, CANVAS_WIDTH + 20, CANVAS_HEIGHT + 20);
 
       // -------------------------------------------------------------
-      // 1. RENDER SURVEYOR CRATER BACKDROP (Oceanus Procellarum)
+      // 2. RENDER LUNAR BACKDROP (Oceanus Procellarum)
       // -------------------------------------------------------------
-      // Deep space starry void
+      // Deep space starry sky
       ctx.fillStyle = '#020617';
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
       // Stars
       ctx.fillStyle = '#ffffff';
-      for (let i = 0; i < 50; i++) {
+      for (let i = 0; i < 45; i++) {
         const sx = (i * 91) % CANVAS_WIDTH;
-        const sy = (i * 43) % 75;
+        const sy = (i * 43) % 65;
         ctx.fillRect(sx, sy, 1.2, 1.2);
       }
 
-      // Beautiful Earth Marble in lunar sky with blue atmosphere rim
-      const earthX = 530;
-      const earthY = 42;
-      const earthGrad = ctx.createRadialGradient(earthX - 3, earthY - 3, 2, earthX, earthY, 20);
+      // Distant Earth in lunar sky
+      const earthX = 540;
+      const earthY = 38;
+      const earthGrad = ctx.createRadialGradient(earthX - 2, earthY - 2, 2, earthX, earthY, 18);
       earthGrad.addColorStop(0, '#bae6fd');
       earthGrad.addColorStop(0.35, '#0284c7');
       earthGrad.addColorStop(0.7, '#0369a1');
@@ -450,507 +375,370 @@ export const SurveyorSalvageContent: React.FC<SurveyorSalvageContentProps> = ({
       earthGrad.addColorStop(1, 'rgba(56, 189, 248, 0.4)');
       ctx.fillStyle = earthGrad;
       ctx.beginPath();
-      ctx.arc(earthX, earthY, 18, 0, Math.PI * 2);
+      ctx.arc(earthX, earthY, 16, 0, Math.PI * 2);
       ctx.fill();
 
-      // Atmospheric limb glow
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // Surveyor Crater Slope (12-degree lunar regolith incline)
-      const craterGrad = ctx.createLinearGradient(0, 68, 0, CANVAS_HEIGHT);
-      craterGrad.addColorStop(0, '#1e293b');
-      craterGrad.addColorStop(0.25, '#334155');
-      craterGrad.addColorStop(0.65, '#475569');
-      craterGrad.addColorStop(1, '#64748b');
-      ctx.fillStyle = craterGrad;
-      ctx.fillRect(0, 68, CANVAS_WIDTH, CANVAS_HEIGHT - 68);
-
-      // Distant Apollo 12 LM "Intrepid" perched on crater rim
-      const lmX = 135;
-      const lmY = 68;
-      ctx.save();
-      // Descent stage with gold mylar foil
-      ctx.fillStyle = '#ca8a04';
-      ctx.strokeStyle = '#eab308';
-      ctx.lineWidth = 1.5;
+      // Distant crater rim mountains
+      ctx.fillStyle = '#0f172a';
       ctx.beginPath();
-      ctx.roundRect(lmX - 18, lmY - 14, 36, 16, 2);
-      ctx.fill();
-      ctx.stroke();
-
-      // Outrigger gear legs
-      ctx.strokeStyle = '#94a3b8';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(lmX - 16, lmY);
-      ctx.lineTo(lmX - 26, lmY + 12);
-      ctx.moveTo(lmX + 16, lmY);
-      ctx.lineTo(lmX + 26, lmY + 12);
-      ctx.stroke();
-
-      // Ascent stage cabin
-      ctx.fillStyle = '#64748b';
-      ctx.beginPath();
-      ctx.roundRect(lmX - 12, lmY - 26, 24, 12, 3);
-      ctx.fill();
-
-      // American Flag on lunar surface
-      ctx.strokeStyle = '#cbd5e1';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(lmX + 32, lmY);
-      ctx.lineTo(lmX + 32, lmY - 22);
-      ctx.stroke();
-      ctx.fillStyle = '#ef4444';
-      ctx.fillRect(lmX + 32, lmY - 22, 12, 7);
-
-      // Footprints in lunar dust trailing down from Intrepid to Surveyor!
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.4)';
-      for (let i = 0; i < 9; i++) {
-        const fpx = lmX + 35 + i * 16;
-        const fpy = lmY + 12 + i * 11;
-        ctx.beginPath();
-        ctx.ellipse(fpx, fpy, 3.5, 2, 0.4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      ctx.font = 'bold 7px monospace';
-      ctx.fillStyle = '#94a3b8';
-      ctx.textAlign = 'center';
-      ctx.fillText('LM INTREPID (180m)', lmX, lmY + 22);
-      ctx.restore();
-
-      // -------------------------------------------------------------
-      // 2. HIGH-DETAIL SURVEYOR 3 MODEL
-      // -------------------------------------------------------------
-      const landerX = 320;
-      const landerY = 175;
-
-      ctx.save();
-      // Drop Shadow on Lunar Regolith
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-      ctx.beginPath();
-      ctx.ellipse(landerX + 25, landerY + 58, 130, 36, 0.12, 0, Math.PI * 2);
-      ctx.fill();
-
-      // 3 Outrigger Landing Legs with Shock Struts & Crushable Honeycomb Footpads
-      ctx.strokeStyle = '#94a3b8';
-      ctx.lineWidth = 4;
-      // Leg 1 (Left)
-      ctx.beginPath();
-      ctx.moveTo(landerX - 45, landerY + 20);
-      ctx.lineTo(landerX - 115, landerY + 55);
-      ctx.stroke();
-      ctx.fillStyle = '#cbd5e1';
-      ctx.beginPath();
-      ctx.ellipse(landerX - 115, landerY + 55, 18, 8, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Leg 2 (Right)
-      ctx.beginPath();
-      ctx.moveTo(landerX + 45, landerY + 20);
-      ctx.lineTo(landerX + 115, landerY + 55);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.ellipse(landerX + 115, landerY + 55, 18, 8, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Conical Omnidirectional Antenna Horn on Leg 1
-      ctx.fillStyle = '#eab308';
-      ctx.beginPath();
-      ctx.moveTo(landerX - 115, landerY + 50);
-      ctx.lineTo(landerX - 128, landerY + 25);
-      ctx.lineTo(landerX - 105, landerY + 25);
+      ctx.moveTo(0, 68);
+      ctx.lineTo(90, 52);
+      ctx.lineTo(210, 62);
+      ctx.lineTo(340, 48);
+      ctx.lineTo(470, 64);
+      ctx.lineTo(CANVAS_WIDTH, 56);
+      ctx.lineTo(CANVAS_WIDTH, 68);
       ctx.closePath();
       ctx.fill();
 
-      // Triangular Aluminum Tube Frame Spacecraft Body
+      // Lunar Regolith Surface & Trench Stratum
+      const surfaceY = 195;
+      const groundGrad = ctx.createLinearGradient(0, 68, 0, CANVAS_HEIGHT);
+      groundGrad.addColorStop(0, '#1e293b');
+      groundGrad.addColorStop(0.35, '#334155');
+      groundGrad.addColorStop(0.7, '#475569');
+      groundGrad.addColorStop(1, '#64748b');
+      ctx.fillStyle = groundGrad;
+      ctx.fillRect(0, 68, CANVAS_WIDTH, CANVAS_HEIGHT - 68);
+
+      // -------------------------------------------------------------
+      // 3. DRAW EXCAVATED LUNAR TRENCH & BEDROCK STRATA
+      // -------------------------------------------------------------
+      ctx.save();
+      // Outer trench rim drop shadow
+      ctx.fillStyle = '#090d16';
+      ctx.beginPath();
+      ctx.moveTo(195, surfaceY);
+      for (let i = 0; i < 16; i++) {
+        const nx = 200 + i * 20;
+        const ny = surfaceY + trenchDepthsRef.current[i];
+        ctx.lineTo(nx, ny);
+      }
+      ctx.lineTo(525, surfaceY);
+      ctx.lineTo(525, CANVAS_HEIGHT);
+      ctx.lineTo(195, CANVAS_HEIGHT);
+      ctx.closePath();
+      ctx.fill();
+
+      // Basalt Bedrock Layer (Dense dark rock floor revealed when dug)
+      ctx.fillStyle = '#0f172a';
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(200, surfaceY + 36);
+      ctx.lineTo(520, surfaceY + 36);
+      ctx.lineTo(520, CANVAS_HEIGHT);
+      ctx.lineTo(200, CANVAS_HEIGHT);
+      ctx.closePath();
+      ctx.fill();
+
+      // Bedrock texture veins
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
+      ctx.lineWidth = 1;
+      for (let vx = 220; vx <= 500; vx += 40) {
+        ctx.beginPath();
+        ctx.moveTo(vx, surfaceY + 36);
+        ctx.lineTo(vx + 15, CANVAS_HEIGHT);
+        ctx.stroke();
+      }
+
+      // Soil layer callout labels along left wall of trench
+      ctx.font = 'bold 8px monospace';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText('DUST 0-2cm', 140, surfaceY + 8);
+      ctx.fillStyle = '#64748b';
+      ctx.fillText('REGOLITH 2-8cm', 125, surfaceY + 22);
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillText('BEDROCK >8cm', 130, surfaceY + 45);
+
+      ctx.restore();
+
+      // -------------------------------------------------------------
+      // 4. DRAW SURVEYOR 3 LANDER CHASSIS (Left Anchor)
+      // -------------------------------------------------------------
+      const landerX = 90;
+      const landerY = 160;
+
+      ctx.save();
+      // Drop Shadow
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+      ctx.beginPath();
+      ctx.ellipse(landerX + 15, surfaceY + 8, 85, 20, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Landing Gear Shock Strut with Honeycomb Footpad
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(landerX + 20, landerY + 10);
+      ctx.lineTo(landerX + 70, surfaceY + 4);
+      ctx.stroke();
+
+      ctx.fillStyle = '#cbd5e1';
+      ctx.beginPath();
+      ctx.ellipse(landerX + 70, surfaceY + 4, 16, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Triangular Truss Chassis
       ctx.fillStyle = '#1e293b';
       ctx.strokeStyle = '#64748b';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.moveTo(landerX - 52, landerY + 25);
-      ctx.lineTo(landerX, landerY - 48);
-      ctx.lineTo(landerX + 52, landerY + 25);
+      ctx.moveTo(landerX - 40, landerY + 20);
+      ctx.lineTo(landerX + 10, landerY - 45);
+      ctx.lineTo(landerX + 50, landerY + 20);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
 
-      // Gold Thermal Insulation Compartment Boxes (A and B)
+      // Gold Foil Compartment A
       ctx.fillStyle = '#ca8a04';
       ctx.strokeStyle = '#eab308';
       ctx.lineWidth = 1.5;
-      ctx.fillRect(landerX - 38, landerY - 5, 30, 22);
-      ctx.strokeRect(landerX - 38, landerY - 5, 30, 22);
+      ctx.fillRect(landerX - 25, landerY - 15, 30, 24);
+      ctx.strokeRect(landerX - 25, landerY - 15, 30, 24);
 
-      ctx.fillRect(landerX + 8, landerY - 5, 30, 22);
-      ctx.strokeRect(landerX + 8, landerY - 5, 30, 22);
-
-      // Central Tubular Mast (Supports Solar Array and Antenna)
+      // Central Mast
       ctx.strokeStyle = '#cbd5e1';
-      ctx.lineWidth = 3.5;
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(landerX, landerY - 48);
-      ctx.lineTo(landerX, landerY - 105);
+      ctx.moveTo(landerX + 10, landerY - 45);
+      ctx.lineTo(landerX + 10, landerY - 95);
       ctx.stroke();
 
-      // Planar Solar Array with Silicon Photovoltaic Cell Grid
-      ctx.fillStyle = '#0369a1';
+      // Planar Solar Array
+      ctx.fillStyle = '#0284c7';
       ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.roundRect(landerX - 25, landerY - 128, 50, 26, 3);
+      ctx.roundRect(landerX - 8, landerY - 118, 36, 22, 2);
       ctx.fill();
       ctx.stroke();
 
-      // Solar Cell Grid Lines
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
-      ctx.lineWidth = 1;
-      for (let gx = -18; gx <= 18; gx += 9) {
-        ctx.beginPath();
-        ctx.moveTo(landerX + gx, landerY - 128);
-        ctx.lineTo(landerX + gx, landerY - 102);
-        ctx.stroke();
-      }
-
-      // High-Gain Parabolic Antenna Horn
-      ctx.fillStyle = '#f8fafc';
-      ctx.beginPath();
-      ctx.arc(landerX + 28, landerY - 95, 10, 0, Math.PI * 2);
-      ctx.fill();
-
-      // TV Camera Housing with Rotating Optical Mirror
+      // TV Camera Housing
       ctx.fillStyle = '#0f172a';
       ctx.strokeStyle = '#94a3b8';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.roundRect(landerX - 62, landerY - 38, 28, 42, 4);
+      ctx.roundRect(landerX - 38, landerY - 45, 24, 30, 3);
       ctx.fill();
       ctx.stroke();
 
-      // Camera Optical Lens Aperture
-      const lensGrad = ctx.createRadialGradient(landerX - 48, landerY - 20, 2, landerX - 48, landerY - 20, 8);
-      lensGrad.addColorStop(0, '#ffffff');
-      lensGrad.addColorStop(0.5, '#0284c7');
-      lensGrad.addColorStop(1, '#0f172a');
-      ctx.fillStyle = lensGrad;
+      // Camera lens
+      ctx.fillStyle = '#38bdf8';
       ctx.beginPath();
-      ctx.arc(landerX - 48, landerY - 20, 8, 0, Math.PI * 2);
+      ctx.arc(landerX - 26, landerY - 30, 6, 0, Math.PI * 2);
       ctx.fill();
-
-      // -------------------------------------------------------------
-      // 3. MOTORIZED PANTOGRAPH SCISSOR SAMPLE ARM
-      // -------------------------------------------------------------
-      const sag = armSagRef.current;
-      const armBaseX = landerX + 26;
-      const armBaseY = landerY - 8 + sag * 0.2;
-      const elbowX = landerX + 88 + sag * 0.4;
-      const elbowY = landerY + 16 + sag * 0.6;
-      const scoopX = landerX + 135 + sag * 0.6;
-      const scoopY = landerY + 46 + sag;
-
-      // Pantograph Scissor Struts (Crossed links)
-      ctx.strokeStyle = stepRef.current === 'won' ? '#22c55e' : '#cbd5e1';
-      ctx.lineWidth = 3.5;
-      ctx.beginPath();
-      ctx.moveTo(armBaseX, armBaseY);
-      ctx.lineTo(elbowX, elbowY);
-      ctx.lineTo(scoopX, scoopY);
-      ctx.stroke();
-
-      // Cross-link brace
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(armBaseX + 15, armBaseY + 8);
-      ctx.lineTo(elbowX - 10, elbowY - 6);
-      ctx.stroke();
-
-      // Motorized Gearbox Hub on Elbow
-      ctx.fillStyle = '#475569';
-      ctx.beginPath();
-      ctx.arc(elbowX, elbowY, 6, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Titanium Surface Scoop Bucket with Soil Teeth
-      ctx.fillStyle = stepRef.current === 'won' ? '#22c55e' : '#eab308';
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.roundRect(scoopX - 10, scoopY - 12, 26, 20, 4);
-      ctx.fill();
-      ctx.stroke();
-
-      // Soil Cutter Teeth
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.moveTo(scoopX + 16, scoopY - 8);
-      ctx.lineTo(scoopX + 20, scoopY - 5);
-      ctx.lineTo(scoopX + 16, scoopY - 2);
-      ctx.lineTo(scoopX + 20, scoopY + 2);
-      ctx.lineTo(scoopX + 16, scoopY + 5);
-      ctx.fill();
-
-      // Braided Wiring Cable Harness (Connects mast to scoop motor)
-      if (stepRef.current !== 'won') {
-        const cut = cutPressureRef.current;
-        ctx.strokeStyle = cut > 0 ? '#ef4444' : '#f59e0b';
-        ctx.lineWidth = Math.max(1, 3 - (cut / 100) * 2);
-        ctx.setLineDash([3, 2]);
-        ctx.beginPath();
-        ctx.moveTo(armBaseX, armBaseY + 6);
-        ctx.quadraticCurveTo(armBaseX + 48, armBaseY + 34, elbowX + 16, elbowY + 12);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
 
       ctx.restore();
 
       // -------------------------------------------------------------
-      // 4. STEP 1 OVERLAY: LUNAR DUST SPOTS (Scrub to Clean)
+      // 5. MOTORIZED PANTOGRAPH SCISSOR ARM (Active Robotic Arm)
       // -------------------------------------------------------------
-      if (stepRef.current === 'brushing') {
-        for (const spot of dustSpotsRef.current) {
-          if (spot.opacity > 0) {
-            ctx.save();
-            const grad = ctx.createRadialGradient(spot.x, spot.y, 4, spot.x, spot.y, spot.radius);
-            grad.addColorStop(0, `rgba(148, 163, 184, ${spot.opacity * 0.95})`);
-            grad.addColorStop(0.7, `rgba(100, 116, 139, ${spot.opacity * 0.85})`);
-            grad.addColorStop(1, 'rgba(71, 85, 105, 0)');
-            ctx.fillStyle = grad;
-            ctx.beginPath();
-            ctx.arc(spot.x, spot.y, spot.radius, 0, Math.PI * 2);
-            ctx.fill();
+      const armBaseX = landerX + 45;
+      const armBaseY = landerY + 5;
+      const scoopX = armXRef.current;
+      const scoopY = armYRef.current;
 
-            // Label callout
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-            ctx.strokeStyle = '#94a3b8';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.roundRect(spot.x - 48, spot.y - 12, 96, 20, 4);
-            ctx.fill();
-            ctx.stroke();
+      // Scissor Elbow Joint calculated dynamically
+      const midX = (armBaseX + scoopX) / 2;
+      const midY = Math.min(armBaseY, scoopY) - 35;
 
-            ctx.font = 'bold 8px monospace';
-            ctx.fillStyle = '#e2e8f0';
-            ctx.textAlign = 'center';
-            ctx.fillText(`SCRUB: ${spot.label}`, spot.x, spot.y + 2);
-            ctx.restore();
-          }
+      ctx.save();
+      // Scissor Struts (Lightweight tubular aluminum)
+      ctx.strokeStyle = phaseRef.current === 'won' ? '#22c55e' : '#cbd5e1';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      // Upper arm link
+      ctx.moveTo(armBaseX, armBaseY);
+      ctx.lineTo(midX - 10, midY);
+      ctx.lineTo(scoopX, scoopY - 8);
+      ctx.stroke();
+
+      // Lower cross link
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(armBaseX + 10, armBaseY + 8);
+      ctx.lineTo(midX + 10, midY + 12);
+      ctx.lineTo(scoopX - 12, scoopY + 2);
+      ctx.stroke();
+
+      // Stepper Motor Hubs & Chrome Pivot Rivets
+      ctx.fillStyle = '#475569';
+      ctx.beginPath();
+      ctx.arc(midX - 10, midY, 6, 0, Math.PI * 2);
+      ctx.arc(armBaseX, armBaseY, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Motorized Scoop Bucket (Oriented flat during bearing test)
+      ctx.translate(scoopX, scoopY);
+      if (phaseRef.current === 'bearing' || phaseRef.current === 'won') {
+        // Flat orientation pressing into bedrock
+        ctx.fillStyle = phaseRef.current === 'won' ? '#22c55e' : '#eab308';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(-16, -10, 32, 16, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        // Pressure Force Vector Arrows
+        if (phaseRef.current === 'bearing' && currentPsiRef.current > 100) {
+          ctx.strokeStyle = '#22c55e';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(0, 10);
+          ctx.lineTo(0, 24);
+          ctx.moveTo(-4, 18);
+          ctx.lineTo(0, 24);
+          ctx.lineTo(4, 18);
+          ctx.stroke();
         }
+      } else {
+        // Angled digging scoop
+        ctx.rotate(scoopAngleRef.current);
+        ctx.fillStyle = '#eab308';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(-12, -14, 24, 20, 3);
+        ctx.fill();
+        ctx.stroke();
 
-        // Animated Helper Prompt
+        // Hardened Titanium Ground Teeth
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.moveTo(12, -8);
+        ctx.lineTo(16, -4);
+        ctx.lineTo(12, 0);
+        ctx.lineTo(16, 4);
+        ctx.lineTo(12, 8);
+        ctx.fill();
+      }
+      ctx.restore();
+
+      // -------------------------------------------------------------
+      // 6. PHASE 2 OVERLAY: ANALOG SOIL BEARING PRESSURE GAUGE
+      // -------------------------------------------------------------
+      if (phaseRef.current === 'bearing') {
+        const gaugeX = 490;
+        const gaugeY = 125;
+        const gaugeRadius = 48;
+        const psi = currentPsiRef.current;
+
         ctx.save();
-        ctx.fillStyle = 'rgba(2, 132, 199, 0.9)';
-        ctx.strokeStyle = '#38bdf8';
+        // Outer Chrome Gauge Bezel
+        ctx.fillStyle = '#0f172a';
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(gaugeX, gaugeY, gaugeRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Color Arc Segments: Red (0-240), Yellow (240-310), Green (310-440), Red (>440)
+        // Angle range: -Math.PI * 0.75 to Math.PI * 0.75
+        const startAng = -Math.PI * 0.75;
+        const totalAng = Math.PI * 1.5;
+
+        // Red Zone (Soft quicksand hazard)
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(gaugeX, gaugeY, gaugeRadius - 7, startAng, startAng + totalAng * 0.5);
+        ctx.stroke();
+
+        // Green Zone (Apollo Safe Bedrock: 310 - 450 PSI)
+        ctx.strokeStyle = '#22c55e';
+        ctx.beginPath();
+        ctx.arc(gaugeX, gaugeY, gaugeRadius - 7, startAng + totalAng * 0.5, startAng + totalAng * 0.9);
+        ctx.stroke();
+
+        // Needle Rotation Angle (0 to 500 PSI)
+        const needleRatio = Math.min(1.0, Math.max(0, psi / 500));
+        const needleAngle = startAng + totalAng * needleRatio;
+
+        // Draw Needle
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(gaugeX, gaugeY);
+        ctx.lineTo(gaugeX + Math.cos(needleAngle) * (gaugeRadius - 12), gaugeY + Math.sin(needleAngle) * (gaugeRadius - 12));
+        ctx.stroke();
+
+        // Center Pin
+        ctx.fillStyle = '#ef4444';
+        ctx.beginPath();
+        ctx.arc(gaugeX, gaugeY, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // PSI Digital Readout Badge
+        ctx.fillStyle = '#020617';
+        ctx.strokeStyle = psi >= 310 && psi <= 450 ? '#22c55e' : '#94a3b8';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.roundRect(210, 248, 220, 26, 6);
+        ctx.roundRect(gaugeX - 40, gaugeY + 54, 80, 20, 4);
         ctx.fill();
         ctx.stroke();
 
         ctx.font = 'bold 10px monospace';
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = psi >= 310 && psi <= 450 ? '#4ade80' : '#ffffff';
         ctx.textAlign = 'center';
-        ctx.fillText('👉 DRAG BRUSH TO SCRUB DUST', 320, 265);
-        ctx.restore();
-      }
+        ctx.fillText(`${psi} PSI`, gaugeX, gaugeY + 68);
 
-      // -------------------------------------------------------------
-      // 5. STEP 2 OVERLAY: RETAINING COLLAR PINS (Tap to Unlatch)
-      // -------------------------------------------------------------
-      else if (stepRef.current === 'unpinning') {
-        for (const pin of pinsRef.current) {
-          ctx.save();
-          if (pin.unlatched) {
-            ctx.fillStyle = 'rgba(34, 197, 94, 0.3)';
-            ctx.strokeStyle = '#22c55e';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(pin.x, pin.y, 16, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
+        // Target Zone Label
+        ctx.font = 'bold 8px monospace';
+        ctx.fillStyle = '#bae6fd';
+        ctx.fillText('TARGET: 400 PSI', gaugeX, gaugeY - 54);
 
-            ctx.fillStyle = '#22c55e';
-            ctx.font = 'bold 12px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText('✓', pin.x, pin.y + 4);
-          } else {
-            const pulse = 1 + Math.sin(Date.now() / 150) * 0.15;
-            ctx.fillStyle = 'rgba(234, 179, 8, 0.25)';
-            ctx.strokeStyle = '#eab308';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(pin.x, pin.y, 18 * pulse, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
-
-            // Pull-Ring Pin Body
-            ctx.strokeStyle = '#fde047';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(pin.x, pin.y - 6, 7, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(pin.x, pin.y);
-            ctx.lineTo(pin.x, pin.y + 10);
-            ctx.stroke();
-
-            // Label
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-            ctx.strokeStyle = '#eab308';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.roundRect(pin.x - 55, pin.y - 28, 110, 18, 3);
-            ctx.fill();
-            ctx.stroke();
-
-            ctx.font = 'bold 8px monospace';
-            ctx.fillStyle = '#fde047';
-            ctx.textAlign = 'center';
-            ctx.fillText(`TAP TO POP: ${pin.label}`, pin.x, pin.y - 16);
-          }
-          ctx.restore();
-        }
-      }
-
-      // -------------------------------------------------------------
-      // 6. STEP 3 OVERLAY: BOLT CUTTERS ON WIRING HARNESS
-      // -------------------------------------------------------------
-      else if (stepRef.current === 'snipping') {
-        const cutX = 425;
-        const cutY = 180;
-
-        ctx.save();
-        const pulse = 1 + Math.sin(Date.now() / 120) * 0.15;
-        ctx.fillStyle = 'rgba(245, 158, 11, 0.25)';
-        ctx.strokeStyle = '#f59e0b';
-        ctx.lineWidth = 2.5;
+        // Verification Hold Meter
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+        ctx.strokeStyle = '#22c55e';
+        ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.arc(cutX, cutY, 34 * pulse, 0, Math.PI * 2);
+        ctx.roundRect(gaugeX - 55, gaugeY + 78, 110, 14, 3);
         ctx.fill();
         ctx.stroke();
 
-        // Shear blades graphic
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 3.5;
-        ctx.beginPath();
-        ctx.moveTo(cutX - 18, cutY - 16);
-        ctx.lineTo(cutX + 18, cutY + 16);
-        ctx.moveTo(cutX - 18, cutY + 16);
-        ctx.lineTo(cutX + 18, cutY - 16);
-        ctx.stroke();
-
-        // Cutting progress bar
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
-        ctx.strokeStyle = '#f59e0b';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.roundRect(cutX - 60, cutY + 36, 120, 16, 4);
-        ctx.fill();
-        ctx.stroke();
-
+        const holdPercent = Math.min(1.0, holdProgressRef.current / 3.0);
         ctx.fillStyle = '#22c55e';
-        ctx.fillRect(cutX - 58, cutY + 38, (cutPressureRef.current / 100) * 116, 12);
+        ctx.fillRect(gaugeX - 53, gaugeY + 80, holdPercent * 106, 10);
 
         ctx.font = 'bold 8px monospace';
         ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'center';
-        ctx.fillText(`SHEAR PRESSURE: ${cutPressureRef.current}%`, cutX, cutY + 28);
+        ctx.fillText(`HOLD: ${holdTimeSeconds}s / 3.0s`, gaugeX, gaugeY + 88);
+
         ctx.restore();
       }
 
       // -------------------------------------------------------------
-      // 7. ASTRONAUT FIRST-PERSON EVA GLOVE & ACTIVE TOOL
+      // 7. WINNING CELEBRATION OVERLAY
       // -------------------------------------------------------------
-      const gx = glovePosRef.current.x;
-      const gy = glovePosRef.current.y;
-
-      ctx.save();
-      // White Apollo A7L Spacesuit Glove Sleeve
-      ctx.fillStyle = '#f8fafc';
-      ctx.strokeStyle = '#94a3b8';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.ellipse(gx + 25, gy + 35, 18, 30, 0.4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      // Red Mission Commander Stripe on Wrist Cuff
-      ctx.fillStyle = '#ef4444';
-      ctx.fillRect(gx + 12, gy + 45, 12, 5);
-
-      // Glove Palm & Blue Fingertips
-      ctx.fillStyle = '#e2e8f0';
-      ctx.beginPath();
-      ctx.arc(gx + 8, gy + 12, 12, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      // Render Active Tool held in Glove
-      if (stepRef.current === 'brushing') {
-        // Lunar Dusting Brush Handle
-        ctx.fillStyle = '#ca8a04';
-        ctx.fillRect(gx - 20, gy - 6, 24, 7);
-        // Soft White/Gray Bristles sweeping
-        ctx.fillStyle = '#e2e8f0';
-        ctx.beginPath();
-        ctx.moveTo(gx - 20, gy - 12);
-        ctx.lineTo(gx - 35, gy - 8);
-        ctx.lineTo(gx - 35, gy + 12);
-        ctx.lineTo(gx - 20, gy + 8);
-        ctx.closePath();
-        ctx.fill();
-      } else if (stepRef.current === 'unpinning') {
-        // Glove reaching with pinch fingers
-        ctx.fillStyle = '#cbd5e1';
-        ctx.beginPath();
-        ctx.arc(gx - 4, gy + 4, 6, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (stepRef.current === 'snipping') {
-        // Apollo Mechanical Shears / Bolt Cutters with yellow insulated handles
-        ctx.fillStyle = '#eab308';
-        ctx.fillRect(gx - 25, gy - 8, 30, 8);
-        ctx.fillStyle = '#64748b';
-        ctx.fillRect(gx - 38, gy - 6, 14, 5);
-      }
-      ctx.restore();
-
-      // -------------------------------------------------------------
-      // 8. WINNING CELEBRATION FLASH & HARVEST BANNER
-      // -------------------------------------------------------------
-      if (flashAlphaRef.current > 0) {
+      if (phaseRef.current === 'won') {
         ctx.save();
-        ctx.fillStyle = `rgba(56, 189, 248, ${flashAlphaRef.current})`;
-        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-        ctx.restore();
-        flashAlphaRef.current = Math.max(0, flashAlphaRef.current - 0.04);
-      }
-
-      if (stepRef.current === 'won') {
-        ctx.save();
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
         ctx.strokeStyle = '#22c55e';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2.5;
         ctx.beginPath();
-        ctx.roundRect(140, 95, 360, 65, 10);
+        ctx.roundRect(140, 95, 360, 75, 10);
         ctx.fill();
         ctx.stroke();
 
-        ctx.font = 'bold 12px monospace';
+        ctx.font = 'bold 13px monospace';
         ctx.fillStyle = '#4ade80';
         ctx.textAlign = 'center';
-        ctx.fillText('🏆 SURVEYOR 3 ARM SECURED! 🏆', 320, 122);
+        ctx.fillText('🏆 BEDROCK BEARING CONFIRMED! 🏆', 320, 124);
 
-        ctx.font = '9px monospace';
+        ctx.font = 'bold 9px monospace';
         ctx.fillStyle = '#bae6fd';
-        ctx.fillText('First robotic artifact retrieved by humans from another world!', 320, 142);
+        ctx.fillText('Soil strength: 400 PSI · Zero quicksand risk!', 320, 144);
+        ctx.fillStyle = '#fde047';
+        ctx.fillText('Surveyor 3 proved Moon is safe for Apollo landings!', 320, 158);
         ctx.restore();
       }
 
       // -------------------------------------------------------------
-      // 9. PARTICLES & FLOATING TEXTS
+      // 8. PARTICLES & FLOATING TEXTS
       // -------------------------------------------------------------
       for (let i = particlesRef.current.length - 1; i >= 0; i--) {
         const p = particlesRef.current[i];
@@ -984,7 +772,7 @@ export const SurveyorSalvageContent: React.FC<SurveyorSalvageContentProps> = ({
 
         ctx.save();
         ctx.globalAlpha = ft.alpha;
-        ctx.font = 'bold 10px monospace';
+        ctx.font = 'bold 11px monospace';
         ctx.fillStyle = ft.color;
         ctx.textAlign = 'center';
         ctx.shadowColor = '#000000';
@@ -999,11 +787,11 @@ export const SurveyorSalvageContent: React.FC<SurveyorSalvageContentProps> = ({
 
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
-  }, [reduceMotion]);
+  }, [addFloatingText, assistActive, holdTimeSeconds, onReactionChange, onWinTrigger, playChimeLock, playMotorHum, playSoilCrunch, reduceMotion, spawnParticles]);
 
   // Pointer interactions
   const handlePointerDown = (clientX: number, clientY: number) => {
-    isInteractingRef.current = true;
+    isDraggingRef.current = true;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -1012,10 +800,16 @@ export const SurveyorSalvageContent: React.FC<SurveyorSalvageContentProps> = ({
     const x = (clientX - rect.left) * scaleX;
     const y = (clientY - rect.top) * scaleY;
 
-    handlePointerAction(x, y);
+    if (phaseRef.current === 'digging') {
+      targetXRef.current = Math.max(180, Math.min(520, x));
+      targetYRef.current = Math.max(140, Math.min(235, y));
+    } else if (phaseRef.current === 'bearing') {
+      isPressingForceRef.current = true;
+    }
   };
 
   const handlePointerMove = (clientX: number, clientY: number) => {
+    if (!isDraggingRef.current) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -1024,52 +818,56 @@ export const SurveyorSalvageContent: React.FC<SurveyorSalvageContentProps> = ({
     const x = (clientX - rect.left) * scaleX;
     const y = (clientY - rect.top) * scaleY;
 
-    targetGlovePosRef.current = { x, y };
-    if (isInteractingRef.current || stepRef.current === 'brushing') {
-      handlePointerAction(x, y);
+    if (phaseRef.current === 'digging') {
+      targetXRef.current = Math.max(180, Math.min(520, x));
+      targetYRef.current = Math.max(140, Math.min(235, y));
     }
   };
 
   const handlePointerUp = () => {
-    isInteractingRef.current = false;
+    isDraggingRef.current = false;
+    isPressingForceRef.current = false;
   };
 
-  // Keyboard action
+  // Keyboard navigation & controls
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.code === 'Enter') {
-        if (stepRef.current === 'brushing') {
-          handlePointerAction(280 + Math.random() * 120, 140 + Math.random() * 60);
-        } else if (stepRef.current === 'unpinning') {
-          const firstPinned = pinsRef.current.find((p) => !p.unlatched);
-          if (firstPinned) handlePointerAction(firstPinned.x, firstPinned.y);
-        } else if (stepRef.current === 'snipping') {
-          handlePointerAction(425, 180);
+        if (phaseRef.current === 'digging') {
+          targetXRef.current = 240 + Math.random() * 260;
+          targetYRef.current = 210;
+        } else if (phaseRef.current === 'bearing') {
+          isPressingForceRef.current = true;
         }
       }
     };
 
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space' || e.code === 'Enter') {
+        isPressingForceRef.current = false;
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handlePointerAction]);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   // Autoplay hook for test automation
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const runAutoplay = () => {
-        for (const spot of dustSpotsRef.current) {
-          spot.cleared = true;
-          spot.opacity = 0;
-        }
-        for (const pin of pinsRef.current) {
-          pin.unlatched = true;
-        }
-        cutPressureRef.current = 100;
-        setDustProgress(100);
-        setPinsUnlatchedCount(3);
-        setSnipProgress(100);
-        stepRef.current = 'won';
-        setStep('won');
+        trenchDepthsRef.current = new Array(16).fill(36);
+        setTrenchProgress(100);
+        currentPsiRef.current = 400;
+        setBearingPsi(400);
+        holdProgressRef.current = 3.0;
+        setHoldTimeSeconds(3.0);
+        phaseRef.current = 'won';
+        setPhase('won');
         sound.playSuccess();
         onWinTrigger({ stars: 3 });
       };
@@ -1091,38 +889,32 @@ export const SurveyorSalvageContent: React.FC<SurveyorSalvageContentProps> = ({
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
           <span className="text-slate-200 font-bold uppercase tracking-wider hidden sm:inline">
-            APOLLO 12 EVA · SURVEYOR 3 SALVAGE
+            SURVEYOR 3 · BEDROCK BEARING TEST
           </span>
           <span className="text-slate-200 font-bold uppercase tracking-wider sm:hidden">
-            SURVEYOR 3 SALVAGE
+            BEARING TEST
           </span>
           <span
             data-testid="surveyor-status-pill"
             className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-400/40 text-[10px]"
           >
-            {step === 'brushing'
-              ? 'STEP 1: BRUSH DUST'
-              : step === 'unpinning'
-              ? 'STEP 2: UNPIN COLLARS'
-              : step === 'snipping'
-              ? 'STEP 3: SNIP HARNESS'
-              : 'RETRIEVED!'}
+            {phase === 'digging'
+              ? 'PHASE 1: DIG TRENCH'
+              : phase === 'bearing'
+              ? 'PHASE 2: 400 PSI LOAD TEST'
+              : 'BEARING VERIFIED!'}
           </span>
         </div>
 
         {/* Progress Display */}
         <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-950 border border-cyan-500/50 shadow-md">
-          <Award size={14} className="text-cyan-400 animate-pulse" />
+          <Gauge size={14} className="text-cyan-400 animate-pulse" />
           <div className="flex flex-col text-right">
-            <span className="text-[9px] text-slate-400 uppercase font-semibold">Phase Progress</span>
+            <span className="text-[9px] text-slate-400 uppercase font-semibold">
+              {phase === 'digging' ? 'Trench Depth' : 'Bearing Load'}
+            </span>
             <span className="text-xs font-bold font-mono text-cyan-300">
-              {step === 'brushing'
-                ? `${dustProgress}%`
-                : step === 'unpinning'
-                ? `${pinsUnlatchedCount} / 3`
-                : step === 'snipping'
-                ? `${snipProgress}%`
-                : '100%'}
+              {phase === 'digging' ? `${trenchProgress}%` : `${bearingPsi} PSI`}
             </span>
           </div>
         </div>
@@ -1139,9 +931,16 @@ export const SurveyorSalvageContent: React.FC<SurveyorSalvageContentProps> = ({
           onPointerUp={handlePointerUp}
           onPointerLeave={handlePointerUp}
           onPointerCancel={handlePointerUp}
-          className="bg-[#020617] rounded-2xl block border-2 border-slate-800 shadow-2xl cursor-pointer w-full h-full max-h-[220px] sm:max-h-[260px] touch-none select-none aspect-video shrink-0"
+          className="bg-[#020617] rounded-2xl block border-2 border-slate-800 shadow-2xl cursor-grab active:cursor-grabbing w-full h-full max-h-[220px] sm:max-h-[260px] touch-none select-none aspect-video shrink-0"
           data-testid="surveyor-canvas"
         />
+
+        {/* Phase 1 helper banner */}
+        {phase === 'digging' && trenchProgress < 20 && (
+          <div className="absolute bottom-3 left-1/2 transform -translate-x-1/2 pointer-events-none text-[10px] text-cyan-300 font-mono font-bold bg-slate-950/90 px-3 py-1 rounded-full border border-cyan-500/40 shadow animate-pulse">
+            👉 DRAG SCOOP ALONG SOIL TO DIG TRENCH
+          </div>
+        )}
       </div>
 
       {/* 3. Tactile Action Controls Strip */}
@@ -1149,37 +948,33 @@ export const SurveyorSalvageContent: React.FC<SurveyorSalvageContentProps> = ({
         {/* Primary Action Button (>=48px touch target) */}
         <button
           data-testid="surveyor-action-btn"
-          onClick={() => {
-            if (step === 'brushing') {
-              handlePointerAction(280 + Math.random() * 120, 140 + Math.random() * 60);
-            } else if (step === 'unpinning') {
-              const firstPinned = pinsRef.current.find((p) => !p.unlatched);
-              if (firstPinned) handlePointerAction(firstPinned.x, firstPinned.y);
-            } else if (step === 'snipping') {
-              handlePointerAction(425, 180);
+          onPointerDown={() => {
+            if (phase === 'digging') {
+              targetXRef.current = 240 + Math.random() * 260;
+              targetYRef.current = 210;
+            } else if (phase === 'bearing') {
+              isPressingForceRef.current = true;
             }
+          }}
+          onPointerUp={() => {
+            isPressingForceRef.current = false;
           }}
           className="w-full h-12 flex items-center justify-center gap-2 rounded-lg bg-cyan-950/80 border border-cyan-500/60 text-cyan-300 font-mono font-bold text-xs uppercase tracking-wider active:bg-cyan-700/60 transition-all cursor-pointer shadow-md select-none"
         >
-          {step === 'brushing' ? (
+          {phase === 'digging' ? (
             <>
-              <Hand size={18} className="text-cyan-400" />
-              <span>SWIPE BRUSH (OR TAP DUST)</span>
+              <Wrench size={18} className="text-cyan-400" />
+              <span>DIG TRENCH TO BEDROCK ({trenchProgress}%)</span>
             </>
-          ) : step === 'unpinning' ? (
+          ) : phase === 'bearing' ? (
             <>
-              <Wrench size={18} className="text-amber-400" />
-              <span>UNPIN COLLAR ({pinsUnlatchedCount}/3)</span>
-            </>
-          ) : step === 'snipping' ? (
-            <>
-              <Scissors size={18} className="text-emerald-400" />
-              <span>SQUEEZE BOLT CUTTERS ({snipProgress}%)</span>
+              <Gauge size={18} className="text-emerald-400" />
+              <span>HOLD BEARING FORCE ({bearingPsi} PSI)</span>
             </>
           ) : (
             <>
               <CheckCircle2 size={18} className="text-emerald-400" />
-              <span>SURVEYOR 3 ARM SECURED</span>
+              <span>APOLLO BEARING CAPACITY CONFIRMED</span>
             </>
           )}
         </button>
