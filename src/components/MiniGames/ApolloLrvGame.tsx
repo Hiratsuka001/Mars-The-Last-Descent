@@ -69,7 +69,7 @@ export const ApolloLrvGame: React.FC<ApolloLrvGameProps> = ({
 }) => {
   const [retryNonce, setRetryNonce] = useState(0);
   const [reactionText, setReactionText] = useState(
-    'Apollo Lunar Roving Vehicle online! Ferenc Pavlics wire-mesh tires engaged! Steer across Hadley Rille to collect 4 sample crates!'
+    'Apollo Lunar Roving Vehicle online! Wire-mesh tires engaged! Steer across Hadley Rille to collect 4 sample crates!'
   );
 
   const handleRetry = useCallback(() => {
@@ -113,7 +113,8 @@ interface LrvCourseContentProps {
 
 const CANVAS_WIDTH = 640;
 const CANVAS_HEIGHT = 300;
-const TOTAL_COURSE_DISTANCE = 1600; // Total scroll units to Lunar Module finish line
+// Tuned for ~20-22 seconds comfortable playthrough: slow but not sluggish
+const TOTAL_COURSE_DISTANCE = 2400;
 const TOTAL_SAMPLES = 4;
 
 export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
@@ -135,12 +136,12 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
   const phaseRef = useRef<'driving' | 'won' | 'failed'>('driving');
   phaseRef.current = phase;
 
-  // Rover physics state
+  // Rover physics state (Paced comfortably)
   const roverXRef = useRef(320);
   const targetXRef = useRef(320);
   const roverVxRef = useRef(0);
   const roverAngleRef = useRef(0);
-  const roverSpeedRef = useRef(4.0);
+  const roverSpeedRef = useRef(1.85); // Paced comfortably (1.85 base, 2.65 boost)
   const distanceRef = useRef(0);
   const altitudeZRef = useRef(0); // 0 = ground, >0 = 1/6g airborne jump
   const altitudeVzRef = useRef(0);
@@ -154,12 +155,12 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
   // Input keys
   const keysHeldRef = useRef<Set<string>>(new Set());
 
-  // Interactive world objects
+  // Interactive world objects spaced comfortably along 2400 units
   const samplesRef = useRef<SampleCrate[]>([
     {
       id: 1,
-      x: 200,
-      y: -300,
+      x: 210,
+      y: -420,
       name: 'Genesis Rock',
       subname: 'Anorthosite Crust (Apollo 15)',
       collected: false,
@@ -167,8 +168,8 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
     },
     {
       id: 2,
-      x: 440,
-      y: -650,
+      x: 430,
+      y: -950,
       name: 'Orange Volcanic Soil',
       subname: 'Pyroclastic Glass (Apollo 17)',
       collected: false,
@@ -176,8 +177,8 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
     },
     {
       id: 3,
-      x: 180,
-      y: -1000,
+      x: 200,
+      y: -1480,
       name: 'Big Muley Boulder',
       subname: 'Shock Impact Breccia (Apollo 16)',
       collected: false,
@@ -185,8 +186,8 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
     },
     {
       id: 4,
-      x: 360,
-      y: -1350,
+      x: 370,
+      y: -1980,
       name: 'Troctolite 76535',
       subname: 'Pristine Lunar Mantle (Apollo 17)',
       collected: false,
@@ -195,18 +196,20 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
   ]);
 
   const bouldersRef = useRef<Boulder[]>([
-    { id: 1, x: 310, y: -180, radius: 24, hit: false },
-    { id: 2, x: 480, y: -420, radius: 26, hit: false },
-    { id: 3, x: 150, y: -540, radius: 22, hit: false },
-    { id: 4, x: 260, y: -800, radius: 25, hit: false },
-    { id: 5, x: 420, y: -1150, radius: 26, hit: false },
-    { id: 6, x: 220, y: -1250, radius: 24, hit: false },
+    { id: 1, x: 380, y: -260, radius: 24, hit: false },
+    { id: 2, x: 170, y: -620, radius: 25, hit: false },
+    { id: 3, x: 470, y: -800, radius: 26, hit: false },
+    { id: 4, x: 280, y: -1180, radius: 24, hit: false },
+    { id: 5, x: 450, y: -1360, radius: 25, hit: false },
+    { id: 6, x: 160, y: -1750, radius: 25, hit: false },
+    { id: 7, x: 460, y: -1860, radius: 24, hit: false },
+    { id: 8, x: 230, y: -2180, radius: 24, hit: false },
   ]);
 
   const craterJumpsRef = useRef<CraterJump[]>([
-    { id: 1, x: 290, y: -480, width: 140, height: 40, triggered: false },
-    { id: 2, x: 380, y: -880, width: 150, height: 45, triggered: false },
-    { id: 3, x: 220, y: -1200, width: 140, height: 40, triggered: false },
+    { id: 1, x: 320, y: -680, width: 160, height: 44, triggered: false },
+    { id: 2, x: 350, y: -1220, width: 170, height: 46, triggered: false },
+    { id: 3, x: 280, y: -1720, width: 160, height: 44, triggered: false },
   ]);
 
   const dustParticlesRef = useRef<DustParticle[]>([]);
@@ -221,18 +224,17 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
-      // Authentic NASA Quindar Beep: 2524 Hz
       osc.type = 'sine';
       osc.frequency.setValueAtTime(2524, ctx.currentTime);
 
-      gain.gain.setValueAtTime(0.18, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.16);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       osc.start();
-      osc.stop(ctx.currentTime + 0.15);
+      osc.stop(ctx.currentTime + 0.16);
     } catch {
       sound.playSonarPing();
     }
@@ -248,16 +250,16 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
 
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(140, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(320, ctx.currentTime + 0.25);
+      osc.frequency.exponentialRampToValueAtTime(320, ctx.currentTime + 0.28);
 
-      gain.gain.setValueAtTime(0.2, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.22, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       osc.start();
-      osc.stop(ctx.currentTime + 0.3);
+      osc.stop(ctx.currentTime + 0.35);
     } catch {
       sound.playSonarPing();
     }
@@ -273,16 +275,16 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
 
       osc.type = 'sine';
       osc.frequency.setValueAtTime(90, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.2);
+      osc.frequency.exponentialRampToValueAtTime(35, ctx.currentTime + 0.24);
 
       gain.gain.setValueAtTime(0.35, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       osc.start();
-      osc.stop(ctx.currentTime + 0.22);
+      osc.stop(ctx.currentTime + 0.25);
     } catch {
       sound.playSonarPing();
     }
@@ -326,24 +328,24 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
       text,
       color,
       alpha: 1.0,
-      vy: -1.2,
+      vy: -1.0,
     });
   }, []);
 
   // Spawn wire-mesh regolith rooster-tail dust sprays
   const spawnRoosterTail = useCallback((x: number, y: number, angle: number, intensity: number) => {
-    const count = Math.min(8, Math.floor(intensity * 4));
+    const count = Math.min(6, Math.floor(intensity * 3.5));
     for (let i = 0; i < count; i++) {
-      const sprayAngle = angle + Math.PI + (Math.random() - 0.5) * 0.9;
-      const speed = (Math.random() * 3.5 + 2.0) * intensity;
+      const sprayAngle = angle + Math.PI + (Math.random() - 0.5) * 0.85;
+      const speed = (Math.random() * 2.8 + 1.6) * intensity;
       dustParticlesRef.current.push({
-        x: x + (Math.random() - 0.5) * 8,
-        y: y + (Math.random() - 0.5) * 6,
+        x: x + (Math.random() - 0.5) * 6,
+        y: y + (Math.random() - 0.5) * 4,
         vx: Math.cos(sprayAngle) * speed,
-        vy: Math.sin(sprayAngle) * speed + 1.2, // Gravity pulls regolith down
-        radius: Math.random() * 3.0 + 1.2,
+        vy: Math.sin(sprayAngle) * speed + 0.9,
+        radius: Math.random() * 2.8 + 1.2,
         alpha: 0.85,
-        decay: 0.04 + Math.random() * 0.03,
+        decay: 0.038 + Math.random() * 0.025,
         color: Math.random() > 0.4 ? '#cbd5e1' : '#94a3b8',
       });
     }
@@ -361,11 +363,12 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
 
       if (phaseRef.current === 'driving') {
         // -------------------------------------------------------------
-        // 1. UPDATE ROVER SPEED, THROTTLE & STEERING
+        // 1. UPDATE ROVER SPEED, THROTTLE & STEERING (Balanced Pacing)
         // -------------------------------------------------------------
         const isBoost = isBoostingRef.current || keysHeldRef.current.has('ArrowUp') || keysHeldRef.current.has('KeyW');
-        const targetSpeed = isBoost ? 6.2 : 4.2;
-        roverSpeedRef.current += (targetSpeed - roverSpeedRef.current) * 0.1;
+        // Comfortable, readable speed: 1.85 normal, 2.65 boost
+        const targetSpeed = isBoost ? 2.65 : 1.85;
+        roverSpeedRef.current += (targetSpeed - roverSpeedRef.current) * 0.08;
 
         const forwardSpeed = roverSpeedRef.current;
         distanceRef.current += forwardSpeed;
@@ -377,7 +380,7 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
         if (keysHeldRef.current.has('ArrowRight') || keysHeldRef.current.has('KeyD')) steerInput += 1;
 
         if (steerInput !== 0) {
-          targetXRef.current = Math.max(90, Math.min(550, targetXRef.current + steerInput * 6.5));
+          targetXRef.current = Math.max(90, Math.min(550, targetXRef.current + steerInput * 4.6));
         }
 
         // Horizontal position interpolation
@@ -385,15 +388,15 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
         const targetX = targetXRef.current;
         const dx = targetX - currentX;
 
-        // Low-gravity drift inertia: turning hard creates drift
-        roverVxRef.current = dx * 0.16;
+        // Low-gravity drift inertia: turning creates smooth drift
+        roverVxRef.current = dx * 0.14;
         roverXRef.current += roverVxRef.current;
 
         // Calculate rover chassis tilt and drift angle
-        const targetAngle = (roverVxRef.current / 12) * (Math.PI / 8);
-        roverAngleRef.current += (targetAngle - roverAngleRef.current) * 0.2;
+        const targetAngle = (roverVxRef.current / 10) * (Math.PI / 8);
+        roverAngleRef.current += (targetAngle - roverAngleRef.current) * 0.18;
 
-        const isDrifting = Math.abs(roverVxRef.current) > 2.5 || isDriftingRef.current;
+        const isDrifting = Math.abs(roverVxRef.current) > 1.8 || isDriftingRef.current;
         if (isDrifting && altitudeZRef.current <= 0) {
           setDriftScore((s) => s + 1);
         }
@@ -403,7 +406,7 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
         // -------------------------------------------------------------
         if (altitudeZRef.current > 0 || altitudeVzRef.current > 0) {
           altitudeZRef.current += altitudeVzRef.current;
-          altitudeVzRef.current -= 0.22; // 1/6th lunar gravity downward acceleration
+          altitudeVzRef.current -= 0.12; // 1/6th lunar gravity downward acceleration
 
           if (altitudeZRef.current <= 0) {
             altitudeZRef.current = 0;
@@ -413,16 +416,16 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
             if (!reduceMotion) shakeRef.current = 8;
             addNotification(roverXRef.current, 200, 'LANDED! +BOOST 🚀', '#38bdf8');
             // Kick up landing dust cloud
-            for (let i = 0; i < 16; i++) {
+            for (let i = 0; i < 14; i++) {
               const ang = Math.random() * Math.PI * 2;
               dustParticlesRef.current.push({
                 x: roverXRef.current,
                 y: 220,
-                vx: Math.cos(ang) * 4,
-                vy: Math.sin(ang) * 3,
-                radius: Math.random() * 3 + 1.5,
+                vx: Math.cos(ang) * 3.5,
+                vy: Math.sin(ang) * 2.5,
+                radius: Math.random() * 2.8 + 1.4,
                 alpha: 0.9,
-                decay: 0.05,
+                decay: 0.045,
                 color: '#e2e8f0',
               });
             }
@@ -437,11 +440,11 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
           if (
             !ramp.triggered &&
             altitudeZRef.current === 0 &&
-            Math.abs(worldRampY - 220) < 22 &&
+            Math.abs(worldRampY - 220) < 24 &&
             Math.abs(roverXRef.current - ramp.x) < ramp.width / 2
           ) {
             ramp.triggered = true;
-            altitudeVzRef.current = 4.8; // Launch into 1/6g parabolic air-time!
+            altitudeVzRef.current = 3.6; // Floaty 1/6g air-time!
             altitudeZRef.current = 1;
             jumpCountRef.current += 1;
             setIsAirborne(true);
@@ -456,18 +459,17 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
         // -------------------------------------------------------------
         for (const sample of samplesRef.current) {
           const worldSampleY = sample.y + distanceRef.current;
+
+          // Generous collection radius
           if (
             !sample.collected &&
-            Math.abs(worldSampleY - 220) < 32 &&
-            Math.abs(roverXRef.current - sample.x) < 42
+            Math.abs(worldSampleY - 220) < 38 &&
+            Math.abs(roverXRef.current - sample.x) < 48
           ) {
             sample.collected = true;
             playQuindarTone();
             sound.playSuccess();
-            setSamplesCollected((c) => {
-              const next = c + 1;
-              return next;
-            });
+            setSamplesCollected((c) => c + 1);
 
             addNotification(sample.x, 200, `RECOVERED: ${sample.name}! ✨`, sample.color);
             onReactionChange(`RECOVERED ${sample.name.toUpperCase()}! [ ${sample.subname} ]`);
@@ -487,8 +489,8 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
           ) {
             b.hit = true;
             rockHitsRef.current += 1;
-            roverSpeedRef.current = 1.8; // Clatter and stall speed
-            if (!reduceMotion) shakeRef.current = 14;
+            roverSpeedRef.current = 0.9; // Temporary stall speed
+            if (!reduceMotion) shakeRef.current = 12;
             sound.playMistake();
             addNotification(b.x, 210, 'BOULDER CLANK! -SPEED', '#ef4444');
             onReactionChange('⚠ BOULDER IMPACT! Wire-mesh wheel clattered on basalt! Maintain steering!');
@@ -499,10 +501,8 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
         // 6. SPAWN WIRE-MESH ROOSTER TAILS
         // -------------------------------------------------------------
         if (altitudeZRef.current === 0) {
-          const intensity = isDrifting ? 2.2 : isBoost ? 1.4 : 0.8;
-          // Left rear wheel
+          const intensity = isDrifting ? 1.8 : isBoost ? 1.2 : 0.7;
           spawnRoosterTail(roverXRef.current - 18, 240, roverAngleRef.current, intensity);
-          // Right rear wheel
           spawnRoosterTail(roverXRef.current + 18, 240, roverAngleRef.current, intensity);
         }
 
@@ -544,19 +544,18 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
       // -------------------------------------------------------------
       // 8. RENDER LUNAR ENVIRONMENT & HADLEY RILLE VALLEY
       // -------------------------------------------------------------
-      // Black deep space sky
       ctx.fillStyle = '#020617';
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
       // Stars in lunar sky
       ctx.fillStyle = '#ffffff';
       for (let i = 0; i < 40; i++) {
-        const sx = ((i * 97) % CANVAS_WIDTH);
-        const sy = ((i * 47) % 65);
+        const sx = (i * 97) % CANVAS_WIDTH;
+        const sy = (i * 47) % 65;
         ctx.fillRect(sx, sy, 1.2, 1.2);
       }
 
-      // Distant Blue Earth Marble rising over lunar horizon
+      // Distant Blue Earth Marble
       const earthX = 540;
       const earthY = 40;
       const earthGrad = ctx.createRadialGradient(earthX - 3, earthY - 3, 2, earthX, earthY, 16);
@@ -569,7 +568,7 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
       ctx.arc(earthX, earthY, 16, 0, Math.PI * 2);
       ctx.fill();
 
-      // Lunar terrain gradient (stark gray regolith with harsh lighting)
+      // Lunar terrain gradient
       const groundY = 65;
       const groundGrad = ctx.createLinearGradient(0, groundY, 0, CANVAS_HEIGHT);
       groundGrad.addColorStop(0, '#1e293b');
@@ -579,7 +578,7 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
       ctx.fillStyle = groundGrad;
       ctx.fillRect(0, groundY, CANVAS_WIDTH, CANVAS_HEIGHT - groundY);
 
-      // Distant Lunar Mountain Silhouettes (Hadley Rille Mountain Rim)
+      // Distant Lunar Mountain Silhouettes
       ctx.fillStyle = '#0f172a';
       ctx.beginPath();
       ctx.moveTo(0, groundY);
@@ -592,7 +591,7 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
       ctx.closePath();
       ctx.fill();
 
-      // Procedural scrolling crater ridges & wheel ruts
+      // Scrolling crater ridges & wheel ruts
       const scrollOffset = distanceRef.current % 120;
       ctx.strokeStyle = 'rgba(15, 23, 42, 0.25)';
       ctx.lineWidth = 1.5;
@@ -613,7 +612,6 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
         const ry = ramp.y + distanceRef.current;
         if (ry > -50 && ry < CANVAS_HEIGHT + 50) {
           ctx.save();
-          // Pale crater rim ridge (Launch ramp)
           ctx.fillStyle = 'rgba(241, 245, 249, 0.35)';
           ctx.strokeStyle = '#38bdf8';
           ctx.lineWidth = 2;
@@ -622,7 +620,6 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
           ctx.fill();
           ctx.stroke();
 
-          // Inside crater shadow
           ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
           ctx.beginPath();
           ctx.ellipse(ramp.x, ry + 4, ramp.width / 2.6, ramp.height / 3, 0, 0, Math.PI * 2);
@@ -643,13 +640,11 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
         const by = b.y + distanceRef.current;
         if (by > -40 && by < CANVAS_HEIGHT + 40) {
           ctx.save();
-          // Harsh lunar boulder drop shadow
           ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
           ctx.beginPath();
           ctx.ellipse(b.x + b.radius * 0.7, by + b.radius * 0.5, b.radius * 1.1, b.radius * 0.6, 0.3, 0, Math.PI * 2);
           ctx.fill();
 
-          // Jagged rock body
           ctx.fillStyle = b.hit ? '#ef4444' : '#1e293b';
           ctx.strokeStyle = b.hit ? '#f87171' : '#475569';
           ctx.lineWidth = 2;
@@ -658,7 +653,6 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
           ctx.fill();
           ctx.stroke();
 
-          // Surface texture highlight
           ctx.fillStyle = '#64748b';
           ctx.beginPath();
           ctx.arc(b.x - b.radius * 0.3, by - b.radius * 0.3, b.radius * 0.4, 0, Math.PI * 2);
@@ -680,24 +674,21 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
         if (sy > -50 && sy < CANVAS_HEIGHT + 50) {
           ctx.save();
           if (sample.collected) {
-            // Faint collected ghost marker
             ctx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
             ctx.beginPath();
             ctx.arc(sample.x, sy, 14, 0, Math.PI * 2);
             ctx.stroke();
           } else {
-            // Pulsing sample pickup halo
             const pulse = 1 + Math.sin(Date.now() / 150) * 0.15;
-            const halo = ctx.createRadialGradient(sample.x, sy, 2, sample.x, sy, 28 * pulse);
+            const halo = ctx.createRadialGradient(sample.x, sy, 2, sample.x, sy, 30 * pulse);
             halo.addColorStop(0, sample.color);
             halo.addColorStop(0.5, sample.color + '44');
             halo.addColorStop(1, 'transparent');
             ctx.fillStyle = halo;
             ctx.beginPath();
-            ctx.arc(sample.x, sy, 28 * pulse, 0, Math.PI * 2);
+            ctx.arc(sample.x, sy, 30 * pulse, 0, Math.PI * 2);
             ctx.fill();
 
-            // Insulated Sample Box Body
             ctx.fillStyle = '#0f172a';
             ctx.strokeStyle = sample.color;
             ctx.lineWidth = 2.5;
@@ -706,11 +697,9 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
             ctx.fill();
             ctx.stroke();
 
-            // Core Tube Icon
             ctx.fillStyle = sample.color;
             ctx.fillRect(sample.x - 3, sy - 8, 6, 16);
 
-            // Label
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 8px monospace';
             ctx.textAlign = 'center';
@@ -726,7 +715,6 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
       const finishWorldY = -TOTAL_COURSE_DISTANCE + distanceRef.current + 220;
       if (finishWorldY > -100 && finishWorldY < CANVAS_HEIGHT + 100) {
         ctx.save();
-        // LM Descent Stage Base & Gold Foil Wrapping
         ctx.fillStyle = '#ca8a04';
         ctx.strokeStyle = '#eab308';
         ctx.lineWidth = 3;
@@ -735,27 +723,22 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
         ctx.fill();
         ctx.stroke();
 
-        // 4 Quad Outriggers & Footpads
         ctx.strokeStyle = '#94a3b8';
         ctx.lineWidth = 3;
-        // Left gear
         ctx.beginPath();
         ctx.moveTo(270, finishWorldY - 15);
         ctx.lineTo(210, finishWorldY + 15);
         ctx.stroke();
-        // Right gear
         ctx.beginPath();
         ctx.moveTo(370, finishWorldY - 15);
         ctx.lineTo(430, finishWorldY + 15);
         ctx.stroke();
 
-        // Descent engine bell
         ctx.fillStyle = '#1e293b';
         ctx.beginPath();
         ctx.arc(320, finishWorldY + 10, 16, 0, Math.PI * 2);
         ctx.fill();
 
-        // Banner
         ctx.fillStyle = '#22c55e';
         ctx.font = 'bold 10px monospace';
         ctx.textAlign = 'center';
@@ -795,13 +778,11 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
       const scale = 1 + altitude * 0.04;
 
       ctx.save();
-      // Drop Shadow (Detaches during low-gravity jump)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
       ctx.beginPath();
       ctx.ellipse(roverX + 8, roverY + 12 + altitude * 14, 28 * scale, 14 * scale, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // Transform Rover Position, Angle, and Jump Altitude
       ctx.translate(roverX, roverY - altitude * 18);
       ctx.rotate(roverAngleRef.current);
       ctx.scale(scale, scale);
@@ -815,7 +796,7 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
       ctx.fill();
       ctx.stroke();
 
-      // Gold Foil Insulation on forward electronics console
+      // Gold Foil Insulation
       ctx.fillStyle = '#eab308';
       ctx.fillRect(-16, -24, 32, 12);
 
@@ -830,18 +811,17 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
       ctx.lineTo(0, -32);
       ctx.stroke();
 
-      // Astronaut 1 (Commander, Left Seat with Red Stripe)
+      // Astronaut 1 (Commander with Red Stripe)
       ctx.fillStyle = '#f8fafc';
       ctx.beginPath();
       ctx.arc(-8, -6, 7, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#ef4444'; // Red commander stripe
+      ctx.fillStyle = '#ef4444';
       ctx.fillRect(-10, -12, 4, 3);
-      // Blue visor
       ctx.fillStyle = '#0284c7';
       ctx.fillRect(-11, -9, 6, 4);
 
-      // Astronaut 2 (Lunar Module Pilot, Right Seat)
+      // Astronaut 2 (Lunar Module Pilot)
       ctx.fillStyle = '#f8fafc';
       ctx.beginPath();
       ctx.arc(8, -6, 7, 0, Math.PI * 2);
@@ -849,26 +829,24 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
       ctx.fillStyle = '#0284c7';
       ctx.fillRect(5, -9, 6, 4);
 
-      // Rear Payload Deck (Sample Box Carrier)
+      // Rear Payload Deck
       ctx.fillStyle = '#334155';
       ctx.fillRect(-16, 12, 32, 14);
 
       // 4 WOVEN WIRE-MESH WHEELS with Herringbone Cleats
       const wheelSteerAngle = roverAngleRef.current * 1.5;
       const wheels = [
-        { x: -24, y: -20, isFront: true }, // Front-Left
-        { x: 24, y: -20, isFront: true },  // Front-Right
-        { x: -24, y: 18, isFront: false }, // Rear-Left
-        { x: 24, y: 18, isFront: false },  // Rear-Right
+        { x: -24, y: -20, isFront: true },
+        { x: 24, y: -20, isFront: true },
+        { x: -24, y: 18, isFront: false },
+        { x: 24, y: 18, isFront: false },
       ];
 
       for (const w of wheels) {
         ctx.save();
         ctx.translate(w.x, w.y);
-        // 4-Wheel Steering: Rear wheels steer opposite to front!
         ctx.rotate(w.isFront ? wheelSteerAngle : -wheelSteerAngle);
 
-        // Open Woven Wire-Mesh Wheel Rim
         ctx.fillStyle = '#475569';
         ctx.strokeStyle = '#cbd5e1';
         ctx.lineWidth = 1.5;
@@ -877,7 +855,6 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
         ctx.fill();
         ctx.stroke();
 
-        // Titanium Chevron Cleats (Herringbone pattern)
         ctx.strokeStyle = '#94a3b8';
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -1045,7 +1022,7 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
         {/* Steer Left Button (>=48px touch target) */}
         <button
           data-testid="lrv-steer-left"
-          onClick={() => nudge(-45)}
+          onClick={() => nudge(-35)}
           className="flex-1 h-12 flex items-center justify-center gap-1 rounded-lg bg-slate-800/80 border border-slate-600 text-cyan-300 font-mono font-bold text-xs uppercase tracking-wider active:bg-cyan-700/60 transition-all cursor-pointer shadow-md select-none"
         >
           <ChevronLeft size={18} />
@@ -1070,7 +1047,7 @@ export const LrvCourseContent: React.FC<LrvCourseContentProps> = ({
         {/* Steer Right Button (>=48px touch target) */}
         <button
           data-testid="lrv-steer-right"
-          onClick={() => nudge(45)}
+          onClick={() => nudge(35)}
           className="flex-1 h-12 flex items-center justify-center gap-1 rounded-lg bg-slate-800/80 border border-slate-600 text-cyan-300 font-mono font-bold text-xs uppercase tracking-wider active:bg-cyan-700/60 transition-all cursor-pointer shadow-md select-none"
         >
           <span>STEER RIGHT</span>

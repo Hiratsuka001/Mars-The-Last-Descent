@@ -21,7 +21,7 @@ export interface EquipmentDefinition {
   spriteKey: string;
   strippedSpriteKey: string;
   preferredBiomes: BiomeType[];
-  miniGameType: 'sojourner' | 'opportunity' | 'insight' | 'quiz' | 'marathon' | 'phoenix' | 'spirit' | 'deep_space' | 'lrv_buggy';
+  miniGameType: 'sojourner' | 'opportunity' | 'insight' | 'quiz' | 'marathon' | 'phoenix' | 'spirit' | 'deep_space' | 'lrv_buggy' | 'surveyor';
   miniGameParams?: {
     difficulty?: 'easy' | 'normal' | 'hard';
     quiz?: QuizChallenge;
@@ -219,23 +219,12 @@ export const EQUIPMENT_DEFINITIONS: Record<string, EquipmentDefinition> = {
     spriteKey: 'wreck_surveyor',
     strippedSpriteKey: 'wreck_surveyor_stripped',
     preferredBiomes: ['desert', 'rocky'],
-    miniGameType: 'quiz',
+    miniGameType: 'surveyor',
     miniGameParams: {
-      quiz: {
-        question: 'What unique milestone did Apollo 12 astronauts achieve at Surveyor 3?',
-        options: [
-          'Repaired its battery to restart radio transmissions',
-          'Landed beside it and retrieved its camera and scoop for Earth return',
-          'Refueled its descent engines to send it into orbit',
-          'Dismantled its titanium legs for spacecraft shielding',
-        ],
-        correctIndex: 1,
-        explanation: 'Apollo 12 landed 180m away and brought parts home to study long-term space exposure.',
-        hint: 'Astronauts retrieved hardware and brought it back to Earth!',
-      },
+      difficulty: 'normal',
     },
     rewardPartId: 'part_sample_arm',
-    oneLineHint: 'Surveyor 3’s robotic scoop proved foreign soil was firm. Verify its telemetry to release the motorized servo arm.',
+    oneLineHint: 'Surveyor 3’s robotic scoop proved foreign soil was firm. Salvage its motorized pantograph arm for Earth return!',
     codex: {
       year: '1967 – 1969',
       status: 'Completed',

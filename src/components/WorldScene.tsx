@@ -18,6 +18,7 @@ import { PhoenixIceDigGame } from './MiniGames/PhoenixIceDigGame';
 import { SpiritWheelGame } from './MiniGames/SpiritWheelGame';
 import { DeepSpaceDishGame } from './MiniGames/DeepSpaceDishGame';
 import { ApolloLrvGame } from './MiniGames/ApolloLrvGame';
+import { SurveyorSalvageGame } from './MiniGames/SurveyorSalvageGame';
 import { FieldQuizModal } from './FieldQuizModal';
 import { TileDebugModal } from './TileDebugModal';
 import { MinimapHUD } from './MinimapHUD';
@@ -3594,6 +3595,16 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
 
       {(activeMiniGame?.type === 'lrv_buggy' || activeMiniGame?.equipId === 'eq_lrv_buggy') && (
         <ApolloLrvGame
+          wreckId={activeMiniGame.equipId}
+          onSuccess={handleMiniGameSuccess}
+          onClose={handleMiniGameClose}
+          onAwardBonusRp={() => handleAwardBonusRp(activeMiniGame.equipId)}
+          hasBonusRp={bonusRpWreckIds.includes(activeMiniGame.equipId)}
+        />
+      )}
+
+      {(activeMiniGame?.type === 'surveyor' || activeMiniGame?.equipId === 'eq_surveyor') && (
+        <SurveyorSalvageGame
           wreckId={activeMiniGame.equipId}
           onSuccess={handleMiniGameSuccess}
           onClose={handleMiniGameClose}

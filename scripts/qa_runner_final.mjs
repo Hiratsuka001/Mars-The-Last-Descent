@@ -2067,6 +2067,167 @@ async function runTestPass(browser, config) {
   await snap('06f_lrv_part_claimed');
 
   // -------------------------------------------------------------------------
+  // 6G. SURVEYOR 3 SURFACE SAMPLER ("THE APOLLO 12 SALVAGE" - STARS, RETRY, BONUS RP, AUTOPLAY, CLAIM)
+  // -------------------------------------------------------------------------
+  console.log('6G. Testing Surveyor 3 Surface Sampler ("The Apollo 12 Salvage")...');
+  const tpSurveyorResult = await page.evaluate(() => window.__teleportToWreck('eq_surveyor'));
+  console.log('  Teleport to Surveyor 3:', tpSurveyorResult);
+  if (!tpSurveyorResult?.success) {
+    throw new Error('Failed to teleport to Surveyor 3 wreck eq_surveyor');
+  }
+  await page.waitForTimeout(600);
+
+  // Assert interaction prompt is active and open dialogue
+  await interactPrompt.waitFor({ state: 'visible', timeout: 6000 });
+  await interactPrompt.click();
+
+  // Launch Surveyor 3 mini-game simulator
+  await novaActionBtn.waitFor({ state: 'visible', timeout: 4000 });
+  await novaActionBtn.click();
+
+  // Assert minigame-shell appears with surveyor canvas
+  const surveyorShell = page.locator('[data-testid="minigame-shell"]');
+  await surveyorShell.waitFor({ state: 'visible', timeout: 6000 });
+  const surveyorCanvas = page.locator('[data-testid="surveyor-canvas"]');
+  await surveyorCanvas.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Surveyor 3 minigame-shell and canvas visible');
+
+  // Verify mobile no-scroll and touch targets
+  if (isMobile) {
+    const noScroll = await page.evaluate(() => {
+      const doc = document.documentElement;
+      return doc.scrollHeight <= window.innerHeight + 2 && window.scrollY === 0;
+    });
+    if (!noScroll) {
+      const heights = await page.evaluate(() => ({
+        scrollHeight: document.documentElement.scrollHeight,
+        innerHeight: window.innerHeight,
+        scrollY: window.scrollY,
+      }));
+      throw new Error(`Mobile page scroll detected during Surveyor 3 mini-game: ${JSON.stringify(heights)}`);
+    }
+    console.log('  [PASS] No mobile page scroll during Surveyor 3 mini-game');
+
+    // Check Exit button height
+    const exitBtn = page.locator('[data-testid="puzzle-exit-btn"]');
+    const exitBox = await exitBtn.boundingBox();
+    if (!exitBox || exitBox.height < 44) {
+      throw new Error(`Exit button height < 44px on mobile: ${exitBox?.height}`);
+    }
+    console.log('  [PASS] Exit button >= 44px on mobile');
+  }
+
+  // Verify primary action button has min 44px touch target
+  const surveyorActionBtn = page.locator('[data-testid="surveyor-action-btn"]');
+  const surveyorActionBox = await surveyorActionBtn.boundingBox();
+  if (!surveyorActionBox || surveyorActionBox.height < 44) {
+    throw new Error(`Surveyor action button height < 44px: ${surveyorActionBox?.height}`);
+  }
+  console.log('  [PASS] Surveyor 3 action button meets touch target guidelines (>=44px)');
+
+  // Test action button click
+  await surveyorActionBtn.click();
+  await snap('06g_surveyor_active_game');
+
+  // 1. Test autoplay flag -> 3 stars, bonus RP toast, RP +1
+  console.log('  Testing Surveyor 3 autoplay hook for 3 stars and +1 bonus RP...');
+  const rpBeforeSurveyor = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP before Surveyor 3 3-star run: ${rpBeforeSurveyor}`);
+
+  await page.evaluate(() => {
+    window.__surveyorAutoplay?.();
+  });
+
+  const surveyorWin = page.locator('[data-testid="minigame-win"]');
+  await surveyorWin.waitFor({ state: 'visible', timeout: 8000 });
+
+  const surveyorStarsEl = page.locator('[data-testid="minigame-stars"]');
+  const surveyorStars3 = await surveyorStarsEl.getAttribute('data-stars');
+  console.log(`  Stars with autoplay on Surveyor 3: ${surveyorStars3}`);
+  if (surveyorStars3 !== '3') {
+    throw new Error(`Expected 3 stars with autoplay on Surveyor 3, got: ${surveyorStars3}`);
+  }
+
+  const surveyorBonusToast = page.locator('[data-testid="bonus-rp-toast"]');
+  await surveyorBonusToast.waitFor({ state: 'visible', timeout: 5000 });
+  const surveyorToastText = await surveyorBonusToast.textContent();
+  console.log(`  Bonus RP toast text: "${surveyorToastText}"`);
+  if (!surveyorToastText.includes('+1 RP')) {
+    throw new Error(`Bonus RP toast does not contain "+1 RP": ${surveyorToastText}`);
+  }
+
+  const rpAfterSurveyor = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP after Surveyor 3 3-star run: ${rpAfterSurveyor} (expected: ${rpBeforeSurveyor + 1})`);
+  if (rpAfterSurveyor !== rpBeforeSurveyor + 1) {
+    throw new Error(`Expected RP to increase by 1, before: ${rpBeforeSurveyor}, after: ${rpAfterSurveyor}`);
+  }
+  console.log('  [PASS] 3 stars achieved on Surveyor 3, bonus RP toast displayed, RP increased by +1');
+  await snap('06g_surveyor_3_stars');
+
+  // 2. Assert retry button works and second run does NOT award duplicate RP
+  console.log('  Testing retry button on Surveyor 3...');
+  const surveyorRetryBtn = page.locator('[data-testid="minigame-retry"]');
+  const surveyorRetryBox = await surveyorRetryBtn.boundingBox();
+  if (!surveyorRetryBox || surveyorRetryBox.height < 44) {
+    throw new Error(`Surveyor 3 retry button height < 44px: ${surveyorRetryBox?.height}`);
+  }
+  console.log('  [PASS] Surveyor 3 retry button >= 44px tall');
+
+  await surveyorRetryBtn.click();
+  await surveyorWin.waitFor({ state: 'detached', timeout: 5000 });
+  await surveyorCanvas.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Retry button restarted Surveyor 3 The Apollo 12 Salvage successfully');
+
+  // Second 3-star run to verify RP is NOT awarded twice
+  await page.evaluate(() => {
+    window.__surveyorAutoplay?.();
+  });
+  await surveyorWin.waitFor({ state: 'visible', timeout: 8000 });
+  const rpSecondRunSurveyor = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP after second 3-star run: ${rpSecondRunSurveyor} (expected: ${rpAfterSurveyor})`);
+  if (rpSecondRunSurveyor !== rpAfterSurveyor) {
+    throw new Error(`Second 3-star run on Surveyor 3 awarded extra RP! Expected ${rpAfterSurveyor}, got ${rpSecondRunSurveyor}`);
+  }
+  console.log('  [PASS] Second run on Surveyor 3 did NOT give another +1 RP');
+
+  // 3. Tap "Did you know?", assert exact historical fact is visible
+  const surveyorFactBtn = page.locator('[data-testid="minigame-fact"]');
+  await surveyorFactBtn.click();
+  await page.waitForTimeout(300);
+  const surveyorFactText = await surveyorFactBtn.textContent();
+  console.log(`  Did You Know Fact Text: "${surveyorFactText}"`);
+  const expectedSurveyorFact = "Apollo 12 astronauts visited Surveyor 3 in 1969 and brought parts of it home to Earth.";
+  if (!surveyorFactText.includes(expectedSurveyorFact)) {
+    throw new Error(`Did-you-know fact does not match expected mission line. Got: ${surveyorFactText}`);
+  }
+  console.log('  [PASS] Exact Did-You-Know fact displayed for Surveyor 3');
+  await snap('06g_surveyor_fact_revealed');
+  await snap('06g_surveyor_win_stars_fact');
+
+  // 4. Claim the part; assert part count goes to 6/8 and Surveyor 3 story log is recovered
+  console.log('  Claiming part from Surveyor 3...');
+  const surveyorClaimBtn = page.locator('[data-testid="claim-part-btn"]');
+  await surveyorClaimBtn.click();
+  await surveyorShell.waitFor({ state: 'detached', timeout: 5000 });
+  await page.waitForTimeout(600);
+
+  // Assert collected parts count is now 6
+  const partsAfterSurveyor = await page.evaluate(() => window.__getCollectedPartIds ? window.__getCollectedPartIds() : []);
+  console.log(`  Collected parts after Surveyor 3 claim:`, partsAfterSurveyor);
+  if (!partsAfterSurveyor.includes('part_sample_arm') || partsAfterSurveyor.length !== 6) {
+    throw new Error(`Expected collectedPartIds to contain 'part_sample_arm' with length 6, got: ${JSON.stringify(partsAfterSurveyor)}`);
+  }
+
+  // Assert recovered logs includes 'log_surveyor'
+  const logsAfterSurveyor = await page.evaluate(() => window.__getRecoveredLogIds ? window.__getRecoveredLogIds() : []);
+  console.log(`  Recovered logs after Surveyor 3 claim:`, logsAfterSurveyor);
+  if (!logsAfterSurveyor.includes('log_surveyor') || logsAfterSurveyor.length !== 6) {
+    throw new Error(`Expected recoveredLogIds to contain 'log_surveyor' with length 6, got: ${JSON.stringify(logsAfterSurveyor)}`);
+  }
+  console.log('  [PASS] Part count is 6/8 and Surveyor 3 story log recovered');
+  await snap('06g_surveyor_part_claimed');
+
+  // -------------------------------------------------------------------------
   // 7. COMPLETE ALL 8 PARTS (PARTS HUD COMPLETE)
   // -------------------------------------------------------------------------
   console.log('7. Granting All 8 Parts via Debug Hook...');
