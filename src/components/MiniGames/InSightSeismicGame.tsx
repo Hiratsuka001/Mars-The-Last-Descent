@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { MiniGameShell } from './MiniGameShell';
 import { sound } from '../../systems/audio';
 import { isReduceMotionEnabled } from '../../systems/saveManager';
+import { isDebugMode } from '../../systems/debug';
 import { Activity, Shield, ShieldAlert, ShieldCheck, ChevronLeft, ChevronRight, Sparkles, Radio } from 'lucide-react';
 
 interface InSightSeismicGameProps {
@@ -335,7 +336,7 @@ const InSightContent: React.FC<InSightContentProps> = ({
 
   // QA Runner Autoplay hook
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && isDebugMode) {
       (window as any).__insightAutoplay = async () => {
         setDomeLowered(true);
         setFrequency(TARGET_FREQ);

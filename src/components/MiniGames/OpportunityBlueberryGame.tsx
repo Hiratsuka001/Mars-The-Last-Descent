@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MiniGameShell } from './MiniGameShell';
 import { sound } from '../../systems/audio';
 import { isReduceMotionEnabled } from '../../systems/saveManager';
+import { isDebugMode } from '../../systems/debug';
 import { Flame, Sparkles, AlertCircle, ShieldAlert, Award } from 'lucide-react';
 
 interface OpportunityBlueberryGameProps {
@@ -79,6 +80,7 @@ export const OpportunityBlueberryGame: React.FC<OpportunityBlueberryGameProps> =
       wreckId={wreckId}
       title="The Blueberry Lab"
       instruction="Hold rock to drill the core, then tap popping blueberries before dust covers them!"
+      winTitle="SAMPLES SECURED!"
       onWin={onSuccess}
       onExit={onClose}
       onRetry={handleRetry}
@@ -181,8 +183,6 @@ const BlueberryContent: React.FC<BlueberryContentProps> = ({
   const lastSpawnTimeRef = useRef<number>(0);
   const lastDrillSoundRef = useRef<number>(0);
   const nextItemIdRef = useRef<number>(1);
-
-  const reduceMotion = useRef(isReduceMotionEnabled()).current;
 
   // Add floating text popups
   const addFloatingText = useCallback((x: number, y: number, text: string, color: string) => {
@@ -317,9 +317,10 @@ const BlueberryContent: React.FC<BlueberryContentProps> = ({
       }
 
       // In Berries Phase: check which berry was tapped
-      const now = Date.now();
+      // Berry tap hit radius >= 24 CSS px (keep the existing getBoundingClientRect scaling)
+      const minHitRadiusInCanvas = 24 * (canvas.width / rect.width);
       const hit = berriesRef.current.find(
-        (b) => !b.popped && b.coverDust < 0.85 && Math.hypot(clickX - b.x, clickY - b.y) <= b.radius + 14
+        (b) => !b.popped && b.coverDust < 0.85 && Math.hypot(clickX - b.x, clickY - b.y) <= Math.max(b.radius + 14, minHitRadiusInCanvas)
       );
 
       if (!hit) {
@@ -447,6 +448,7 @@ const BlueberryContent: React.FC<BlueberryContentProps> = ({
     const loop = (currentTime: number) => {
       const dt = Math.min(0.1, (currentTime - lastTime) / 1000);
       lastTime = currentTime;
+      const reduceMotion = isReduceMotionEnabled();
 
       // Handle Overheat cooldown timer
       if (isOverheatedRef.current) {
@@ -482,16 +484,20 @@ const BlueberryContent: React.FC<BlueberryContentProps> = ({
             sound.playRepairRatchet();
           }
 
-          for (let i = 0; i < 3; i++) {
-            sparksRef.current.push({
-              x: 300 + (Math.random() - 0.5) * 40,
-              y: 135 + (Math.random() - 0.5) * 40,
-              vx: (Math.random() - 0.5) * 18,
-              vy: (Math.random() - 0.5) * 18 - 2,
-              radius: Math.random() * 3 + 1,
-              color: inGreenZone ? '#fef08a' : '#f97316',
-              alpha: 1.0,
-            });
+          if (!reduceMotion) {
+            const cx = (canvasRef.current?.width || 640) * 0.5;
+            const cy = (canvasRef.current?.height || 360) * 0.5;
+            for (let i = 0; i < 3; i++) {
+              sparksRef.current.push({
+                x: cx + (Math.random() - 0.5) * 40,
+                y: cy + (Math.random() - 0.5) * 40,
+                vx: (Math.random() - 0.5) * 18,
+                vy: (Math.random() - 0.5) * 18 - 2,
+                radius: Math.random() * 3 + 1,
+                color: inGreenZone ? '#fef08a' : '#f97316',
+                alpha: 1.0,
+              });
+            }
           }
 
           // Check Overheat condition
@@ -504,7 +510,9 @@ const BlueberryContent: React.FC<BlueberryContentProps> = ({
             sound.playMistake();
             onFailTrigger();
             onReactionChange('DRILL OVERHEATED! Let it cool for 1.5s!');
-            addFloatingText(300, 110, 'OVERHEATED!', '#ef4444');
+            const cx = (canvasRef.current?.width || 640) * 0.5;
+            const cy = (canvasRef.current?.height || 360) * 0.5;
+            addFloatingText(cx, cy - 40, 'OVERHEATED!', '#ef4444');
           }
 
           // Check Core drilled complete
@@ -551,16 +559,18 @@ const BlueberryContent: React.FC<BlueberryContentProps> = ({
           if (p.progress >= 1.0) {
             // Reached jar
             sound.playClick();
-            for (let i = 0; i < 6; i++) {
-              sparksRef.current.push({
-                x: p.targetX,
-                y: p.targetY,
-                vx: (Math.random() - 0.5) * 8,
-                vy: (Math.random() - 0.5) * 8,
-                radius: 2.5,
-                color: p.isGold ? '#facc15' : '#38bdf8',
-                alpha: 1.0,
-              });
+            if (!reduceMotion) {
+              for (let i = 0; i < 6; i++) {
+                sparksRef.current.push({
+                  x: p.targetX,
+                  y: p.targetY,
+                  vx: (Math.random() - 0.5) * 8,
+                  vy: (Math.random() - 0.5) * 8,
+                  radius: 2.5,
+                  color: p.isGold ? '#facc15' : '#38bdf8',
+                  alpha: 1.0,
+                });
+              }
             }
             return false;
           }
@@ -607,10 +617,10 @@ const BlueberryContent: React.FC<BlueberryContentProps> = ({
           }
 
           // 1. Rock Outcrop (Fills 75-80% of canvas)
-          const rockX = 24;
-          const rockY = 16;
-          const rockW = w - 48;
-          const rockH = h - 32;
+          const rockX = w * 0.04;
+          const rockY = h * 0.05;
+          const rockW = w * 0.92;
+          const rockH = h * 0.90;
 
           const rockGrad = ctx.createLinearGradient(rockX, rockY, rockX + rockW, rockY + rockH);
           rockGrad.addColorStop(0, '#b45309');
@@ -619,7 +629,7 @@ const BlueberryContent: React.FC<BlueberryContentProps> = ({
 
           ctx.fillStyle = rockGrad;
           ctx.beginPath();
-          ctx.roundRect(rockX, rockY, rockW, rockH, 20);
+          ctx.roundRect(rockX, rockY, rockW, rockH, Math.round(h * 0.06));
           ctx.fill();
           ctx.lineWidth = 3;
           ctx.strokeStyle = '#92400e';
@@ -628,10 +638,10 @@ const BlueberryContent: React.FC<BlueberryContentProps> = ({
           // Horizontal geological stratification lines
           ctx.strokeStyle = 'rgba(217, 119, 6, 0.35)';
           ctx.lineWidth = 2;
-          for (let ly = rockY + 24; ly < rockY + rockH - 16; ly += 22) {
+          for (let ly = rockY + h * 0.07; ly < rockY + rockH - h * 0.05; ly += h * 0.06) {
             ctx.beginPath();
-            ctx.moveTo(rockX + 16, ly + Math.sin(ly * 0.1) * 3);
-            ctx.lineTo(rockX + rockW - 16, ly + Math.cos(ly * 0.1) * 4);
+            ctx.moveTo(rockX + w * 0.03, ly + Math.sin(ly * 0.1) * 3);
+            ctx.lineTo(rockX + rockW - w * 0.03, ly + Math.cos(ly * 0.1) * 4);
             ctx.stroke();
           }
 
@@ -646,9 +656,9 @@ const BlueberryContent: React.FC<BlueberryContentProps> = ({
 
           // 2. PHASE: DRILL CORE ON THE ROCK
           if (phaseRef.current === 'drill') {
-            const cx = 300;
-            const cy = 135;
-            const radius = 48;
+            const cx = w * 0.5;
+            const cy = h * 0.5;
+            const radius = Math.min(w, h) * 0.18;
 
             // Core hole being cut
             ctx.save();
@@ -665,37 +675,37 @@ const BlueberryContent: React.FC<BlueberryContentProps> = ({
             const startAngle = -Math.PI / 2;
             const endAngle = startAngle + heatPct * Math.PI * 2;
 
-            ctx.lineWidth = 7;
+            ctx.lineWidth = Math.max(5, Math.round(h * 0.022));
             ctx.strokeStyle = heatRef.current > 80 ? '#ef4444' : heatRef.current >= 35 ? '#10b981' : '#38bdf8';
             ctx.beginPath();
-            ctx.arc(cx, cy, radius + 10, startAngle, endAngle);
+            ctx.arc(cx, cy, radius + 12, startAngle, endAngle);
             ctx.stroke();
 
             // Optimal Green Zone markers on gauge (35% to 80%)
             ctx.lineWidth = 2;
             ctx.strokeStyle = 'rgba(16, 185, 129, 0.7)';
             ctx.beginPath();
-            ctx.arc(cx, cy, radius + 10, startAngle + 0.35 * Math.PI * 2, startAngle + 0.8 * Math.PI * 2);
+            ctx.arc(cx, cy, radius + 12, startAngle + 0.35 * Math.PI * 2, startAngle + 0.8 * Math.PI * 2);
             ctx.stroke();
 
             // Drill Target Text & Prompt
             ctx.fillStyle = isOverheatedRef.current ? '#ef4444' : isDrillingRef.current ? '#fef08a' : '#ffffff';
-            ctx.font = 'bold 12px monospace';
+            ctx.font = 'bold 13px monospace';
             ctx.textAlign = 'center';
             if (isOverheatedRef.current) {
-              ctx.fillText('⚠ OVERHEATED! COOLING...', cx, cy - 4);
-              ctx.font = '10px monospace';
-              ctx.fillText('Wait 1.5s', cx, cy + 12);
+              ctx.fillText('⚠ OVERHEATED! COOLING...', cx, cy - 6);
+              ctx.font = '11px monospace';
+              ctx.fillText('Wait 1.5s', cx, cy + 14);
             } else if (isDrillingRef.current) {
-              ctx.fillText(`DRILLING ${Math.round(coreProgressRef.current)}%`, cx, cy - 4);
-              ctx.font = '10px monospace';
+              ctx.fillText(`DRILLING ${Math.round(coreProgressRef.current)}%`, cx, cy - 6);
+              ctx.font = '11px monospace';
               ctx.fillStyle = heatRef.current > 80 ? '#ef4444' : '#a7f3d0';
-              ctx.fillText(heatRef.current > 80 ? 'HOT! RELEASE!' : 'GREEN ZONE ✓', cx, cy + 12);
+              ctx.fillText(heatRef.current > 80 ? 'HOT! RELEASE!' : 'GREEN ZONE ✓', cx, cy + 14);
             } else {
-              ctx.fillText('HOLD TO DRILL', cx, cy - 4);
-              ctx.font = '10px monospace';
+              ctx.fillText('HOLD TO DRILL', cx, cy - 6);
+              ctx.font = '11px monospace';
               ctx.fillStyle = '#38bdf8';
-              ctx.fillText('Keep in Green Zone', cx, cy + 12);
+              ctx.fillText('Keep in Green Zone', cx, cy + 14);
             }
 
             ctx.restore();
@@ -753,9 +763,8 @@ const BlueberryContent: React.FC<BlueberryContentProps> = ({
                 ctx.strokeStyle = b.isGold ? '#fef08a' : '#60a5fa';
                 ctx.stroke();
 
-                // Sparkle on Gold Berry
-                if (b.isGold) {
-                  const sparkleRot = (currentTime * 0.005) % (Math.PI * 2);
+                // Sparkle on Gold Berry (skip on reduceMotion)
+                if (b.isGold && !reduceMotion) {
                   ctx.fillStyle = '#ffffff';
                   ctx.fillRect(b.x - 2, b.y - 8, 4, 16);
                   ctx.fillRect(b.x - 8, b.y - 2, 16, 4);
@@ -787,44 +796,49 @@ const BlueberryContent: React.FC<BlueberryContentProps> = ({
             ctx.restore();
           });
 
-          // 5. Sparks
-          sparksRef.current.forEach((s) => {
-            ctx.save();
-            ctx.globalAlpha = s.alpha;
-            ctx.fillStyle = s.color;
-            ctx.beginPath();
-            ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
-          });
+          // 5. Sparks (skip drawing if reduceMotion)
+          if (!reduceMotion) {
+            sparksRef.current.forEach((s) => {
+              ctx.save();
+              ctx.globalAlpha = s.alpha;
+              ctx.fillStyle = s.color;
+              ctx.beginPath();
+              ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.restore();
+            });
+          }
 
-          // 6. Floating Texts
-          floatingTextsRef.current.forEach((t) => {
-            ctx.save();
-            ctx.globalAlpha = t.alpha;
-            ctx.fillStyle = t.color;
-            ctx.font = 'bold 12px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText(t.text, t.x, t.y);
-            ctx.restore();
-          });
+          // 6. Floating Texts (skip drawing if reduceMotion)
+          if (!reduceMotion) {
+            floatingTextsRef.current.forEach((t) => {
+              ctx.save();
+              ctx.globalAlpha = t.alpha;
+              ctx.fillStyle = t.color;
+              ctx.font = 'bold 12px monospace';
+              ctx.textAlign = 'center';
+              ctx.fillText(t.text, t.x, t.y);
+              ctx.restore();
+            });
+          }
 
           ctx.restore(); // end screen shake
         }
       }
 
-      if (!reduceMotion && phaseRef.current !== 'finished') {
+      // Always reschedule the animation loop until finished, regardless of reduceMotion!
+      if (phaseRef.current !== 'finished') {
         animId = requestAnimationFrame(loop);
       }
     };
 
     animId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animId);
-  }, [reduceMotion, spawnBerryWave, onFailTrigger, onReactionChange, addFloatingText]);
+  }, [spawnBerryWave, onFailTrigger, onReactionChange, addFloatingText]);
 
-  // QA Runner Autoplay hook
+  // QA Runner Autoplay hook (gated by isDebugMode)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && isDebugMode) {
       const runAutoplay = async () => {
         setCoreProgress(100);
         coreProgressRef.current = 100;
@@ -857,6 +871,8 @@ const BlueberryContent: React.FC<BlueberryContentProps> = ({
     <div
       className="w-full h-full flex flex-col items-center justify-between select-none p-1 sm:p-2 max-w-[760px] mx-auto min-h-0"
       data-testid="blueberry-game"
+      data-core-progress={Math.round(coreProgress)}
+      data-berries={berriesCollected}
     >
       {/* 1. Header Telemetry & Sample Jar HUD */}
       <div className="w-full flex items-center justify-between px-3 py-1.5 bg-slate-900/80 border border-amber-900/40 rounded-xl shrink-0 text-xs font-mono">
@@ -888,12 +904,12 @@ const BlueberryContent: React.FC<BlueberryContentProps> = ({
         </div>
       </div>
 
-      {/* 2. Direct Interaction Rock Canvas (Fills ~75-80% of Modal) */}
-      <div className="w-full flex-1 flex items-center justify-center my-1 min-h-0 relative">
+      {/* 2. Direct Interaction Rock Canvas (Derives 640x360 16:9 aspect, non-stretched) */}
+      <div className="w-full flex-1 flex items-center justify-center my-1 min-h-0 relative overflow-hidden">
         <canvas
           ref={canvasRef}
           width={640}
-          height={220}
+          height={360}
           onPointerDown={(e) => {
             if (phase === 'drill') {
               handleDrillStart();
@@ -907,7 +923,7 @@ const BlueberryContent: React.FC<BlueberryContentProps> = ({
           onPointerLeave={() => {
             if (phase === 'drill') handleDrillEnd();
           }}
-          className="w-full h-full max-h-[220px] bg-[#120501] rounded-2xl block border-2 border-amber-950 shadow-2xl cursor-pointer"
+          className="bg-[#120501] rounded-2xl block border-2 border-amber-950 shadow-2xl cursor-pointer aspect-video h-[265px] sm:h-[345px] w-auto max-w-none shrink-0"
           data-testid="crater-canvas"
         />
 

@@ -14,6 +14,10 @@ import { SojournerRoverGame } from './MiniGames/SojournerRoverGame';
 import { OpportunityWaterPuzzle } from './MiniGames/OpportunityWaterPuzzle';
 import { OpportunityBlueberryGame } from './MiniGames/OpportunityBlueberryGame';
 import { InSightSeismicGame } from './MiniGames/InSightSeismicGame';
+import { PhoenixIceDigGame } from './MiniGames/PhoenixIceDigGame';
+import { SpiritWheelGame } from './MiniGames/SpiritWheelGame';
+import { DeepSpaceDishGame } from './MiniGames/DeepSpaceDishGame';
+import { ApolloLrvGame } from './MiniGames/ApolloLrvGame';
 import { FieldQuizModal } from './FieldQuizModal';
 import { TileDebugModal } from './TileDebugModal';
 import { MinimapHUD } from './MinimapHUD';
@@ -46,10 +50,8 @@ interface WorldSceneProps {
 
 export const CAMERA_SCALE = 3;
 
-export const isDebugMode = Boolean(
-  import.meta.env.DEV ||
-  (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1')
-);
+import { isDebugMode } from '../systems/debug';
+export { isDebugMode };
 
 interface RenderEntity {
   type: 'prop' | 'player' | 'nova' | 'ship' | 'equipment' | 'sample';
@@ -3560,7 +3562,47 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         />
       )}
 
-      {activeMiniGame?.type === 'opportunity' && (
+      {(activeMiniGame?.type === 'phoenix' || activeMiniGame?.equipId === 'eq_phoenix') && (
+        <PhoenixIceDigGame
+          wreckId={activeMiniGame.equipId}
+          onSuccess={handleMiniGameSuccess}
+          onClose={handleMiniGameClose}
+          onAwardBonusRp={() => handleAwardBonusRp(activeMiniGame.equipId)}
+          hasBonusRp={bonusRpWreckIds.includes(activeMiniGame.equipId)}
+        />
+      )}
+
+      {(activeMiniGame?.type === 'spirit' || activeMiniGame?.equipId === 'eq_spirit') && (
+        <SpiritWheelGame
+          wreckId={activeMiniGame.equipId}
+          onSuccess={handleMiniGameSuccess}
+          onClose={handleMiniGameClose}
+          onAwardBonusRp={() => handleAwardBonusRp(activeMiniGame.equipId)}
+          hasBonusRp={bonusRpWreckIds.includes(activeMiniGame.equipId)}
+        />
+      )}
+
+      {(activeMiniGame?.type === 'deep_space' || activeMiniGame?.equipId === 'eq_deep_space_dish') && (
+        <DeepSpaceDishGame
+          wreckId={activeMiniGame.equipId}
+          onSuccess={handleMiniGameSuccess}
+          onClose={handleMiniGameClose}
+          onAwardBonusRp={() => handleAwardBonusRp(activeMiniGame.equipId)}
+          hasBonusRp={bonusRpWreckIds.includes(activeMiniGame.equipId)}
+        />
+      )}
+
+      {(activeMiniGame?.type === 'lrv_buggy' || activeMiniGame?.equipId === 'eq_lrv_buggy') && (
+        <ApolloLrvGame
+          wreckId={activeMiniGame.equipId}
+          onSuccess={handleMiniGameSuccess}
+          onClose={handleMiniGameClose}
+          onAwardBonusRp={() => handleAwardBonusRp(activeMiniGame.equipId)}
+          hasBonusRp={bonusRpWreckIds.includes(activeMiniGame.equipId)}
+        />
+      )}
+
+      {activeMiniGame?.type === 'opportunity' && activeMiniGame.equipId !== 'eq_phoenix' && (
         <OpportunityWaterPuzzle
           onSuccess={handleMiniGameSuccess}
           onClose={handleMiniGameClose}
@@ -3577,7 +3619,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         />
       )}
 
-      {activeMiniGame?.type === 'insight' && (
+      {activeMiniGame?.type === 'insight' && activeMiniGame.equipId !== 'eq_deep_space_dish' && (
         <InSightSeismicGame
           wreckId={activeMiniGame.equipId}
           onSuccess={handleMiniGameSuccess}

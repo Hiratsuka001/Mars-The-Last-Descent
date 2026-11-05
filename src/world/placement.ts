@@ -287,7 +287,8 @@ export class EquipmentPlacementSystem {
         for (const [ox, oy] of cliffOffsets) {
           const testX = canyonLm.tileX + ox;
           const testY = canyonLm.tileY + oy;
-          if (this.reachableTiles.has(this.encodeCoord(testX, testY)) && this.world.getTileBiome(testX, testY) !== 'water') {
+          const biome = this.world.getTileBiome(testX, testY);
+          if (this.reachableTiles.has(this.encodeCoord(testX, testY)) && biome !== 'water' && def.preferredBiomes.includes(biome)) {
             bestCand = { x: testX, y: testY };
             break;
           }

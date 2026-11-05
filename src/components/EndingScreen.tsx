@@ -111,7 +111,7 @@ export const EndingScreen: React.FC<EndingScreenProps> = ({
           </div>
         </div>
 
-        {/* Story Logs: Memory Fragments */}
+        {/* Story Logs: Memory Fragments List */}
         {unlockedLogs.length > 0 && !isLogsSkipped && (
           <div data-testid="ending-logs-section" className="w-full text-left space-y-3 pt-3 border-t border-slate-800 animate-in fade-in duration-300">
             <div className="flex items-center justify-between">
@@ -147,18 +147,24 @@ export const EndingScreen: React.FC<EndingScreenProps> = ({
                 </div>
               ))}
             </div>
+          </div>
+        )}
 
-            {unlockedLogs.length >= 8 && (
-              <div
-                data-testid="nova-log-reveal"
-                className="p-3 rounded-xl bg-cyan-950/60 border border-cyan-400 text-cyan-200 text-xs font-mono flex items-center gap-2.5 shadow-[0_0_20px_rgba(6,182,212,0.3)] animate-in fade-in duration-300"
-              >
-                <span className="text-lg">🐱</span>
-                <span className="font-semibold text-white">
-                  "Those were my words. I'd forgotten them. Thank you for finding me."
-                </span>
-              </div>
-            )}
+        {/* 8/8 Nova Reveal Line (Shows at 8/8 even when log list is skipped/collapsed) */}
+        {unlockedLogs.length >= 8 && (
+          <div
+            data-testid="ending-reveal-line"
+            className="w-full p-3 rounded-xl bg-cyan-950/60 border border-cyan-400 text-cyan-200 text-xs font-mono shadow-[0_0_20px_rgba(6,182,212,0.3)] animate-in fade-in duration-300 text-left"
+          >
+            <div
+              data-testid="nova-log-reveal"
+              className="flex items-center gap-2.5"
+            >
+              <span className="text-lg">🐱</span>
+              <span className="font-semibold text-white">
+                "Those were my words. I'd forgotten them. Thank you for finding me."
+              </span>
+            </div>
           </div>
         )}
 

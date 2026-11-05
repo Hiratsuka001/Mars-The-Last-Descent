@@ -998,34 +998,49 @@ async function runTestPass(browser, config) {
     throw new Error('Could not get rock canvas bounding box');
   }
 
+  // 3. Canvas: bounding box aspect within 2% of 640:360; height >= 330 (desktop) and >= 260 (mobile); no horizontal or vertical scroll in the shell
+  const actualAspect = canvasBox.width / canvasBox.height;
+  const targetAspect = 640 / 360;
+  const aspectDeviation = Math.abs(actualAspect - targetAspect) / targetAspect;
+  console.log(`  Canvas Aspect Ratio: ${actualAspect.toFixed(4)}, target: ${targetAspect.toFixed(4)}, deviation: ${(aspectDeviation * 100).toFixed(2)}%`);
+  if (aspectDeviation > 0.02) {
+    throw new Error(`Canvas aspect ratio deviates by ${(aspectDeviation * 100).toFixed(2)}% from 640:360 (max 2% allowed)`);
+  }
+
   if (!isMobile) {
     const desktopRatio = canvasBox.width / 1366;
-    console.log(`  Desktop canvas width ratio: ${(desktopRatio * 100).toFixed(1)}% (${canvasBox.width}px / 1366px)`);
-    if (desktopRatio < 0.40) {
-      throw new Error(`Desktop canvas width < 40% of viewport: ${(desktopRatio * 100).toFixed(1)}% (${canvasBox.width}px / 1366px)`);
+    console.log(`  Desktop canvas width ratio: ${(desktopRatio * 100).toFixed(1)}% (${canvasBox.width}px / 1366px), height: ${canvasBox.height}px (target >= 330px)`);
+    if (canvasBox.height < 330) {
+      throw new Error(`Desktop canvas height < 330px: ${canvasBox.height}px`);
     }
-    console.log('  [PASS] Desktop canvas width is >= 40% of viewport');
+    console.log('  [PASS] Desktop canvas height >= 330px and aspect within 2% of 640:360');
   } else {
-    console.log(`  Mobile canvas width: ${canvasBox.width}px`);
-    if (canvasBox.width < 320) {
-      throw new Error(`Mobile canvas width < 320px: ${canvasBox.width}px`);
+    console.log(`  Mobile canvas width: ${canvasBox.width}px, height: ${canvasBox.height}px (target >= 260px)`);
+    if (canvasBox.height < 260) {
+      throw new Error(`Mobile canvas height < 260px: ${canvasBox.height}px`);
     }
-    console.log('  [PASS] Mobile canvas width >= 320px');
+    console.log('  [PASS] Mobile canvas height >= 260px and aspect within 2% of 640:360');
+  }
 
-    const noScroll = await page.evaluate(() => {
-      const doc = document.documentElement;
-      return doc.scrollHeight <= window.innerHeight + 2 && window.scrollY === 0;
-    });
-    if (!noScroll) {
-      const heights = await page.evaluate(() => ({
-        scrollHeight: document.documentElement.scrollHeight,
-        innerHeight: window.innerHeight,
-        scrollY: window.scrollY,
-      }));
-      throw new Error(`Mobile page scroll detected during mini-game: ${JSON.stringify(heights)}`);
-    }
-    console.log('  [PASS] No mobile page scroll during mini-game');
+  // Shell scroll assertion: no horizontal or vertical scroll in the shell or document
+  const scrollCheck = await page.evaluate(() => {
+    const shell = document.querySelector('[data-testid="minigame-shell"]');
+    return {
+      shellScrollLeft: shell ? shell.scrollLeft : 0,
+      shellScrollTop: shell ? shell.scrollTop : 0,
+      docScrollY: window.scrollY,
+      docScrollX: window.scrollX,
+      docScrollHeight: document.documentElement.scrollHeight,
+      winInnerHeight: window.innerHeight,
+    };
+  });
+  console.log(`  Shell/Page scroll check:`, scrollCheck);
+  if (scrollCheck.shellScrollLeft !== 0 || scrollCheck.shellScrollTop !== 0 || scrollCheck.docScrollY !== 0 || scrollCheck.docScrollHeight > scrollCheck.winInnerHeight + 2) {
+    throw new Error(`Scroll detected inside shell or page: ${JSON.stringify(scrollCheck)}`);
+  }
+  console.log('  [PASS] No horizontal or vertical scroll in the shell');
 
+  if (isMobile) {
     // Check Exit button height
     const exitBtn = page.locator('[data-testid="puzzle-exit-btn"]');
     const exitBox = await exitBtn.boundingBox();
@@ -1061,17 +1076,72 @@ async function runTestPass(browser, config) {
   }
   console.log('  [PASS] Direct rock drill target meets touch target guidelines (>=44px)');
 
-  // Direct rock interaction: simulate hold on rock face to drill
-  if (canvasBox) {
-    await page.mouse.move(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2);
+  // 1. Check Reduce Motion ON, then OFF: hold rock-drill-target for 3s with real pointer events, assert data-core-progress increases in both modes
+  const blueberryGame = page.locator('[data-testid="blueberry-game"]');
+
+  // A. Reduce Motion ON
+  console.log('  Testing Check 1: Reduce Motion ON hold rock-drill-target for 3s...');
+  await page.evaluate(() => window.__setReduceMotion?.(true));
+  const prog0 = Number(await blueberryGame.getAttribute('data-core-progress') || 0);
+
+  if (drillTargetBox) {
+    await page.mouse.move(drillTargetBox.x + drillTargetBox.width / 2, drillTargetBox.y + drillTargetBox.height / 2);
     await page.mouse.down();
-    await page.waitForTimeout(400); // hold to drill rock
+    await page.waitForTimeout(3000);
     await page.mouse.up();
+  } else {
+    await drillTarget.dispatchEvent('pointerdown');
+    await page.waitForTimeout(3000);
+    await drillTarget.dispatchEvent('pointerup');
   }
+  const prog1 = Number(await blueberryGame.getAttribute('data-core-progress') || 0);
+  console.log(`  Reduce Motion ON: core progress went from ${prog0} to ${prog1}`);
+  if (prog1 <= prog0) {
+    throw new Error(`Reduce Motion ON: data-core-progress did not increase! prog0=${prog0}, prog1=${prog1}`);
+  }
+  console.log('  [PASS] Reduce Motion ON: data-core-progress increased during 3s hold');
+
+  // Exit and reopen to test clean session with Reduce Motion OFF
+  const exitBtn = page.locator('[data-testid="puzzle-exit-btn"]');
+  await exitBtn.click();
+  await minigameShell.waitFor({ state: 'detached', timeout: 5000 });
+  await page.waitForTimeout(300);
+
+  // Turn Reduce Motion OFF
+  await page.evaluate(() => window.__setReduceMotion?.(false));
+
+  // Re-open Opportunity mini-game
+  await interactPrompt.click();
+  await novaActionBtn.waitFor({ state: 'visible', timeout: 4000 });
+  await novaActionBtn.click();
+  await minigameShell.waitFor({ state: 'visible', timeout: 6000 });
+  await drillTarget.waitFor({ state: 'visible', timeout: 4000 });
+
+  // B. Reduce Motion OFF
+  console.log('  Testing Check 1: Reduce Motion OFF hold rock-drill-target for 3s...');
+  const prog2 = Number(await blueberryGame.getAttribute('data-core-progress') || 0);
+  const drillTargetBox2 = await drillTarget.boundingBox();
+  if (drillTargetBox2) {
+    await page.mouse.move(drillTargetBox2.x + drillTargetBox2.width / 2, drillTargetBox2.y + drillTargetBox2.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(3000);
+    await page.mouse.up();
+  } else {
+    await drillTarget.dispatchEvent('pointerdown');
+    await page.waitForTimeout(3000);
+    await drillTarget.dispatchEvent('pointerup');
+  }
+  const prog3 = Number(await blueberryGame.getAttribute('data-core-progress') || 0);
+  console.log(`  Reduce Motion OFF: core progress went from ${prog2} to ${prog3}`);
+  if (prog3 <= prog2) {
+    throw new Error(`Reduce Motion OFF: data-core-progress did not increase! prog2=${prog2}, prog3=${prog3}`);
+  }
+  console.log('  [PASS] Reduce Motion OFF: data-core-progress increased during 3s hold');
+
   await snap('06a_blueberry_active_game');
 
-  // 1. Test autoplay flag -> 3 stars, bonus RP toast, RP +1
-  console.log('  Testing autoplay flag for 3 stars and +1 bonus RP...');
+  // 2. Autoplay win (with ?debug=1): minigame-win text does not contain "MARATHON" and contains "SAMPLES SECURED". Claim part gives 1/8, log recovered, +1 RP toast once.
+  console.log('  Testing Check 2: Autoplay win (?debug=1)...');
   const rpBefore = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
   console.log(`  RP before 3-star run: ${rpBefore}`);
 
@@ -1081,6 +1151,16 @@ async function runTestPass(browser, config) {
 
   const minigameWin = page.locator('[data-testid="minigame-win"]');
   await minigameWin.waitFor({ state: 'visible', timeout: 8000 });
+
+  const winText = await minigameWin.textContent();
+  console.log(`  Minigame Win Text: "${winText}"`);
+  if (winText.includes('MARATHON')) {
+    throw new Error(`minigame-win text should not contain "MARATHON", got: ${winText}`);
+  }
+  if (!winText.includes('SAMPLES SECURED')) {
+    throw new Error(`minigame-win text must contain "SAMPLES SECURED", got: ${winText}`);
+  }
+  console.log('  [PASS] minigame-win text contains "SAMPLES SECURED" and no "MARATHON"');
 
   const starsEl = page.locator('[data-testid="minigame-stars"]');
   const stars3 = await starsEl.getAttribute('data-stars');
@@ -1289,6 +1369,704 @@ async function runTestPass(browser, config) {
   console.log('  [PASS] bonusRpWreckIds persisted after reload');
 
   // -------------------------------------------------------------------------
+  // 6C. PHOENIX POLAR ICE LANDER ("DIG FOR ICE" - STARS, RETRY, BONUS RP, AUTOPLAY, CLAIM)
+  // -------------------------------------------------------------------------
+  console.log('6C. Testing Phoenix Polar Ice Lander ("Dig for Ice")...');
+  const tpPhoenixResult = await page.evaluate(() => window.__teleportToWreck('eq_phoenix'));
+  console.log('  Teleport to Phoenix:', tpPhoenixResult);
+  if (!tpPhoenixResult?.success) {
+    throw new Error('Failed to teleport to Phoenix wreck eq_phoenix');
+  }
+  await page.waitForTimeout(600);
+
+  // Assert interaction prompt is active and open dialogue
+  await interactPrompt.waitFor({ state: 'visible', timeout: 6000 });
+  await interactPrompt.click();
+
+  // Launch Phoenix mini-game simulator
+  await novaActionBtn.waitFor({ state: 'visible', timeout: 4000 });
+  await novaActionBtn.click();
+
+  // Assert minigame-shell appears with ice canvas
+  const phoenixShell = page.locator('[data-testid="minigame-shell"]');
+  await phoenixShell.waitFor({ state: 'visible', timeout: 6000 });
+  const iceCanvas = page.locator('[data-testid="crater-canvas"]');
+  await iceCanvas.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Phoenix minigame-shell and ice canvas visible');
+
+  // Verify mobile no-scroll and touch targets
+  if (isMobile) {
+    const noScroll = await page.evaluate(() => {
+      const doc = document.documentElement;
+      return doc.scrollHeight <= window.innerHeight + 2 && window.scrollY === 0;
+    });
+    if (!noScroll) {
+      const heights = await page.evaluate(() => ({
+        scrollHeight: document.documentElement.scrollHeight,
+        innerHeight: window.innerHeight,
+        scrollY: window.scrollY,
+      }));
+      throw new Error(`Mobile page scroll detected during Phoenix mini-game: ${JSON.stringify(heights)}`);
+    }
+    console.log('  [PASS] No mobile page scroll during Phoenix mini-game');
+
+    // Check Exit button height
+    const exitBtn = page.locator('[data-testid="puzzle-exit-btn"]');
+    const exitBox = await exitBtn.boundingBox();
+    if (!exitBox || exitBox.height < 44) {
+      throw new Error(`Exit button height < 44px on mobile: ${exitBox?.height}`);
+    }
+    console.log('  [PASS] Exit button >= 44px on mobile');
+  }
+
+  // Verify cooler chute container visible
+  const coolerChute = page.locator('[data-testid="cooler-chute"]');
+  await coolerChute.waitFor({ state: 'visible', timeout: 4000 });
+  console.log('  [PASS] cooler-chute container visible');
+
+  // Direct canvas drag test: simulate dragging scoop downwards
+  const iceBox = await iceCanvas.boundingBox();
+  if (iceBox) {
+    await page.mouse.move(iceBox.x + iceBox.width / 2, iceBox.y + 40);
+    await page.mouse.down();
+    await page.mouse.move(iceBox.x + iceBox.width / 2, iceBox.y + 120, { steps: 5 });
+    await page.waitForTimeout(200);
+    await page.mouse.up();
+  }
+  await snap('06c_phoenix_active_game');
+
+  // 1. Test autoplay flag -> 3 stars, bonus RP toast, RP +1
+  console.log('  Testing Phoenix autoplay hook for 3 stars and +1 bonus RP...');
+  const rpBeforePhoenix = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP before Phoenix 3-star run: ${rpBeforePhoenix}`);
+
+  await page.evaluate(() => {
+    window.__phoenixAutoplay?.();
+  });
+
+  const phoenixWin = page.locator('[data-testid="minigame-win"]');
+  await phoenixWin.waitFor({ state: 'visible', timeout: 8000 });
+
+  const phoenixStarsEl = page.locator('[data-testid="minigame-stars"]');
+  const phoenixStars3 = await phoenixStarsEl.getAttribute('data-stars');
+  console.log(`  Stars with autoplay: ${phoenixStars3}`);
+  if (phoenixStars3 !== '3') {
+    throw new Error(`Expected 3 stars with autoplay on Phoenix, got: ${phoenixStars3}`);
+  }
+
+  const phoenixBonusToast = page.locator('[data-testid="bonus-rp-toast"]');
+  await phoenixBonusToast.waitFor({ state: 'visible', timeout: 5000 });
+  const phoenixToastText = await phoenixBonusToast.textContent();
+  console.log(`  Bonus RP toast text: "${phoenixToastText}"`);
+  if (!phoenixToastText.includes('+1 RP')) {
+    throw new Error(`Bonus RP toast does not contain "+1 RP": ${phoenixToastText}`);
+  }
+
+  const rpAfterPhoenix = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP after Phoenix 3-star run: ${rpAfterPhoenix} (expected: ${rpBeforePhoenix + 1})`);
+  if (rpAfterPhoenix !== rpBeforePhoenix + 1) {
+    throw new Error(`Expected RP to increase by 1, before: ${rpBeforePhoenix}, after: ${rpAfterPhoenix}`);
+  }
+  console.log('  [PASS] 3 stars achieved, bonus RP toast displayed, RP increased by +1');
+  await snap('06c_phoenix_3_stars');
+
+  // 2. Assert retry button works and second run does NOT award duplicate RP
+  console.log('  Testing retry button on Phoenix...');
+  const phoenixRetryBtn = page.locator('[data-testid="minigame-retry"]');
+  const pRetryBox = await phoenixRetryBtn.boundingBox();
+  if (!pRetryBox || pRetryBox.height < 44) {
+    throw new Error(`Phoenix retry button height < 44px: ${pRetryBox?.height}`);
+  }
+  console.log('  [PASS] Phoenix retry button >= 44px tall');
+
+  await phoenixRetryBtn.click();
+  await phoenixWin.waitFor({ state: 'detached', timeout: 5000 });
+  await iceCanvas.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Retry button restarted Dig for Ice successfully');
+
+  // Second 3-star run to verify RP is NOT awarded twice
+  await page.evaluate(() => {
+    window.__phoenixAutoplay?.();
+  });
+  await phoenixWin.waitFor({ state: 'visible', timeout: 8000 });
+  const rpSecondRunPhoenix = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP after second 3-star run: ${rpSecondRunPhoenix} (expected: ${rpAfterPhoenix})`);
+  if (rpSecondRunPhoenix !== rpAfterPhoenix) {
+    throw new Error(`Second 3-star run awarded extra RP! Expected ${rpAfterPhoenix}, got ${rpSecondRunPhoenix}`);
+  }
+  console.log('  [PASS] Second run did NOT give another +1 RP');
+
+  // 3. Tap "Did you know?", assert exact detective story fact is visible
+  const phoenixFactBtn = page.locator('[data-testid="minigame-fact"]');
+  await phoenixFactBtn.click();
+  await page.waitForTimeout(300);
+  const phoenixFactText = await phoenixFactBtn.textContent();
+  console.log(`  Did You Know Fact Text: "${phoenixFactText}"`);
+  const expectedPhoenixFact = "Phoenix photographed white chunks in its trench, and they were gone a few days later. Salt wouldn't do that, so it was ice.";
+  if (!phoenixFactText.includes(expectedPhoenixFact)) {
+    throw new Error(`Did-you-know fact does not match expected mission line. Got: ${phoenixFactText}`);
+  }
+  console.log('  [PASS] Exact Did-You-Know fact displayed for Phoenix');
+  await snap('06c_phoenix_fact_revealed');
+  await snap('06c_phoenix_win_stars_fact');
+
+  // 4. Claim the part; assert part count goes to 2/8 and Phoenix story log is recovered
+  console.log('  Claiming part from Phoenix...');
+  const phoenixClaimBtn = page.locator('[data-testid="claim-part-btn"]');
+  await phoenixClaimBtn.click();
+  await phoenixShell.waitFor({ state: 'detached', timeout: 5000 });
+  await page.waitForTimeout(600);
+
+  // Assert collected parts count is now 2
+  const partsAfterPhoenix = await page.evaluate(() => window.__getCollectedPartIds ? window.__getCollectedPartIds() : []);
+  console.log(`  Collected parts after Phoenix claim:`, partsAfterPhoenix);
+  if (!partsAfterPhoenix.includes('part_thermal_core') || partsAfterPhoenix.length !== 2) {
+    throw new Error(`Expected collectedPartIds to contain 'part_thermal_core' with length 2, got: ${JSON.stringify(partsAfterPhoenix)}`);
+  }
+
+  // Assert recovered logs includes 'log_phoenix'
+  const logsAfterPhoenix = await page.evaluate(() => window.__getRecoveredLogIds ? window.__getRecoveredLogIds() : []);
+  console.log(`  Recovered logs after Phoenix claim:`, logsAfterPhoenix);
+  if (!logsAfterPhoenix.includes('log_phoenix') || logsAfterPhoenix.length !== 2) {
+    throw new Error(`Expected recoveredLogIds to contain 'log_phoenix' with length 2, got: ${JSON.stringify(logsAfterPhoenix)}`);
+  }
+  console.log('  [PASS] Part count is 2/8 and Phoenix story log recovered');
+  await snap('06c_phoenix_part_claimed');
+
+  // -------------------------------------------------------------------------
+  // 6D. SPIRIT ROVER ("THE DRAGGED WHEEL" - STARS, RETRY, BONUS RP, AUTOPLAY, CLAIM)
+  // -------------------------------------------------------------------------
+  console.log('6D. Testing Spirit Rover ("The Dragged Wheel")...');
+  const tpSpiritResult = await page.evaluate(() => window.__teleportToWreck('eq_spirit'));
+  console.log('  Teleport to Spirit:', tpSpiritResult);
+  if (!tpSpiritResult?.success) {
+    throw new Error('Failed to teleport to Spirit wreck eq_spirit');
+  }
+  await page.waitForTimeout(600);
+
+  // Assert interaction prompt is active and open dialogue
+  await interactPrompt.waitFor({ state: 'visible', timeout: 6000 });
+  await interactPrompt.click();
+
+  // Launch Spirit mini-game simulator
+  await novaActionBtn.waitFor({ state: 'visible', timeout: 4000 });
+  await novaActionBtn.click();
+
+  // Assert minigame-shell appears with Spirit wheel game canvas
+  const spiritShell = page.locator('[data-testid="minigame-shell"]');
+  await spiritShell.waitFor({ state: 'visible', timeout: 6000 });
+  const spiritCanvas = page.locator('[data-testid="crater-canvas"]');
+  await spiritCanvas.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Spirit minigame-shell and canvas visible');
+
+  // Verify mobile no-scroll and touch targets
+  if (isMobile) {
+    const noScroll = await page.evaluate(() => {
+      const doc = document.documentElement;
+      return doc.scrollHeight <= window.innerHeight + 2 && window.scrollY === 0;
+    });
+    if (!noScroll) {
+      const heights = await page.evaluate(() => ({
+        scrollHeight: document.documentElement.scrollHeight,
+        innerHeight: window.innerHeight,
+        scrollY: window.scrollY,
+      }));
+      throw new Error(`Mobile page scroll detected during Spirit mini-game: ${JSON.stringify(heights)}`);
+    }
+    console.log('  [PASS] No mobile page scroll during Spirit mini-game');
+
+    // Check Exit button height
+    const exitBtn = page.locator('[data-testid="puzzle-exit-btn"]');
+    const exitBox = await exitBtn.boundingBox();
+    if (!exitBox || exitBox.height < 44) {
+      throw new Error(`Exit button height < 44px on mobile: ${exitBox?.height}`);
+    }
+    console.log('  [PASS] Exit button >= 44px on mobile');
+  }
+
+  // Verify silica counter visible
+  const silicaCounter = page.locator('[data-testid="silica-counter"]');
+  await silicaCounter.waitFor({ state: 'visible', timeout: 4000 });
+  console.log('  [PASS] silica-counter container visible');
+
+  // Verify tactile steer buttons have min 44px touch targets
+  const steerLeftBtn = page.locator('[data-testid="steer-left-btn"]');
+  const steerLeftBox = await steerLeftBtn.boundingBox();
+  if (!steerLeftBox || steerLeftBox.height < 44) {
+    throw new Error(`Steer left button height < 44px: ${steerLeftBox?.height}`);
+  }
+  const steerRightBtn = page.locator('[data-testid="steer-right-btn"]');
+  const steerRightBox = await steerRightBtn.boundingBox();
+  if (!steerRightBox || steerRightBox.height < 44) {
+    throw new Error(`Steer right button height < 44px: ${steerRightBox?.height}`);
+  }
+  console.log('  [PASS] Spirit tactile counter-steer buttons meet touch target guidelines (>=44px)');
+
+  // Test counter-steering
+  await steerLeftBtn.hover();
+  await page.mouse.down();
+  await page.waitForTimeout(300);
+  await page.mouse.up();
+  await snap('06d_spirit_active_game');
+
+  // 1. Test autoplay flag -> 3 stars, bonus RP toast, RP +1
+  console.log('  Testing Spirit autoplay hook for 3 stars and +1 bonus RP...');
+  const rpBeforeSpirit = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP before Spirit 3-star run: ${rpBeforeSpirit}`);
+
+  await page.evaluate(() => {
+    window.__spiritAutoplay?.();
+  });
+
+  const spiritWin = page.locator('[data-testid="minigame-win"]');
+  await spiritWin.waitFor({ state: 'visible', timeout: 8000 });
+
+  const spiritStarsEl = page.locator('[data-testid="minigame-stars"]');
+  const spiritStars3 = await spiritStarsEl.getAttribute('data-stars');
+  console.log(`  Stars with autoplay on Spirit: ${spiritStars3}`);
+  if (spiritStars3 !== '3') {
+    throw new Error(`Expected 3 stars with autoplay on Spirit, got: ${spiritStars3}`);
+  }
+
+  const spiritBonusToast = page.locator('[data-testid="bonus-rp-toast"]');
+  await spiritBonusToast.waitFor({ state: 'visible', timeout: 5000 });
+  const spiritToastText = await spiritBonusToast.textContent();
+  console.log(`  Bonus RP toast text: "${spiritToastText}"`);
+  if (!spiritToastText.includes('+1 RP')) {
+    throw new Error(`Bonus RP toast does not contain "+1 RP": ${spiritToastText}`);
+  }
+
+  const rpAfterSpirit = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP after Spirit 3-star run: ${rpAfterSpirit} (expected: ${rpBeforeSpirit + 1})`);
+  if (rpAfterSpirit !== rpBeforeSpirit + 1) {
+    throw new Error(`Expected RP to increase by 1, before: ${rpBeforeSpirit}, after: ${rpAfterSpirit}`);
+  }
+  console.log('  [PASS] 3 stars achieved on Spirit, bonus RP toast displayed, RP increased by +1');
+  await snap('06d_spirit_3_stars');
+
+  // 2. Assert retry button works and second run does NOT award duplicate RP
+  console.log('  Testing retry button on Spirit...');
+  const spiritRetryBtn = page.locator('[data-testid="minigame-retry"]');
+  const sRetryBox = await spiritRetryBtn.boundingBox();
+  if (!sRetryBox || sRetryBox.height < 44) {
+    throw new Error(`Spirit retry button height < 44px: ${sRetryBox?.height}`);
+  }
+  console.log('  [PASS] Spirit retry button >= 44px tall');
+
+  await spiritRetryBtn.click();
+  await spiritWin.waitFor({ state: 'detached', timeout: 5000 });
+  await spiritCanvas.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Retry button restarted The Dragged Wheel successfully');
+
+  // Second 3-star run to verify RP is NOT awarded twice
+  await page.evaluate(() => {
+    window.__spiritAutoplay?.();
+  });
+  await spiritWin.waitFor({ state: 'visible', timeout: 8000 });
+  const rpSecondRunSpirit = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP after second 3-star run: ${rpSecondRunSpirit} (expected: ${rpAfterSpirit})`);
+  if (rpSecondRunSpirit !== rpAfterSpirit) {
+    throw new Error(`Second 3-star run on Spirit awarded extra RP! Expected ${rpAfterSpirit}, got ${rpSecondRunSpirit}`);
+  }
+  console.log('  [PASS] Second run on Spirit did NOT give another +1 RP');
+
+  // 3. Tap "Did you know?", assert exact historical fact is visible
+  const spiritFactBtn = page.locator('[data-testid="minigame-fact"]');
+  await spiritFactBtn.click();
+  await page.waitForTimeout(300);
+  const spiritFactText = await spiritFactBtn.textContent();
+  console.log(`  Did You Know Fact Text: "${spiritFactText}"`);
+  const expectedSpiritFact = "Spirit's jammed wheel was dragged backwards, accidentally digging up bright silica—proof of ancient volcanic hot springs!";
+  if (!spiritFactText.includes(expectedSpiritFact)) {
+    throw new Error(`Did-you-know fact does not match expected mission line. Got: ${spiritFactText}`);
+  }
+  console.log('  [PASS] Exact Did-You-Know fact displayed for Spirit');
+  await snap('06d_spirit_fact_revealed');
+  await snap('06d_spirit_win_stars_fact');
+
+  // 4. Claim the part; assert part count goes to 3/8 and Spirit story log is recovered
+  console.log('  Claiming part from Spirit...');
+  const spiritClaimBtn = page.locator('[data-testid="claim-part-btn"]');
+  await spiritClaimBtn.click();
+  await spiritShell.waitFor({ state: 'detached', timeout: 5000 });
+  await page.waitForTimeout(600);
+
+  // Assert collected parts count is now 3
+  const partsAfterSpirit = await page.evaluate(() => window.__getCollectedPartIds ? window.__getCollectedPartIds() : []);
+  console.log(`  Collected parts after Spirit claim:`, partsAfterSpirit);
+  if (!partsAfterSpirit.includes('part_suspension_link') || partsAfterSpirit.length !== 3) {
+    throw new Error(`Expected collectedPartIds to contain 'part_suspension_link' with length 3, got: ${JSON.stringify(partsAfterSpirit)}`);
+  }
+
+  // Assert recovered logs includes 'log_spirit'
+  const logsAfterSpirit = await page.evaluate(() => window.__getRecoveredLogIds ? window.__getRecoveredLogIds() : []);
+  console.log(`  Recovered logs after Spirit claim:`, logsAfterSpirit);
+  if (!logsAfterSpirit.includes('log_spirit') || logsAfterSpirit.length !== 3) {
+    throw new Error(`Expected recoveredLogIds to contain 'log_spirit' with length 3, got: ${JSON.stringify(logsAfterSpirit)}`);
+  }
+  console.log('  [PASS] Part count is 3/8 and Spirit story log recovered');
+  await snap('06d_spirit_part_claimed');
+
+  // -------------------------------------------------------------------------
+  // 6E. DEEP SPACE RELAY ARRAY ("CARRIER LOCK" - STARS, RETRY, BONUS RP, AUTOPLAY, CLAIM)
+  // -------------------------------------------------------------------------
+  console.log('6E. Testing Deep Space Relay Array ("Carrier Lock")...');
+  const tpDishResult = await page.evaluate(() => window.__teleportToWreck('eq_deep_space_dish'));
+  console.log('  Teleport to Deep Space Dish:', tpDishResult);
+  if (!tpDishResult?.success) {
+    throw new Error('Failed to teleport to Deep Space Dish wreck eq_deep_space_dish');
+  }
+  await page.waitForTimeout(600);
+
+  // Assert interaction prompt is active and open dialogue
+  await interactPrompt.waitFor({ state: 'visible', timeout: 6000 });
+  await interactPrompt.click();
+
+  // Launch Deep Space mini-game simulator
+  await novaActionBtn.waitFor({ state: 'visible', timeout: 4000 });
+  await novaActionBtn.click();
+
+  // Assert minigame-shell appears with deep space sky canvas
+  const dishShell = page.locator('[data-testid="minigame-shell"]');
+  await dishShell.waitFor({ state: 'visible', timeout: 6000 });
+  const dishCanvas = page.locator('[data-testid="crater-canvas"]');
+  await dishCanvas.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Deep Space Dish minigame-shell and canvas visible');
+
+  // Verify mobile no-scroll and touch targets
+  if (isMobile) {
+    const noScroll = await page.evaluate(() => {
+      const doc = document.documentElement;
+      return doc.scrollHeight <= window.innerHeight + 2 && window.scrollY === 0;
+    });
+    if (!noScroll) {
+      const heights = await page.evaluate(() => ({
+        scrollHeight: document.documentElement.scrollHeight,
+        innerHeight: window.innerHeight,
+        scrollY: window.scrollY,
+      }));
+      throw new Error(`Mobile page scroll detected during Deep Space mini-game: ${JSON.stringify(heights)}`);
+    }
+    console.log('  [PASS] No mobile page scroll during Deep Space mini-game');
+
+    // Check Exit button height
+    const exitBtn = page.locator('[data-testid="puzzle-exit-btn"]');
+    const exitBox = await exitBtn.boundingBox();
+    if (!exitBox || exitBox.height < 44) {
+      throw new Error(`Exit button height < 44px on mobile: ${exitBox?.height}`);
+    }
+    console.log('  [PASS] Exit button >= 44px on mobile');
+  }
+
+  // Verify SNR counter visible
+  const snrCounter = page.locator('[data-testid="snr-counter"]');
+  await snrCounter.waitFor({ state: 'visible', timeout: 4000 });
+  console.log('  [PASS] snr-counter container visible');
+
+  // Verify tactile gimbal buttons have min 44px touch targets
+  const azLeftBtn = page.locator('[data-testid="az-left-btn"]');
+  const azLeftBox = await azLeftBtn.boundingBox();
+  if (!azLeftBox || azLeftBox.height < 44) {
+    throw new Error(`Azimuth left button height < 44px: ${azLeftBox?.height}`);
+  }
+  const azRightBtn = page.locator('[data-testid="az-right-btn"]');
+  const azRightBox = await azRightBtn.boundingBox();
+  if (!azRightBox || azRightBox.height < 44) {
+    throw new Error(`Azimuth right button height < 44px: ${azRightBox?.height}`);
+  }
+  const elUpBtn = page.locator('[data-testid="el-up-btn"]');
+  const elUpBox = await elUpBtn.boundingBox();
+  if (!elUpBox || elUpBox.height < 44) {
+    throw new Error(`Elevation up button height < 44px: ${elUpBox?.height}`);
+  }
+  const elDownBtn = page.locator('[data-testid="el-down-btn"]');
+  const elDownBox = await elDownBtn.boundingBox();
+  if (!elDownBox || elDownBox.height < 44) {
+    throw new Error(`Elevation down button height < 44px: ${elDownBox?.height}`);
+  }
+  console.log('  [PASS] Deep Space tactile gimbal buttons meet touch target guidelines (>=44px)');
+
+  // Test nudging gimbals
+  await azRightBtn.click();
+  await elUpBtn.click();
+  await snap('06e_deep_space_active_game');
+
+  // 1. Test autoplay flag -> 3 stars, bonus RP toast, RP +1
+  console.log('  Testing Deep Space autoplay hook for 3 stars and +1 bonus RP...');
+  const rpBeforeDish = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP before Deep Space 3-star run: ${rpBeforeDish}`);
+
+  await page.evaluate(() => {
+    window.__deepSpaceAutoplay?.();
+  });
+
+  const dishWin = page.locator('[data-testid="minigame-win"]');
+  await dishWin.waitFor({ state: 'visible', timeout: 8000 });
+
+  const dishStarsEl = page.locator('[data-testid="minigame-stars"]');
+  const dishStars3 = await dishStarsEl.getAttribute('data-stars');
+  console.log(`  Stars with autoplay on Deep Space Dish: ${dishStars3}`);
+  if (dishStars3 !== '3') {
+    throw new Error(`Expected 3 stars with autoplay on Deep Space Dish, got: ${dishStars3}`);
+  }
+
+  const dishBonusToast = page.locator('[data-testid="bonus-rp-toast"]');
+  await dishBonusToast.waitFor({ state: 'visible', timeout: 5000 });
+  const dishToastText = await dishBonusToast.textContent();
+  console.log(`  Bonus RP toast text: "${dishToastText}"`);
+  if (!dishToastText.includes('+1 RP')) {
+    throw new Error(`Bonus RP toast does not contain "+1 RP": ${dishToastText}`);
+  }
+
+  const rpAfterDish = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP after Deep Space 3-star run: ${rpAfterDish} (expected: ${rpBeforeDish + 1})`);
+  if (rpAfterDish !== rpBeforeDish + 1) {
+    throw new Error(`Expected RP to increase by 1, before: ${rpBeforeDish}, after: ${rpAfterDish}`);
+  }
+  console.log('  [PASS] 3 stars achieved on Deep Space Dish, bonus RP toast displayed, RP increased by +1');
+  await snap('06e_deep_space_3_stars');
+
+  // 2. Assert retry button works and second run does NOT award duplicate RP
+  console.log('  Testing retry button on Deep Space Dish...');
+  const dishRetryBtn = page.locator('[data-testid="minigame-retry"]');
+  const dRetryBox = await dishRetryBtn.boundingBox();
+  if (!dRetryBox || dRetryBox.height < 44) {
+    throw new Error(`Deep Space retry button height < 44px: ${dRetryBox?.height}`);
+  }
+  console.log('  [PASS] Deep Space retry button >= 44px tall');
+
+  await dishRetryBtn.click();
+  await dishWin.waitFor({ state: 'detached', timeout: 5000 });
+  await dishCanvas.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Retry button restarted Deep Space Carrier Lock successfully');
+
+  // Second 3-star run to verify RP is NOT awarded twice
+  await page.evaluate(() => {
+    window.__deepSpaceAutoplay?.();
+  });
+  await dishWin.waitFor({ state: 'visible', timeout: 8000 });
+  const rpSecondRunDish = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP after second 3-star run: ${rpSecondRunDish} (expected: ${rpAfterDish})`);
+  if (rpSecondRunDish !== rpAfterDish) {
+    throw new Error(`Second 3-star run on Deep Space Dish awarded extra RP! Expected ${rpAfterDish}, got ${rpSecondRunDish}`);
+  }
+  console.log('  [PASS] Second run on Deep Space Dish did NOT give another +1 RP');
+
+  // 3. Tap "Did you know?", assert exact historical fact is visible
+  const dishFactBtn = page.locator('[data-testid="minigame-fact"]');
+  await dishFactBtn.click();
+  await page.waitForTimeout(300);
+  const dishFactText = await dishFactBtn.textContent();
+  console.log(`  Did You Know Fact Text: "${dishFactText}"`);
+  const expectedDishFact = "Radio signals travel at the speed of light, but still take up to 20 minutes to cross the void between Earth and Mars!";
+  if (!dishFactText.includes(expectedDishFact)) {
+    throw new Error(`Did-you-know fact does not match expected mission line. Got: ${dishFactText}`);
+  }
+  console.log('  [PASS] Exact Did-You-Know fact displayed for Deep Space Dish');
+  await snap('06e_deep_space_fact_revealed');
+  await snap('06e_deep_space_win_stars_fact');
+
+  // 4. Claim the part; assert part count goes to 4/8 and Deep Space story log is recovered
+  console.log('  Claiming part from Deep Space Dish...');
+  const dishClaimBtn = page.locator('[data-testid="claim-part-btn"]');
+  await dishClaimBtn.click();
+  await dishShell.waitFor({ state: 'detached', timeout: 5000 });
+  await page.waitForTimeout(600);
+
+  // Assert collected parts count is now 4
+  const partsAfterDish = await page.evaluate(() => window.__getCollectedPartIds ? window.__getCollectedPartIds() : []);
+  console.log(`  Collected parts after Deep Space claim:`, partsAfterDish);
+  if (!partsAfterDish.includes('part_comm_transponder') || partsAfterDish.length !== 4) {
+    throw new Error(`Expected collectedPartIds to contain 'part_comm_transponder' with length 4, got: ${JSON.stringify(partsAfterDish)}`);
+  }
+
+  // Assert recovered logs includes 'log_deep_space_dish'
+  const logsAfterDish = await page.evaluate(() => window.__getRecoveredLogIds ? window.__getRecoveredLogIds() : []);
+  console.log(`  Recovered logs after Deep Space claim:`, logsAfterDish);
+  if (!logsAfterDish.includes('log_deep_space_dish') || logsAfterDish.length !== 4) {
+    throw new Error(`Expected recoveredLogIds to contain 'log_deep_space_dish' with length 4, got: ${JSON.stringify(logsAfterDish)}`);
+  }
+  console.log('  [PASS] Part count is 4/8 and Deep Space story log recovered');
+  await snap('06e_deep_space_part_claimed');
+
+  // -------------------------------------------------------------------------
+  // 6F. APOLLO LUNAR ROVING VEHICLE ("WIRE-MESH MOON DRIFT" - STARS, RETRY, BONUS RP, AUTOPLAY, CLAIM)
+  // -------------------------------------------------------------------------
+  console.log('6F. Testing Apollo Lunar Roving Vehicle ("Wire-Mesh Moon Drift")...');
+  const tpLrvResult = await page.evaluate(() => window.__teleportToWreck('eq_lrv_buggy'));
+  console.log('  Teleport to Apollo LRV:', tpLrvResult);
+  if (!tpLrvResult?.success) {
+    throw new Error('Failed to teleport to Apollo LRV wreck eq_lrv_buggy');
+  }
+  await page.waitForTimeout(600);
+
+  // Assert interaction prompt is active and open dialogue
+  await interactPrompt.waitFor({ state: 'visible', timeout: 6000 });
+  await interactPrompt.click();
+
+  // Launch Apollo LRV mini-game simulator
+  await novaActionBtn.waitFor({ state: 'visible', timeout: 4000 });
+  await novaActionBtn.click();
+
+  // Assert minigame-shell appears with lrv canvas
+  const lrvShell = page.locator('[data-testid="minigame-shell"]');
+  await lrvShell.waitFor({ state: 'visible', timeout: 6000 });
+  const lrvCanvas = page.locator('[data-testid="lrv-canvas"]');
+  await lrvCanvas.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Apollo LRV minigame-shell and canvas visible');
+
+  // Verify mobile no-scroll and touch targets
+  if (isMobile) {
+    const noScroll = await page.evaluate(() => {
+      const doc = document.documentElement;
+      return doc.scrollHeight <= window.innerHeight + 2 && window.scrollY === 0;
+    });
+    if (!noScroll) {
+      const heights = await page.evaluate(() => ({
+        scrollHeight: document.documentElement.scrollHeight,
+        innerHeight: window.innerHeight,
+        scrollY: window.scrollY,
+      }));
+      throw new Error(`Mobile page scroll detected during Apollo LRV mini-game: ${JSON.stringify(heights)}`);
+    }
+    console.log('  [PASS] No mobile page scroll during Apollo LRV mini-game');
+
+    // Check Exit button height
+    const exitBtn = page.locator('[data-testid="puzzle-exit-btn"]');
+    const exitBox = await exitBtn.boundingBox();
+    if (!exitBox || exitBox.height < 44) {
+      throw new Error(`Exit button height < 44px on mobile: ${exitBox?.height}`);
+    }
+    console.log('  [PASS] Exit button >= 44px on mobile');
+  }
+
+  // Verify Samples counter visible
+  const lrvSamplesCounter = page.locator('[data-testid="lrv-samples-counter"]');
+  await lrvSamplesCounter.waitFor({ state: 'visible', timeout: 4000 });
+  console.log('  [PASS] lrv-samples-counter container visible');
+
+  // Verify tactile buttons have min 44px touch targets
+  const lrvSteerLeftBtn = page.locator('[data-testid="lrv-steer-left"]');
+  const lrvSteerLeftBox = await lrvSteerLeftBtn.boundingBox();
+  if (!lrvSteerLeftBox || lrvSteerLeftBox.height < 44) {
+    throw new Error(`LRV steer left button height < 44px: ${lrvSteerLeftBox?.height}`);
+  }
+  const lrvSteerRightBtn = page.locator('[data-testid="lrv-steer-right"]');
+  const lrvSteerRightBox = await lrvSteerRightBtn.boundingBox();
+  if (!lrvSteerRightBox || lrvSteerRightBox.height < 44) {
+    throw new Error(`LRV steer right button height < 44px: ${lrvSteerRightBox?.height}`);
+  }
+  const lrvThrottleBtn = page.locator('[data-testid="lrv-throttle"]');
+  const lrvThrottleBox = await lrvThrottleBtn.boundingBox();
+  if (!lrvThrottleBox || lrvThrottleBox.height < 44) {
+    throw new Error(`LRV throttle button height < 44px: ${lrvThrottleBox?.height}`);
+  }
+  console.log('  [PASS] Apollo LRV tactile buttons meet touch target guidelines (>=44px)');
+
+  // Test nudging steering
+  await lrvSteerLeftBtn.click();
+  await lrvSteerRightBtn.click();
+  await snap('06f_lrv_active_game');
+
+  // 1. Test autoplay flag -> 3 stars, bonus RP toast, RP +1
+  console.log('  Testing Apollo LRV autoplay hook for 3 stars and +1 bonus RP...');
+  const rpBeforeLrv = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP before Apollo LRV 3-star run: ${rpBeforeLrv}`);
+
+  await page.evaluate(() => {
+    window.__lrvAutoplay?.();
+  });
+
+  const lrvWin = page.locator('[data-testid="minigame-win"]');
+  await lrvWin.waitFor({ state: 'visible', timeout: 8000 });
+
+  const lrvStarsEl = page.locator('[data-testid="minigame-stars"]');
+  const lrvStars3 = await lrvStarsEl.getAttribute('data-stars');
+  console.log(`  Stars with autoplay on Apollo LRV: ${lrvStars3}`);
+  if (lrvStars3 !== '3') {
+    throw new Error(`Expected 3 stars with autoplay on Apollo LRV, got: ${lrvStars3}`);
+  }
+
+  const lrvBonusToast = page.locator('[data-testid="bonus-rp-toast"]');
+  await lrvBonusToast.waitFor({ state: 'visible', timeout: 5000 });
+  const lrvToastText = await lrvBonusToast.textContent();
+  console.log(`  Bonus RP toast text: "${lrvToastText}"`);
+  if (!lrvToastText.includes('+1 RP')) {
+    throw new Error(`Bonus RP toast does not contain "+1 RP": ${lrvToastText}`);
+  }
+
+  const rpAfterLrv = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP after Apollo LRV 3-star run: ${rpAfterLrv} (expected: ${rpBeforeLrv + 1})`);
+  if (rpAfterLrv !== rpBeforeLrv + 1) {
+    throw new Error(`Expected RP to increase by 1, before: ${rpBeforeLrv}, after: ${rpAfterLrv}`);
+  }
+  console.log('  [PASS] 3 stars achieved on Apollo LRV, bonus RP toast displayed, RP increased by +1');
+  await snap('06f_lrv_3_stars');
+
+  // 2. Assert retry button works and second run does NOT award duplicate RP
+  console.log('  Testing retry button on Apollo LRV...');
+  const lrvRetryBtn = page.locator('[data-testid="minigame-retry"]');
+  const lRetryBox = await lrvRetryBtn.boundingBox();
+  if (!lRetryBox || lRetryBox.height < 44) {
+    throw new Error(`Apollo LRV retry button height < 44px: ${lRetryBox?.height}`);
+  }
+  console.log('  [PASS] Apollo LRV retry button >= 44px tall');
+
+  await lrvRetryBtn.click();
+  await lrvWin.waitFor({ state: 'detached', timeout: 5000 });
+  await lrvCanvas.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Retry button restarted Apollo LRV Wire-Mesh Moon Drift successfully');
+
+  // Second 3-star run to verify RP is NOT awarded twice
+  await page.evaluate(() => {
+    window.__lrvAutoplay?.();
+  });
+  await lrvWin.waitFor({ state: 'visible', timeout: 8000 });
+  const rpSecondRunLrv = await page.evaluate(() => window.__getResearchPoints ? window.__getResearchPoints() : 0);
+  console.log(`  RP after second 3-star run: ${rpSecondRunLrv} (expected: ${rpAfterLrv})`);
+  if (rpSecondRunLrv !== rpAfterLrv) {
+    throw new Error(`Second 3-star run on Apollo LRV awarded extra RP! Expected ${rpAfterLrv}, got ${rpSecondRunLrv}`);
+  }
+  console.log('  [PASS] Second run on Apollo LRV did NOT give another +1 RP');
+
+  // 3. Tap "Did you know?", assert exact historical fact is visible
+  const lrvFactBtn = page.locator('[data-testid="minigame-fact"]');
+  await lrvFactBtn.click();
+  await page.waitForTimeout(300);
+  const lrvFactText = await lrvFactBtn.textContent();
+  console.log(`  Did You Know Fact Text: "${lrvFactText}"`);
+  const expectedLrvFact = "The Moon buggy folded up to fit inside the lunar module. Apollo astronauts drove it on three missions.";
+  if (!lrvFactText.includes(expectedLrvFact)) {
+    throw new Error(`Did-you-know fact does not match expected mission line. Got: ${lrvFactText}`);
+  }
+  console.log('  [PASS] Exact Did-You-Know fact displayed for Apollo LRV');
+  await snap('06f_lrv_fact_revealed');
+  await snap('06f_lrv_win_stars_fact');
+
+  // 4. Claim the part; assert part count goes to 5/8 and Apollo LRV story log is recovered
+  console.log('  Claiming part from Apollo LRV...');
+  const lrvClaimBtn = page.locator('[data-testid="claim-part-btn"]');
+  await lrvClaimBtn.click();
+  await lrvShell.waitFor({ state: 'detached', timeout: 5000 });
+  await page.waitForTimeout(600);
+
+  // Assert collected parts count is now 5
+  const partsAfterLrv = await page.evaluate(() => window.__getCollectedPartIds ? window.__getCollectedPartIds() : []);
+  console.log(`  Collected parts after Apollo LRV claim:`, partsAfterLrv);
+  if (!partsAfterLrv.includes('part_wheel_actuator') || partsAfterLrv.length !== 5) {
+    throw new Error(`Expected collectedPartIds to contain 'part_wheel_actuator' with length 5, got: ${JSON.stringify(partsAfterLrv)}`);
+  }
+
+  // Assert recovered logs includes 'log_lrv_buggy'
+  const logsAfterLrv = await page.evaluate(() => window.__getRecoveredLogIds ? window.__getRecoveredLogIds() : []);
+  console.log(`  Recovered logs after Apollo LRV claim:`, logsAfterLrv);
+  if (!logsAfterLrv.includes('log_lrv_buggy') || logsAfterLrv.length !== 5) {
+    throw new Error(`Expected recoveredLogIds to contain 'log_lrv_buggy' with length 5, got: ${JSON.stringify(logsAfterLrv)}`);
+  }
+  console.log('  [PASS] Part count is 5/8 and Apollo LRV story log recovered');
+  await snap('06f_lrv_part_claimed');
+
+  // -------------------------------------------------------------------------
   // 7. COMPLETE ALL 8 PARTS (PARTS HUD COMPLETE)
   // -------------------------------------------------------------------------
   console.log('7. Granting All 8 Parts via Debug Hook...');
@@ -1447,7 +2225,7 @@ async function runTestPass(browser, config) {
     throw new Error(`Nova reveal line text mismatch: ${revealLineText}`);
   }
 
-  // Assert Skip button hides logs section
+  // Assert Skip button hides logs section while keeping reveal line visible
   const skipLogsBtn = page.locator('[data-testid="skip-logs-btn"]');
   await skipLogsBtn.click();
   await page.waitForTimeout(300);
@@ -1455,7 +2233,12 @@ async function runTestPass(browser, config) {
   if (isSectionVisibleAfterSkip) {
     throw new Error('Skip logs button failed to hide ending logs section');
   }
-  console.log('  [PASS] All 8 logs shown in order, Nova reveal line verified, Skip button hides logs');
+  const endingRevealLine = page.locator('[data-testid="ending-reveal-line"]');
+  const isRevealLineVisible = await endingRevealLine.isVisible();
+  if (!isRevealLineVisible) {
+    throw new Error('ending-reveal-line is not visible after clicking skip-logs-btn!');
+  }
+  console.log('  [PASS] All 8 logs shown in order, Nova reveal line verified, Skip button hides logs while ending-reveal-line is visible');
 
   // -------------------------------------------------------------------------
   // 11. PLAY AGAIN (NEW MISSION RESTART)
@@ -1480,6 +2263,72 @@ async function runTestPass(browser, config) {
   });
   page2.on('pageerror', (err) => console.log(`[Page2 Uncaught Error]`, err));
   await page2.goto(`http://127.0.0.1:${PORT}/?debug=1`, { waitUntil: 'domcontentloaded' });
+
+  // 5A. Check 5: Save with collectedPartIds [''] and no recoveredLogIds -> Codex / derived logs shows 0 logs
+  console.log('  Testing Check 5: save with collectedPartIds [\"\"] produces 0 logs...');
+  await page2.evaluate(() => {
+    localStorage.clear();
+    const saveEmpty = {
+      version: 2,
+      currentChapter: 0,
+      worldSave: {
+        version: 2,
+        seed: 19970704,
+        playerTileX: 64,
+        playerTileY: 64,
+        playerFacing: 'down',
+        collectedPartIds: [''],
+        completedEquipmentIds: [],
+        exploredFog: { revealedCount: 150, revealedChunkKeys: [] },
+        shipRepaired: false,
+        playTimeSeconds: 10,
+        lastSavedAt: Date.now(),
+      }
+    };
+    localStorage.setItem('beyond_depth_save_v2', JSON.stringify(saveEmpty));
+  });
+  await page2.reload({ waitUntil: 'domcontentloaded' });
+  const progressEmpty = await page2.evaluate(() => window.__getSavedProgress?.() || null);
+  const logsEmpty = progressEmpty?.worldSave?.recoveredLogIds || [];
+  console.log('  Recovered logs with [\"\"]:', logsEmpty);
+  if (logsEmpty.length !== 0) {
+    throw new Error(`Expected 0 logs for collectedPartIds [\"\"], got: ${JSON.stringify(logsEmpty)}`);
+  }
+  console.log('  [PASS] collectedPartIds [\"\"] correctly derived 0 logs');
+
+  // 5B. Check 5: Save with collectedPartIds ['part_drive_motor'] -> produces exactly 1 log
+  console.log('  Testing Check 5: save with collectedPartIds [\"part_drive_motor\"] produces 1 log...');
+  await page2.evaluate(() => {
+    localStorage.clear();
+    const saveOne = {
+      version: 2,
+      currentChapter: 0,
+      worldSave: {
+        version: 2,
+        seed: 19970704,
+        playerTileX: 64,
+        playerTileY: 64,
+        playerFacing: 'down',
+        collectedPartIds: ['part_drive_motor'],
+        completedEquipmentIds: [],
+        exploredFog: { revealedCount: 150, revealedChunkKeys: [] },
+        shipRepaired: false,
+        playTimeSeconds: 20,
+        lastSavedAt: Date.now(),
+      }
+    };
+    localStorage.setItem('beyond_depth_save_v2', JSON.stringify(saveOne));
+  });
+  await page2.reload({ waitUntil: 'domcontentloaded' });
+  const progressOne = await page2.evaluate(() => window.__getSavedProgress?.() || null);
+  const logsOne = progressOne?.worldSave?.recoveredLogIds || [];
+  console.log('  Recovered logs with [\"part_drive_motor\"]:', logsOne);
+  if (logsOne.length !== 1 || !logsOne.includes('log_sojourner')) {
+    throw new Error(`Expected 1 log ('log_sojourner') for [\"part_drive_motor\"], got: ${JSON.stringify(logsOne)}`);
+  }
+  console.log('  [PASS] collectedPartIds [\"part_drive_motor\"] correctly derived 1 log');
+
+  // 5C. Save with legacy IDs ['rover_wheel', 'solar_panel']
   await page2.evaluate(() => {
     localStorage.clear();
     const save = {
@@ -1552,6 +2401,48 @@ async function runTestPass(browser, config) {
   console.log(`Finished ${name.toUpperCase()} Pass successfully!`);
 }
 
+/**
+ * Check 4: Production Build Debug Hooks Gate Audit (WITHOUT ?debug=1)
+ * Asserts typeof window.__blueberryAutoplay / __craterAutoplay / __marathonAutoplay === 'undefined'
+ */
+async function runProductionDebugHooksGateAudit(browser) {
+  console.log('\n======================================================');
+  console.log('Verification 4: Production Build Debug Hooks Gate Audit (WITHOUT ?debug=1)');
+  console.log('======================================================');
+
+  const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
+  // Load page WITHOUT ?debug=1 from the production dist bundle served on PORT
+  await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1000);
+
+  const debugHooksAudit = await page.evaluate(() => {
+    return {
+      blueberry: typeof window.__blueberryAutoplay,
+      crater: typeof window.__craterAutoplay,
+      marathon: typeof window.__marathonAutoplay,
+      insight: typeof window.__insightAutoplay,
+      sojourner: typeof window.__sojournerAutoplay,
+      triggerWin: typeof window.__triggerMiniGameWin,
+      triggerAssist: typeof window.__triggerMiniGameAssist,
+    };
+  });
+
+  console.log('  Debug hooks in production without ?debug=1:', debugHooksAudit);
+  if (
+    debugHooksAudit.blueberry !== 'undefined' ||
+    debugHooksAudit.crater !== 'undefined' ||
+    debugHooksAudit.marathon !== 'undefined' ||
+    debugHooksAudit.insight !== 'undefined' ||
+    debugHooksAudit.sojourner !== 'undefined' ||
+    debugHooksAudit.triggerWin !== 'undefined' ||
+    debugHooksAudit.triggerAssist !== 'undefined'
+  ) {
+    throw new Error(`Production debug hooks exposed without ?debug=1: ${JSON.stringify(debugHooksAudit)}`);
+  }
+  console.log('  [PASS] All autoplay and mini-game debug hooks are undefined in production without ?debug=1');
+  await page.close();
+}
+
 async function runAll() {
   await new Promise((res) => server.listen(PORT, '127.0.0.1', res));
   console.log(`Static server running on http://127.0.0.1:${PORT}`);
@@ -1562,7 +2453,10 @@ async function runAll() {
     // 0. Player walk-up zoom screenshot & A3 assertion
     await runPlayerSpriteAndA3Audit(browser);
 
-    // 1. Desktop Pass: 1366 x 768
+    // 1. Production Build Debug Hooks Gate Audit (WITHOUT ?debug=1)
+    await runProductionDebugHooksGateAudit(browser);
+
+    // 2. Desktop Pass: 1366 x 768
     await runTestPass(browser, {
       name: 'desktop',
       width: 1366,
@@ -1570,7 +2464,7 @@ async function runAll() {
       isMobile: false,
     });
 
-    // 2. Mobile Pass: 390 x 844
+    // 3. Mobile Pass: 390 x 844
     await runTestPass(browser, {
       name: 'mobile',
       width: 390,

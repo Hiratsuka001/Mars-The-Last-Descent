@@ -99,15 +99,42 @@ export function getLogForPart(partId: string): LogEntry | undefined {
   return Object.values(LOG_ENTRIES).find((l) => l.partId === partId);
 }
 
+// Explicit legacy mapping table for older saves (e.g. v1 / v2 save formats)
+const LEGACY_PART_MAP: Record<string, string> = {
+  rover_wheel: 'part_drive_motor',
+  solar_panel: 'part_solar_bus',
+};
+
+const LEGACY_WRECK_MAP: Record<string, string> = {
+  sojourner_rover: 'eq_sojourner',
+  opportunity_rover: 'eq_opportunity',
+  insight_lander: 'eq_insight',
+  spirit_rover: 'eq_spirit',
+  deep_space_dish: 'eq_deep_space_dish',
+  phoenix_lander: 'eq_phoenix',
+  apollo_lrv: 'eq_lrv_buggy',
+  surveyor_lander: 'eq_surveyor',
+};
+
 export function deriveLogIdsFromParts(partIds: string[] = [], wreckIds: string[] = []): string[] {
   const result: string[] = [];
+  const normalizedParts = new Set<string>();
+  for (const p of partIds) {
+    if (typeof p === 'string' && p.length > 0) {
+      normalizedParts.add(LEGACY_PART_MAP[p] || p);
+    }
+  }
+
+  const normalizedWrecks = new Set<string>();
+  for (const w of wreckIds) {
+    if (typeof w === 'string' && w.length > 0) {
+      normalizedWrecks.add(LEGACY_WRECK_MAP[w] || w);
+    }
+  }
+
   for (const log of ORDERED_LOGS) {
-    const hasPart = partIds.some(
-      (p) => p === log.partId || p.includes(log.wreckId.replace('eq_', '')) || log.partId.includes(p)
-    );
-    const hasWreck = wreckIds.some(
-      (w) => w === log.wreckId || w.includes(log.wreckId.replace('eq_', '')) || log.wreckId.includes(w)
-    );
+    const hasPart = normalizedParts.has(log.partId);
+    const hasWreck = normalizedWrecks.has(log.wreckId);
     if (hasPart || hasWreck) {
       if (!result.includes(log.id)) {
         result.push(log.id);

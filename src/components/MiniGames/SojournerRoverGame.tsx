@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MiniGameShell } from './MiniGameShell';
 import { sound } from '../../systems/audio';
 import { isReduceMotionEnabled } from '../../systems/saveManager';
+import { isDebugMode } from '../../systems/debug';
 import { ArrowUp, RotateCcw, RotateCw, Play, Undo2 } from 'lucide-react';
 
 interface SojournerRoverGameProps {
@@ -283,7 +284,7 @@ const SojournerContent: React.FC<SojournerContentProps> = ({
 
   // Autoplay hook for QA runner verification
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && isDebugMode) {
       (window as any).__sojournerAutoplay = async () => {
         setCommands(OPTIMAL_ASSIST_PATH);
         await new Promise((r) => setTimeout(r, 100));

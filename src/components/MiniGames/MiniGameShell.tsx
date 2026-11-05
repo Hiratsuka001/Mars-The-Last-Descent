@@ -3,6 +3,7 @@ import { sound } from '../../systems/audio';
 import { isReduceMotionEnabled } from '../../systems/saveManager';
 import { NovaAvatar } from '../NovaAvatar';
 import { DID_YOU_KNOW } from '../../data/didYouKnow';
+import { isDebugMode } from '../../systems/debug';
 import { X, Sparkles, Award, Star, RotateCcw } from 'lucide-react';
 
 export interface MiniGameShellRenderProps {
@@ -17,6 +18,7 @@ export interface MiniGameShellProps {
   wreckId: string;
   title: string;
   instruction: string;
+  winTitle?: string;
   onWin: () => void;
   onExit: () => void;
   onRetry?: () => void;
@@ -31,6 +33,7 @@ export const MiniGameShell: React.FC<MiniGameShellProps> = ({
   wreckId,
   title,
   instruction,
+  winTitle,
   onWin,
   onExit,
   onRetry,
@@ -96,18 +99,20 @@ export const MiniGameShell: React.FC<MiniGameShellProps> = ({
 
   // Expose debug triggers for QA and development
   useEffect(() => {
-    (window as any).__triggerMiniGameAssist = () => {
-      setAssistRequested(true);
-      return true;
-    };
-    (window as any).__triggerMiniGameWin = (winStars?: 1 | 2 | 3) => {
-      handleWin({ stars: winStars || 3 });
-      return true;
-    };
-    return () => {
-      delete (window as any).__triggerMiniGameAssist;
-      delete (window as any).__triggerMiniGameWin;
-    };
+    if (isDebugMode) {
+      (window as any).__triggerMiniGameAssist = () => {
+        setAssistRequested(true);
+        return true;
+      };
+      (window as any).__triggerMiniGameWin = (winStars?: 1 | 2 | 3) => {
+        handleWin({ stars: winStars || 3 });
+        return true;
+      };
+      return () => {
+        delete (window as any).__triggerMiniGameAssist;
+        delete (window as any).__triggerMiniGameWin;
+      };
+    }
   }, [handleWin]);
 
   const showAssistButton = !hasWon && (failCount >= 3 || assistRequested);
@@ -185,7 +190,7 @@ export const MiniGameShell: React.FC<MiniGameShellProps> = ({
             >
               <div className="flex items-center justify-center gap-2 text-emerald-400 font-bold text-sm sm:text-base font-mono">
                 <Award size={20} className="animate-bounce" />
-                <span>{wreckId === 'eq_opportunity' ? 'MARATHON FINISHED!' : 'MISSION SUCCESS!'}</span>
+                <span>{winTitle || 'MISSION SUCCESS!'}</span>
               </div>
 
               {/* Stars Display */}
