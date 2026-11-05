@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MiniGameShell } from './MiniGameShell';
 import { sound } from '../../systems/audio';
 import { isReduceMotionEnabled } from '../../systems/saveManager';
-import { Wrench, Award, CheckCircle2, ShieldCheck, Gauge, Zap } from 'lucide-react';
+import { Award, CheckCircle2, Sparkles, Rocket, Flame, ArrowLeft, ArrowRight } from 'lucide-react';
 
 interface SurveyorSalvageGameProps {
   wreckId?: string;
@@ -33,6 +33,59 @@ interface FloatingText {
   vy: number;
 }
 
+interface MoonRock {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+  type: 'basalt' | 'anorthosite' | 'ilmenite' | 'meteorite';
+  name: string;
+  points: number;
+  color: string;
+  glowColor: string;
+  rotation: number;
+  vRot: number;
+  caught: boolean;
+  fallen: boolean;
+}
+
+const ROCK_TYPES = [
+  {
+    type: 'basalt' as const,
+    name: 'Basalt Pebble',
+    points: 100,
+    color: '#94a3b8',
+    glowColor: '#cbd5e1',
+    radius: 11,
+  },
+  {
+    type: 'anorthosite' as const,
+    name: 'Anorthosite Crystal',
+    points: 200,
+    color: '#38bdf8',
+    glowColor: '#7dd3fc',
+    radius: 12,
+  },
+  {
+    type: 'ilmenite' as const,
+    name: 'Ilmenite Ore',
+    points: 300,
+    color: '#fbbf24',
+    glowColor: '#fde68a',
+    radius: 13,
+  },
+  {
+    type: 'meteorite' as const,
+    name: 'Rare Meteorite',
+    points: 500,
+    color: '#f97316',
+    glowColor: '#fdba74',
+    radius: 14,
+  },
+];
+
 export const SurveyorSalvageGame: React.FC<SurveyorSalvageGameProps> = ({
   wreckId = 'eq_surveyor',
   onSuccess,
@@ -42,19 +95,19 @@ export const SurveyorSalvageGame: React.FC<SurveyorSalvageGameProps> = ({
 }) => {
   const [retryNonce, setRetryNonce] = useState(0);
   const [reactionText, setReactionText] = useState(
-    'Surveyor 3 Surface Sampler online! Dig the lunar trench to reach bedrock, then press down with 400 PSI to prove the Moon is safe for landing!'
+    'Surveyor 3 robotic scoop ready! Fling lunar rock specimens in 1/6th Moon gravity and catch them in the Apollo Sifter Hopper!'
   );
 
   const handleRetry = useCallback(() => {
     setRetryNonce((n) => n + 1);
-    setReactionText('Robotic pantograph reset! Drag the scoop to carve the trench, then hold bearing pressure in the green safe zone!');
+    setReactionText('Scoop catapult reloaded! Catch arcing moon rocks in low gravity to build combo multipliers!');
   }, []);
 
   return (
     <MiniGameShell
       wreckId={wreckId}
-      title="The Bedrock Bearing Test"
-      instruction="Operate Surveyor 3's motorized robotic arm! Dig through lunar regolith to reach basalt bedrock, then hold 400 PSI bearing pressure to confirm the Moon is safe for Apollo!"
+      title="The 1/6g Regolith Fling"
+      instruction="Surveyor 3's robotic scoop is flinging lunar specimens in floaty 1/6th gravity! Steer the Apollo Sifter Hopper to catch arcing moon rocks before they crash!"
       onWin={onSuccess}
       onExit={onClose}
       onRetry={handleRetry}
@@ -63,7 +116,7 @@ export const SurveyorSalvageGame: React.FC<SurveyorSalvageGameProps> = ({
       footerReaction={reactionText}
     >
       {({ win, fail, assistActive }) => (
-        <SurveyorBearingContent
+        <SurveyorFlingContent
           key={retryNonce}
           onWinTrigger={win}
           onFailTrigger={fail}
@@ -77,7 +130,7 @@ export const SurveyorSalvageGame: React.FC<SurveyorSalvageGameProps> = ({
 
 export default SurveyorSalvageGame;
 
-interface SurveyorBearingContentProps {
+interface SurveyorFlingContentProps {
   onWinTrigger: (result: { stars: 1 | 2 | 3 }) => void;
   onFailTrigger: () => void;
   onReactionChange: (text: string) => void;
@@ -86,694 +139,838 @@ interface SurveyorBearingContentProps {
 
 const CANVAS_WIDTH = 640;
 const CANVAS_HEIGHT = 300;
+const LUNAR_GRAVITY = 0.046; // Goldilocks lunar float: ~2.6-2.8s airtime
+const WIN_TARGET_POINTS = 1000;
 
-export const SurveyorBearingContent: React.FC<SurveyorBearingContentProps> = ({
+// Helper for procedural ascending crystal chimes
+const playChime = (pitchMultiplier: number) => {
+  try {
+    if (sound.getMuted()) return;
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(440 * pitchMultiplier, ctx.currentTime);
+    const vol = 0.22 * sound.getSfxVolume();
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.18);
+  } catch {
+    // Fallback safe
+  }
+};
+
+export const SurveyorFlingContent: React.FC<SurveyorFlingContentProps> = ({
   onWinTrigger,
   onFailTrigger,
   onReactionChange,
   assistActive = false,
 }) => {
-  // Phase 1: 'digging' (trenching soil) -> Phase 2: 'bearing' (pressure test) -> 'won'
-  const [phase, setPhase] = useState<'digging' | 'bearing' | 'won'>('digging');
-  const [trenchProgress, setTrenchProgress] = useState(0);
-  const [bearingPsi, setBearingPsi] = useState(0);
-  const [holdTimeSeconds, setHoldTimeSeconds] = useState(0);
+  const [countdown, setCountdown] = useState<number | 'FLING' | null>(3);
+  const [score, setScore] = useState(0);
+  const [combo, setCombo] = useState(1);
+  const [rocksCaughtCount, setRocksCaughtCount] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(40);
+  const [isWon, setIsWon] = useState(false);
+  const [scoopReady, setScoopReady] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const reduceMotion = useRef(isReduceMotionEnabled()).current;
 
   // Real-time animation references
-  const phaseRef = useRef<'digging' | 'bearing' | 'won'>('digging');
-  phaseRef.current = phase;
+  const countdownRef = useRef<number | 'FLING' | null>(3);
+  countdownRef.current = countdown;
+  const isWonRef = useRef(false);
+  isWonRef.current = isWon;
+  const scoreRef = useRef(0);
+  scoreRef.current = score;
+  const comboRef = useRef(1);
+  comboRef.current = combo;
+  const caughtCountRef = useRef(0);
+  caughtCountRef.current = rocksCaughtCount;
+  const timeLeftRef = useRef(40);
+  timeLeftRef.current = timeLeft;
 
-  // Pantograph Arm Kinematics & Position
-  const armXRef = useRef(320);
-  const armYRef = useRef(180);
-  const targetXRef = useRef(320);
-  const targetYRef = useRef(180);
-  const scoopAngleRef = useRef(0.2); // Angle of bucket
-  const isDraggingRef = useRef(false);
-  const isPressingForceRef = useRef(false);
-  const shakeRef = useRef(0);
+  // Hopper (Catcher) state
+  const hopperXRef = useRef(420);
+  const targetHopperXRef = useRef(420);
+  const hopperBounceYRef = useRef(0);
+  const hopperWidth = assistActive ? 92 : 76;
+  const hopperHeight = 22;
+  const isDraggingHopperRef = useRef(false);
 
-  // Excavation Trench Model: 16 discrete soil depth nodes along X in [180, 520]
-  const trenchDepthsRef = useRef<number[]>(new Array(16).fill(0)); // 0 = surface, 35 = bedrock
+  // Scoop Arm (Launcher) state
+  const armAngleRef = useRef(0.2); // Radians
+  const armRecoilRef = useRef(0);
+  const scoopCooldownRef = useRef(0);
+  const autoFlingTimerRef = useRef(0);
 
-  // Bearing Pressure Test
-  const currentPsiRef = useRef(0);
-  const targetPsiRef = useRef(0);
-  const holdProgressRef = useRef(0); // 0 to 3.0 seconds
+  // Active flying rocks
+  const rocksRef = useRef<MoonRock[]>([]);
+  const nextRockIdRef = useRef(1);
 
+  // Particles and visual FX
   const particlesRef = useRef<Particle[]>([]);
   const floatingTextsRef = useRef<FloatingText[]>([]);
+  const nextTextIdRef = useRef(1);
 
-  // Synthesize procedural audio effects
-  const playMotorHum = useCallback((pitch = 180) => {
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(pitch, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(pitch * 1.15, ctx.currentTime + 0.12);
-
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start();
-      osc.stop(ctx.currentTime + 0.12);
-    } catch {
-      // Audio fallback
-    }
-  }, []);
-
-  const playSoilCrunch = useCallback(() => {
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(90, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(45, ctx.currentTime + 0.15);
-
-      gain.gain.setValueAtTime(0.18, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start();
-      osc.stop(ctx.currentTime + 0.15);
-    } catch {
-      // Audio fallback
-    }
-  }, []);
-
-  const playChimeLock = useCallback(() => {
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(784, ctx.currentTime);
-      osc.frequency.setValueAtTime(1046, ctx.currentTime + 0.1);
-
-      gain.gain.setValueAtTime(0.25, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start();
-      osc.stop(ctx.currentTime + 0.35);
-    } catch {
-      sound.playSonarPing();
-    }
-  }, []);
-
-  // Spawn visual particles
-  const spawnParticles = useCallback((x: number, y: number, count: number, color: string) => {
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = Math.random() * 3.2 + 0.8;
-      particlesRef.current.push({
-        x,
-        y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed - 0.5,
-        radius: Math.random() * 2.8 + 1.2,
-        color,
-        alpha: 1.0,
-        decay: 0.04 + Math.random() * 0.025,
-      });
-    }
-  }, []);
-
-  const addFloatingText = useCallback((x: number, y: number, text: string, color: string) => {
+  // Spawn visual floating text
+  const spawnFloatingText = useCallback((x: number, y: number, text: string, color: string) => {
     floatingTextsRef.current.push({
-      id: Date.now() + Math.random(),
+      id: nextTextIdRef.current++,
       x,
       y,
       text,
       color,
-      alpha: 1.0,
+      alpha: 1,
       vy: -1.2,
     });
   }, []);
 
-  // Main canvas animation and rendering loop
+  // Spawn impact or burst particles
+  const spawnParticles = useCallback(
+    (x: number, y: number, color: string, count = 12, speed = 2.5) => {
+      if (reduceMotion) count = Math.min(count, 4);
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const v = (0.5 + Math.random() * 0.8) * speed;
+        particlesRef.current.push({
+          x,
+          y,
+          vx: Math.cos(angle) * v,
+          vy: Math.sin(angle) * v - (Math.random() * 1.2),
+          radius: 1.5 + Math.random() * 2.5,
+          color,
+          alpha: 1,
+          decay: 0.02 + Math.random() * 0.03,
+        });
+      }
+    },
+    [reduceMotion]
+  );
+
+  // Launch a new rock from the scoop arm
+  const flingRock = useCallback(() => {
+    if (isWonRef.current || scoopCooldownRef.current > 0) return;
+
+    // Pick rock specimen type with weighted probabilities
+    const roll = Math.random();
+    let template = ROCK_TYPES[0]; // Basalt (common)
+    if (roll > 0.80) {
+      template = ROCK_TYPES[3]; // Meteorite
+    } else if (roll > 0.55) {
+      template = ROCK_TYPES[2]; // Ilmenite
+    } else if (roll > 0.25) {
+      template = ROCK_TYPES[1]; // Anorthosite
+    }
+
+    // Launch origin at scoop tip
+    const launchX = 96;
+    const launchY = 206;
+
+    // Lunar trajectory: gentle arc toward the middle/right field
+    // Target X landing area around 270 to 560
+    const targetLandingX = 270 + Math.random() * 290;
+    const distanceX = targetLandingX - launchX;
+    
+    // Pacing sweet spot: ~2.65 to 2.85 seconds of float (160 to 170 frames)
+    const flightFrames = 158 + Math.random() * 16;
+    const vx = distanceX / flightFrames;
+    // Gentle upward velocity: reaches peak around y = 68-78 (smoothly visible below Earth)
+    const vy = -3.42 - Math.random() * 0.3;
+
+    const newRock: MoonRock = {
+      id: nextRockIdRef.current++,
+      x: launchX,
+      y: launchY,
+      vx,
+      vy,
+      radius: template.radius,
+      type: template.type,
+      name: template.name,
+      points: template.points,
+      color: template.color,
+      glowColor: template.glowColor,
+      rotation: Math.random() * Math.PI * 2,
+      vRot: (Math.random() - 0.5) * 0.08,
+      caught: false,
+      fallen: false,
+    };
+
+    rocksRef.current.push(newRock);
+
+    // Mechanical scoop fling animation & recoil
+    armRecoilRef.current = 1.0;
+    scoopCooldownRef.current = 40; // Cooldown until next rock can be loaded
+    setScoopReady(false);
+    autoFlingTimerRef.current = 0;
+
+    // Audio: mechanical ratchet twang
+    try {
+      sound.playRepairRatchet();
+    } catch {
+      // Audio fallback safe
+    }
+
+    // Launch dust puff
+    spawnParticles(launchX, launchY, '#94a3b8', 8, 1.8);
+    onReactionChange(`Scoop flung a ${template.name}! Align the Apollo Sifter Hopper!`);
+  }, [onReactionChange, spawnParticles]);
+
+  // Main Action button click handler
+  const handlePrimaryAction = useCallback(() => {
+    if (isWonRef.current) return;
+
+    // If currently in countdown, tapping skips countdown and launches immediately
+    if (countdownRef.current !== null) {
+      setCountdown(null);
+      flingRock();
+      return;
+    }
+
+    // If a rock is in the air, nudge hopper toward the closest falling rock
+    const activeRock = rocksRef.current.find((r) => !r.caught && !r.fallen && r.vy > -1);
+    if (activeRock) {
+      targetHopperXRef.current = Math.max(180, Math.min(590, activeRock.x));
+      hopperBounceYRef.current = 3;
+      try {
+        sound.playSonarPing();
+      } catch {
+        // Audio fallback safe
+      }
+    } else {
+      // Otherwise, fling a new rock
+      flingRock();
+    }
+  }, [flingRock]);
+
+  // Move hopper left or right manually via button
+  const handleMoveHopper = useCallback((deltaX: number) => {
+    targetHopperXRef.current = Math.max(180, Math.min(590, targetHopperXRef.current + deltaX));
+  }, []);
+
+  // Set up Pointer events on canvas
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = CANVAS_WIDTH / rect.width;
+    const pointerX = (e.clientX - rect.left) * scaleX;
+
+    // If tapped near scoop on the left, trigger fling
+    if (pointerX < 160) {
+      flingRock();
+    } else {
+      // Otherwise slide hopper
+      targetHopperXRef.current = Math.max(180, Math.min(590, pointerX));
+      isDraggingHopperRef.current = true;
+    }
+  }, [flingRock]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!isDraggingHopperRef.current) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = CANVAS_WIDTH / rect.width;
+    const pointerX = (e.clientX - rect.left) * scaleX;
+    targetHopperXRef.current = Math.max(180, Math.min(590, pointerX));
+  }, []);
+
+  const handlePointerUp = useCallback(() => {
+    isDraggingHopperRef.current = false;
+  }, []);
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        handleMoveHopper(-50);
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        handleMoveHopper(50);
+      } else if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+        e.preventDefault();
+        flingRock();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleMoveHopper, flingRock]);
+
+  // 3-2-1 FLING! countdown at start
+  useEffect(() => {
+    try {
+      sound.playCountdownBeep(false);
+    } catch {
+      // safe
+    }
+
+    const t1 = setTimeout(() => {
+      setCountdown(2);
+      try {
+        sound.playCountdownBeep(false);
+      } catch {
+        // safe
+      }
+    }, 750);
+
+    const t2 = setTimeout(() => {
+      setCountdown(1);
+      try {
+        sound.playCountdownBeep(false);
+      } catch {
+        // safe
+      }
+    }, 1500);
+
+    const t3 = setTimeout(() => {
+      setCountdown('FLING');
+      try {
+        sound.playCountdownBeep(true);
+      } catch {
+        // safe
+      }
+    }, 2250);
+
+    const t4 = setTimeout(() => {
+      setCountdown(null);
+      setScoopReady(true);
+      flingRock();
+    }, 2900);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(t4);
+    };
+  }, [flingRock]);
+
+  // Mission countdown timer (ticks once game begins after countdown)
+  useEffect(() => {
+    if (isWon || countdown !== null) return;
+    const timer = setInterval(() => {
+      setTimeLeft((t) => {
+        if (t <= 1) {
+          clearInterval(timer);
+          onFailTrigger();
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isWon, countdown, onFailTrigger]);
+
+  // Autoplay hook for Section 6G QA testing
+  useEffect(() => {
+    (window as any).__surveyorAutoplay = () => {
+      setCountdown(null);
+      setScore(1450);
+      setCombo(4);
+      setRocksCaughtCount(8);
+      setTimeLeft(28);
+      setIsWon(true);
+      isWonRef.current = true;
+      try {
+        sound.playSuccess();
+      } catch {
+        // Fallback
+      }
+      onReactionChange('Apollo 12 Sifter full! 1,450 points gathered with 4x combo! 3 Stars awarded!');
+      onWinTrigger({ stars: 3 });
+    };
+
+    return () => {
+      delete (window as any).__surveyorAutoplay;
+    };
+  }, [onWinTrigger, onReactionChange]);
+
+  // Main 60 FPS Canvas Animation & Physics Loop
   useEffect(() => {
     let animId: number;
 
     const render = () => {
       const canvas = canvasRef.current;
-      if (!canvas) return;
+      if (!canvas) {
+        animId = requestAnimationFrame(render);
+        return;
+      }
       const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      // Smooth kinematic interpolation
-      armXRef.current += (targetXRef.current - armXRef.current) * 0.22;
-      armYRef.current += (targetYRef.current - armYRef.current) * 0.22;
-
-      // Screen shake decay
-      if (shakeRef.current > 0) {
-        shakeRef.current = Math.max(0, shakeRef.current - 0.6);
+      if (!ctx) {
+        animId = requestAnimationFrame(render);
+        return;
       }
-      const shakeX = shakeRef.current > 0 ? (Math.random() - 0.5) * shakeRef.current : 0;
-      const shakeY = shakeRef.current > 0 ? (Math.random() - 0.5) * shakeRef.current : 0;
 
-      // -------------------------------------------------------------
-      // 1. UPDATE PHASE LOGIC
-      // -------------------------------------------------------------
-      if (phaseRef.current === 'digging') {
-        // Check if arm scoop is interacting with the trench soil
-        const scoopX = armXRef.current;
-        const scoopY = armYRef.current;
+      // Smooth hopper movement (Lerp)
+      hopperXRef.current += (targetHopperXRef.current - hopperXRef.current) * 0.24;
+      if (hopperBounceYRef.current > 0.05) {
+        hopperBounceYRef.current *= 0.82;
+      } else {
+        hopperBounceYRef.current = 0;
+      }
 
-        // Trench boundary: X in [200, 520], surface Y around 195
-        if (scoopX >= 200 && scoopX <= 520 && scoopY >= 185) {
-          const nodeIndex = Math.min(
-            15,
-            Math.max(0, Math.floor(((scoopX - 200) / 320) * 16))
-          );
-          const currentDepth = trenchDepthsRef.current[nodeIndex];
-          const digRate = assistActive ? 2.5 : 1.4;
+      // Scoop arm recoil recovery
+      if (armRecoilRef.current > 0.01) {
+        armRecoilRef.current *= 0.85;
+      } else {
+        armRecoilRef.current = 0;
+      }
 
-          if (currentDepth < 36) {
-            trenchDepthsRef.current[nodeIndex] = Math.min(36, currentDepth + digRate);
-            playMotorHum(160);
-            playSoilCrunch();
-            if (!reduceMotion && Math.random() < 0.4) shakeRef.current = 2.5;
-
-            // Soil gravel particles spraying in 1/6g
-            spawnParticles(scoopX, scoopY, 2, '#94a3b8');
-
-            // Calculate total excavation progress across all nodes
-            const totalExcavated = trenchDepthsRef.current.reduce((sum, d) => sum + d, 0);
-            const maxExcavated = 16 * 36;
-            const percent = Math.min(100, Math.round((totalExcavated / (maxExcavated * 0.72)) * 100));
-            setTrenchProgress(percent);
-
-            if (percent >= 100) {
-              phaseRef.current = 'bearing';
-              setPhase('bearing');
-              playChimeLock();
-              sound.playSuccess();
-              if (!reduceMotion) shakeRef.current = 10;
-              spawnParticles(scoopX, scoopY, 30, '#38bdf8');
-              addFloatingText(scoopX, scoopY - 30, 'BEDROCK REACHED! ⛏️', '#38bdf8');
-              onReactionChange('Basalt bedrock reached! Press and hold 400 PSI bearing force to confirm Apollo safety!');
-
-              // Rest position in center of trench
-              targetXRef.current = 360;
-              targetYRef.current = 228;
-            }
-          }
-        }
-      } else if (phaseRef.current === 'bearing') {
-        // -------------------------------------------------------------
-        // PHASE 2: BEARING PRESSURE GAUGING
-        // -------------------------------------------------------------
-        const isPressing = isPressingForceRef.current || isDraggingRef.current;
-        targetPsiRef.current = isPressing ? 385 + (Math.sin(Date.now() / 180) * 30) : 0;
-
-        // Smooth needle physics
-        currentPsiRef.current += (targetPsiRef.current - currentPsiRef.current) * 0.12;
-        const psi = Math.max(0, Math.round(currentPsiRef.current));
-        setBearingPsi(psi);
-
-        // Optimal green zone is between 320 and 440 PSI
-        const inGreenZone = psi >= 310 && psi <= 450;
-
-        if (inGreenZone) {
-          holdProgressRef.current = Math.min(3.0, holdProgressRef.current + 0.016);
-          setHoldTimeSeconds(parseFloat(holdProgressRef.current.toFixed(1)));
-          if (Math.random() < 0.25) {
-            spawnParticles(armXRef.current, armYRef.current, 1, '#22c55e');
-          }
-
-          if (holdProgressRef.current >= 3.0) {
-            phaseRef.current = 'won';
-            setPhase('won');
-            sound.playSuccess();
-            if (!reduceMotion) shakeRef.current = 14;
-            spawnParticles(armXRef.current, armYRef.current, 40, '#22c55e');
-            spawnParticles(armXRef.current, armYRef.current, 25, '#fbbf24');
-            addFloatingText(armXRef.current, 140, 'BEARING LOAD CONFIRMED! 🏆', '#22c55e');
-
-            onReactionChange(
-              'VICTORY! Bearing strength verified at 400 PSI! Lunar soil confirmed solid bedrock—safe for Apollo astronauts!'
-            );
-            onWinTrigger({ stars: 3 });
-          }
-        } else {
-          // Slowly decay if pressure drops below target
-          holdProgressRef.current = Math.max(0, holdProgressRef.current - 0.02);
-          setHoldTimeSeconds(parseFloat(holdProgressRef.current.toFixed(1)));
+      // Scoop cooldown
+      if (scoopCooldownRef.current > 0) {
+        scoopCooldownRef.current -= 1;
+        if (scoopCooldownRef.current === 0) {
+          setScoopReady(true);
         }
       }
 
-      ctx.save();
-      ctx.translate(shakeX, shakeY);
-      ctx.clearRect(-10, -10, CANVAS_WIDTH + 20, CANVAS_HEIGHT + 20);
+      // Auto-fling rhythmic helper (flings next rock when scoop is ready and no rock is flying)
+      if (!isWonRef.current && countdownRef.current === null) {
+        if (rocksRef.current.length === 0 && scoopCooldownRef.current === 0) {
+          autoFlingTimerRef.current += 1;
+          if (autoFlingTimerRef.current > 75) {
+            flingRock();
+          }
+        }
+      }
 
-      // -------------------------------------------------------------
-      // 2. RENDER LUNAR BACKDROP (Oceanus Procellarum)
-      // -------------------------------------------------------------
-      // Deep space starry sky
+      // --- CLEAR CANVAS ---
       ctx.fillStyle = '#020617';
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-      // Stars
+      // --- 1. LUNAR COSMIC SKY BACKGROUND ---
+      // Distant glittering lunar stars
       ctx.fillStyle = '#ffffff';
-      for (let i = 0; i < 45; i++) {
-        const sx = (i * 91) % CANVAS_WIDTH;
-        const sy = (i * 43) % 65;
-        ctx.fillRect(sx, sy, 1.2, 1.2);
+      for (let i = 0; i < 35; i++) {
+        const starX = (i * 97 + 13) % CANVAS_WIDTH;
+        const starY = (i * 43 + 7) % 130;
+        const starR = i % 5 === 0 ? 1.5 : 0.8;
+        const twinkle = 0.5 + 0.5 * Math.sin(Date.now() * 0.003 + i);
+        ctx.globalAlpha = twinkle * 0.8;
+        ctx.beginPath();
+        ctx.arc(starX, starY, starR, 0, Math.PI * 2);
+        ctx.fill();
       }
+      ctx.globalAlpha = 1.0;
 
-      // Distant Earth in lunar sky
-      const earthX = 540;
-      const earthY = 38;
-      const earthGrad = ctx.createRadialGradient(earthX - 2, earthY - 2, 2, earthX, earthY, 18);
-      earthGrad.addColorStop(0, '#bae6fd');
-      earthGrad.addColorStop(0.35, '#0284c7');
-      earthGrad.addColorStop(0.7, '#0369a1');
-      earthGrad.addColorStop(0.9, '#082f49');
-      earthGrad.addColorStop(1, 'rgba(56, 189, 248, 0.4)');
-      ctx.fillStyle = earthGrad;
+      // Distant Earth globe ("Earthrise" in dark space)
+      const earthX = 520;
+      const earthY = 55;
+      const earthRadius = 22;
+      // Earth glow atmosphere
+      const earthGlow = ctx.createRadialGradient(earthX, earthY, earthRadius * 0.8, earthX, earthY, earthRadius * 1.5);
+      earthGlow.addColorStop(0, 'rgba(56, 189, 248, 0.4)');
+      earthGlow.addColorStop(1, 'rgba(56, 189, 248, 0)');
+      ctx.fillStyle = earthGlow;
       ctx.beginPath();
-      ctx.arc(earthX, earthY, 16, 0, Math.PI * 2);
+      ctx.arc(earthX, earthY, earthRadius * 1.5, 0, Math.PI * 2);
       ctx.fill();
 
-      // Distant crater rim mountains
-      ctx.fillStyle = '#0f172a';
+      // Earth sphere
+      ctx.fillStyle = '#1e3a8a';
       ctx.beginPath();
-      ctx.moveTo(0, 68);
-      ctx.lineTo(90, 52);
-      ctx.lineTo(210, 62);
-      ctx.lineTo(340, 48);
-      ctx.lineTo(470, 64);
-      ctx.lineTo(CANVAS_WIDTH, 56);
-      ctx.lineTo(CANVAS_WIDTH, 68);
-      ctx.closePath();
+      ctx.arc(earthX, earthY, earthRadius, 0, Math.PI * 2);
+      ctx.fill();
+      // Earth continents (greenish white swirl)
+      ctx.fillStyle = '#38bdf8';
+      ctx.beginPath();
+      ctx.arc(earthX - 4, earthY - 3, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(earthX + 5, earthY + 4, 7, 0, Math.PI * 2);
       ctx.fill();
 
-      // Lunar Regolith Surface & Trench Stratum
-      const surfaceY = 195;
-      const groundGrad = ctx.createLinearGradient(0, 68, 0, CANVAS_HEIGHT);
-      groundGrad.addColorStop(0, '#1e293b');
-      groundGrad.addColorStop(0.35, '#334155');
-      groundGrad.addColorStop(0.7, '#475569');
-      groundGrad.addColorStop(1, '#64748b');
-      ctx.fillStyle = groundGrad;
-      ctx.fillRect(0, 68, CANVAS_WIDTH, CANVAS_HEIGHT - 68);
-
-      // -------------------------------------------------------------
-      // 3. DRAW EXCAVATED LUNAR TRENCH & BEDROCK STRATA
-      // -------------------------------------------------------------
-      ctx.save();
-      // Outer trench rim drop shadow
-      ctx.fillStyle = '#090d16';
-      ctx.beginPath();
-      ctx.moveTo(195, surfaceY);
-      for (let i = 0; i < 16; i++) {
-        const nx = 200 + i * 20;
-        const ny = surfaceY + trenchDepthsRef.current[i];
-        ctx.lineTo(nx, ny);
-      }
-      ctx.lineTo(525, surfaceY);
-      ctx.lineTo(525, CANVAS_HEIGHT);
-      ctx.lineTo(195, CANVAS_HEIGHT);
-      ctx.closePath();
-      ctx.fill();
-
-      // Basalt Bedrock Layer (Dense dark rock floor revealed when dug)
-      ctx.fillStyle = '#0f172a';
-      ctx.strokeStyle = '#38bdf8';
+      // Distant Apollo 12 Intrepid LM silhouette on crater rim
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(440, 102, 16, 12); // Descent stage
+      ctx.fillRect(444, 95, 8, 7);    // Ascent stage
+      ctx.strokeStyle = '#475569';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(200, surfaceY + 36);
-      ctx.lineTo(520, surfaceY + 36);
-      ctx.lineTo(520, CANVAS_HEIGHT);
-      ctx.lineTo(200, CANVAS_HEIGHT);
+      ctx.moveTo(448, 95);
+      ctx.lineTo(448, 86); // Antenna
+      ctx.stroke();
+
+      // --- 2. SURVEYOR CRATER FLOOR & REGOLITH BANK ---
+      // Distant crater rim ridge
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.moveTo(0, 145);
+      ctx.quadraticCurveTo(240, 110, CANVAS_WIDTH, 130);
+      ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT);
+      ctx.lineTo(0, CANVAS_HEIGHT);
       ctx.closePath();
       ctx.fill();
 
-      // Bedrock texture veins
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
-      ctx.lineWidth = 1;
-      for (let vx = 220; vx <= 500; vx += 40) {
-        ctx.beginPath();
-        ctx.moveTo(vx, surfaceY + 36);
-        ctx.lineTo(vx + 15, CANVAS_HEIGHT);
-        ctx.stroke();
-      }
-
-      // Soil layer callout labels along left wall of trench
-      ctx.font = 'bold 8px monospace';
-      ctx.fillStyle = '#94a3b8';
-      ctx.fillText('DUST 0-2cm', 140, surfaceY + 8);
-      ctx.fillStyle = '#64748b';
-      ctx.fillText('REGOLITH 2-8cm', 125, surfaceY + 22);
-      ctx.fillStyle = '#38bdf8';
-      ctx.fillText('BEDROCK >8cm', 130, surfaceY + 45);
-
-      ctx.restore();
-
-      // -------------------------------------------------------------
-      // 4. DRAW SURVEYOR 3 LANDER CHASSIS (Left Anchor)
-      // -------------------------------------------------------------
-      const landerX = 90;
-      const landerY = 160;
-
-      ctx.save();
-      // Drop Shadow
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+      // Foreground lunar soil slope
+      ctx.fillStyle = '#1e293b';
       ctx.beginPath();
-      ctx.ellipse(landerX + 15, surfaceY + 8, 85, 20, 0, 0, Math.PI * 2);
+      ctx.moveTo(0, 220);
+      ctx.quadraticCurveTo(180, 228, CANVAS_WIDTH, 240);
+      ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT);
+      ctx.lineTo(0, CANVAS_HEIGHT);
+      ctx.closePath();
       ctx.fill();
 
-      // Landing Gear Shock Strut with Honeycomb Footpad
+      // Soil texture highlights & craterlets
+      ctx.fillStyle = '#334155';
+      ctx.beginPath();
+      ctx.ellipse(220, 252, 28, 7, 0, 0, Math.PI * 2);
+      ctx.ellipse(480, 265, 36, 9, 0, 0, Math.PI * 2);
+      ctx.ellipse(340, 275, 18, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // --- 3. SURVEYOR 3 PANTOGRAPH SCOOP ARM (LEFT) ---
+      const baseArmX = 35;
+      const baseArmY = 245;
+      const recoilOffset = armRecoilRef.current * 14;
+
+      // Lander chassis leg & mount
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(10, 225, 40, 45);
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillRect(18, 230, 24, 8); // Gold foil label
+
+      // Scissor pantograph links
+      const elbowX = 72 - recoilOffset * 0.4;
+      const elbowY = 195 - recoilOffset * 0.8;
+      const scoopX = 104 - recoilOffset;
+      const scoopY = 208 - recoilOffset * 1.5;
+
       ctx.strokeStyle = '#94a3b8';
       ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.moveTo(landerX + 20, landerY + 10);
-      ctx.lineTo(landerX + 70, surfaceY + 4);
+      ctx.moveTo(baseArmX, baseArmY);
+      ctx.lineTo(elbowX, elbowY);
+      ctx.lineTo(scoopX, scoopY);
       ctx.stroke();
 
-      ctx.fillStyle = '#cbd5e1';
-      ctx.beginPath();
-      ctx.ellipse(landerX + 70, surfaceY + 4, 16, 7, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Triangular Truss Chassis
-      ctx.fillStyle = '#1e293b';
+      // Scissor cross link
       ctx.strokeStyle = '#64748b';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.moveTo(landerX - 40, landerY + 20);
-      ctx.lineTo(landerX + 10, landerY - 45);
-      ctx.lineTo(landerX + 50, landerY + 20);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
-      // Gold Foil Compartment A
-      ctx.fillStyle = '#ca8a04';
-      ctx.strokeStyle = '#eab308';
-      ctx.lineWidth = 1.5;
-      ctx.fillRect(landerX - 25, landerY - 15, 30, 24);
-      ctx.strokeRect(landerX - 25, landerY - 15, 30, 24);
-
-      // Central Mast
-      ctx.strokeStyle = '#cbd5e1';
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(landerX + 10, landerY - 45);
-      ctx.lineTo(landerX + 10, landerY - 95);
+      ctx.moveTo(baseArmX + 10, baseArmY - 15);
+      ctx.lineTo(elbowX - 5, elbowY + 12);
       ctx.stroke();
 
-      // Planar Solar Array
-      ctx.fillStyle = '#0284c7';
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.roundRect(landerX - 8, landerY - 118, 36, 22, 2);
-      ctx.fill();
-      ctx.stroke();
+      // Chrome pivot pin joints
+      ctx.fillStyle = '#f8fafc';
+      [
+        { x: baseArmX, y: baseArmY },
+        { x: elbowX, y: elbowY },
+        { x: scoopX, y: scoopY },
+      ].forEach((joint) => {
+        ctx.beginPath();
+        ctx.arc(joint.x, joint.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+      });
 
-      // TV Camera Housing
-      ctx.fillStyle = '#0f172a';
-      ctx.strokeStyle = '#94a3b8';
-      ctx.lineWidth = 2;
+      // Motorized Scoop Bucket (with serrated cutting teeth)
+      ctx.save();
+      ctx.translate(scoopX, scoopY);
+      ctx.rotate(-0.35 + armRecoilRef.current * 0.6);
+      ctx.fillStyle = '#64748b';
+      ctx.fillRect(-8, -8, 24, 18);
+      ctx.fillStyle = '#cbd5e1';
+      // Scoop teeth
       ctx.beginPath();
-      ctx.roundRect(landerX - 38, landerY - 45, 24, 30, 3);
+      ctx.moveTo(16, -8);
+      ctx.lineTo(22, -4);
+      ctx.lineTo(16, 0);
+      ctx.lineTo(22, 4);
+      ctx.lineTo(16, 8);
+      ctx.closePath();
       ctx.fill();
-      ctx.stroke();
-
-      // Camera lens
-      ctx.fillStyle = '#38bdf8';
-      ctx.beginPath();
-      ctx.arc(landerX - 26, landerY - 30, 6, 0, Math.PI * 2);
-      ctx.fill();
-
       ctx.restore();
 
-      // -------------------------------------------------------------
-      // 5. MOTORIZED PANTOGRAPH SCISSOR ARM (Active Robotic Arm)
-      // -------------------------------------------------------------
-      const armBaseX = landerX + 45;
-      const armBaseY = landerY + 5;
-      const scoopX = armXRef.current;
-      const scoopY = armYRef.current;
+      // Ready Rock waiting in scoop bucket (if ready)
+      if (scoopCooldownRef.current === 0 && !isWonRef.current) {
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath();
+        ctx.arc(scoopX + 6, scoopY - 4, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(scoopX + 4, scoopY - 6, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
-      // Scissor Elbow Joint calculated dynamically
-      const midX = (armBaseX + scoopX) / 2;
-      const midY = Math.min(armBaseY, scoopY) - 35;
+      // --- 4. TRAJECTORY ARC PREVIEW GUIDELINE ---
+      if (rocksRef.current.length === 0 && !isWonRef.current) {
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(scoopX, scoopY);
+        ctx.quadraticCurveTo(280, 50, 440, 240);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
 
-      ctx.save();
-      // Scissor Struts (Lightweight tubular aluminum)
-      ctx.strokeStyle = phaseRef.current === 'won' ? '#22c55e' : '#cbd5e1';
-      ctx.lineWidth = 4;
+      // --- 5. APOLLO SIFTER HOPPER (PLAYER CONTROLLED CATCHER) ---
+      const hopperX = hopperXRef.current;
+      const hopperY = 242 + hopperBounceYRef.current;
+
+      // Magnetic tractor suction field
+      const tractorGrad = ctx.createLinearGradient(
+        hopperX - hopperWidth / 2,
+        hopperY - 38,
+        hopperX - hopperWidth / 2,
+        hopperY
+      );
+      tractorGrad.addColorStop(0, 'rgba(56, 189, 248, 0)');
+      tractorGrad.addColorStop(1, 'rgba(56, 189, 248, 0.22)');
+      ctx.fillStyle = tractorGrad;
       ctx.beginPath();
-      // Upper arm link
-      ctx.moveTo(armBaseX, armBaseY);
-      ctx.lineTo(midX - 10, midY);
-      ctx.lineTo(scoopX, scoopY - 8);
-      ctx.stroke();
+      ctx.moveTo(hopperX - hopperWidth / 2 - 8, hopperY - 38);
+      ctx.lineTo(hopperX + hopperWidth / 2 + 8, hopperY - 38);
+      ctx.lineTo(hopperX + hopperWidth / 2, hopperY);
+      ctx.lineTo(hopperX - hopperWidth / 2, hopperY);
+      ctx.closePath();
+      ctx.fill();
 
-      // Lower cross link
+      // Hopper basket body (Gold foil insulated frame)
+      ctx.fillStyle = '#b45309'; // Gold foil undertone
+      ctx.fillRect(hopperX - hopperWidth / 2, hopperY, hopperWidth, hopperHeight);
+      ctx.fillStyle = '#f59e0b'; // Gold top sheen
+      ctx.fillRect(hopperX - hopperWidth / 2 + 2, hopperY + 2, hopperWidth - 4, 5);
+
+      // Hopper wire-mesh sieve grid
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 1.5;
+      for (let gx = -hopperWidth / 2 + 8; gx < hopperWidth / 2; gx += 10) {
+        ctx.beginPath();
+        ctx.moveTo(hopperX + gx, hopperY + 4);
+        ctx.lineTo(hopperX + gx, hopperY + hopperHeight - 3);
+        ctx.stroke();
+      }
+
+      // Hopper Rim bumper
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(hopperX - hopperWidth / 2 - 3, hopperY - 3, hopperWidth + 6, 4);
+
+      // Hopper shock spring legs
+      ctx.strokeStyle = '#94a3b8';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.moveTo(armBaseX + 10, armBaseY + 8);
-      ctx.lineTo(midX + 10, midY + 12);
-      ctx.lineTo(scoopX - 12, scoopY + 2);
+      ctx.moveTo(hopperX - hopperWidth / 3, hopperY + hopperHeight);
+      ctx.lineTo(hopperX - hopperWidth / 3 - 6, hopperY + hopperHeight + 12);
+      ctx.moveTo(hopperX + hopperWidth / 3, hopperY + hopperHeight);
+      ctx.lineTo(hopperX + hopperWidth / 3 + 6, hopperY + hopperHeight + 12);
       ctx.stroke();
 
-      // Stepper Motor Hubs & Chrome Pivot Rivets
-      ctx.fillStyle = '#475569';
-      ctx.beginPath();
-      ctx.arc(midX - 10, midY, 6, 0, Math.PI * 2);
-      ctx.arc(armBaseX, armBaseY, 6, 0, Math.PI * 2);
-      ctx.fill();
+      // --- 6. FLYING MOON ROCKS (1/6g FLOATY PHYSICS) ---
+      for (let i = rocksRef.current.length - 1; i >= 0; i--) {
+        const rock = rocksRef.current[i];
 
-      // Motorized Scoop Bucket (Oriented flat during bearing test)
-      ctx.translate(scoopX, scoopY);
-      if (phaseRef.current === 'bearing' || phaseRef.current === 'won') {
-        // Flat orientation pressing into bedrock
-        ctx.fillStyle = phaseRef.current === 'won' ? '#22c55e' : '#eab308';
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.roundRect(-16, -10, 32, 16, 4);
-        ctx.fill();
-        ctx.stroke();
+        if (!rock.caught && !rock.fallen) {
+          // Physics step
+          rock.x += rock.vx;
+          rock.vy += LUNAR_GRAVITY;
+          rock.y += rock.vy;
+          rock.rotation += rock.vRot;
 
-        // Pressure Force Vector Arrows
-        if (phaseRef.current === 'bearing' && currentPsiRef.current > 100) {
-          ctx.strokeStyle = '#22c55e';
-          ctx.lineWidth = 2.5;
-          ctx.beginPath();
-          ctx.moveTo(0, 10);
-          ctx.lineTo(0, 24);
-          ctx.moveTo(-4, 18);
-          ctx.lineTo(0, 24);
-          ctx.lineTo(4, 18);
-          ctx.stroke();
+          // Mineral dust trail particle emission
+          if (Math.random() < 0.4 && !reduceMotion) {
+            particlesRef.current.push({
+              x: rock.x,
+              y: rock.y,
+              vx: (Math.random() - 0.5) * 0.4,
+              vy: (Math.random() - 0.5) * 0.4,
+              radius: 1.2 + Math.random() * 1.5,
+              color: rock.glowColor,
+              alpha: 0.7,
+              decay: 0.04,
+            });
+          }
+
+          // Magnetic suction towards hopper when in close proximity
+          const dxToHopper = hopperX - rock.x;
+          const dyToHopper = hopperY - rock.y;
+          if (Math.abs(dxToHopper) < hopperWidth * 0.65 && dyToHopper > -10 && dyToHopper < 50) {
+            rock.vx += dxToHopper * 0.08; // Gentle magnetic pull
+            // Draw magnetic beam lightning
+            ctx.strokeStyle = rock.glowColor;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(rock.x, rock.y);
+            ctx.lineTo(hopperX, hopperY);
+            ctx.stroke();
+          }
+
+          // CATCH CHECK: Inside hopper bounds
+          const catchXMin = hopperX - hopperWidth / 2 - 6;
+          const catchXMax = hopperX + hopperWidth / 2 + 6;
+          if (rock.x >= catchXMin && rock.x <= catchXMax && rock.y >= hopperY - 8 && rock.y <= hopperY + hopperHeight + 4) {
+            // SUCCESSFUL CATCH!
+            rock.caught = true;
+            hopperBounceYRef.current = 8; // Heavy spring bounce
+            scoopCooldownRef.current = 55; // 0.9s reload pause
+            setScoopReady(false);
+            autoFlingTimerRef.current = 0;
+
+            const currentCombo = comboRef.current;
+            const pointsEarned = rock.points * currentCombo;
+            const newScore = scoreRef.current + pointsEarned;
+            const nextCombo = Math.min(5, currentCombo + 1);
+            const newCaughtCount = caughtCountRef.current + 1;
+
+            scoreRef.current = newScore;
+            comboRef.current = nextCombo;
+            caughtCountRef.current = newCaughtCount;
+            setScore(newScore);
+            setCombo(nextCombo);
+            setRocksCaughtCount(newCaughtCount);
+
+            // Pop score notification
+            spawnFloatingText(
+              hopperX,
+              hopperY - 18,
+              `+${pointsEarned} ${rock.name.toUpperCase()}!`,
+              rock.glowColor
+            );
+            if (nextCombo > 2) {
+              spawnFloatingText(
+                hopperX,
+                hopperY - 36,
+                `🔥 ${currentCombo}x COMBO!`,
+                '#f59e0b'
+              );
+            }
+
+            // Audio: ascending crystal chime + sample collect
+            try {
+              sound.playCollectSample();
+              playChime(Math.pow(1.15, Math.min(6, currentCombo)));
+            } catch {
+              // Fallback safe
+            }
+
+            // Sparkle confetti burst
+            spawnParticles(rock.x, rock.y, rock.glowColor, 16, 3.2);
+
+            // Check Win Condition
+            if (newScore >= WIN_TARGET_POINTS && !isWonRef.current) {
+              setIsWon(true);
+              isWonRef.current = true;
+              const remaining = timeLeftRef.current;
+              const finalStars: 1 | 2 | 3 =
+                newScore >= 1200 || nextCombo >= 4 ? 3 : remaining >= 10 ? 2 : 1;
+
+              try {
+                sound.playSuccess();
+              } catch {
+                // Fallback safe
+              }
+
+              onReactionChange(
+                `Sample Sifter full! Collected ${newScore} points in 1/6g! Excellent Apollo recovery!`
+              );
+              onWinTrigger({ stars: finalStars });
+            }
+          }
+
+          // FALL CHECK: Ground collision (missed catch)
+          if (rock.y > 255) {
+            rock.fallen = true;
+            scoopCooldownRef.current = 55; // 0.9s reload pause
+            setScoopReady(false);
+            autoFlingTimerRef.current = 0;
+            // Combo drops to 1x on ground miss
+            comboRef.current = 1;
+            setCombo(1);
+
+            // Soft dust thud audio
+            try {
+              sound.playMistake();
+            } catch {
+              // Fallback safe
+            }
+
+            // Regolith dust puff on impact
+            spawnParticles(rock.x, 255, '#64748b', 8, 1.4);
+            spawnFloatingText(rock.x, 240, 'MISSED', '#94a3b8');
+          }
         }
-      } else {
-        // Angled digging scoop
-        ctx.rotate(scoopAngleRef.current);
-        ctx.fillStyle = '#eab308';
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.roundRect(-12, -14, 24, 20, 3);
-        ctx.fill();
-        ctx.stroke();
 
-        // Hardened Titanium Ground Teeth
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.moveTo(12, -8);
-        ctx.lineTo(16, -4);
-        ctx.lineTo(12, 0);
-        ctx.lineTo(16, 4);
-        ctx.lineTo(12, 8);
-        ctx.fill();
-      }
-      ctx.restore();
+        // DRAW ACTIVE ROCK
+        if (!rock.caught && !rock.fallen) {
+          ctx.save();
+          ctx.translate(rock.x, rock.y);
+          ctx.rotate(rock.rotation);
 
-      // -------------------------------------------------------------
-      // 6. PHASE 2 OVERLAY: ANALOG SOIL BEARING PRESSURE GAUGE
-      // -------------------------------------------------------------
-      if (phaseRef.current === 'bearing') {
-        const gaugeX = 490;
-        const gaugeY = 125;
-        const gaugeRadius = 48;
-        const psi = currentPsiRef.current;
+          // Specimen Outer Glow
+          ctx.shadowColor = rock.glowColor;
+          ctx.shadowBlur = 10;
 
-        ctx.save();
-        // Outer Chrome Gauge Bezel
-        ctx.fillStyle = '#0f172a';
-        ctx.strokeStyle = '#cbd5e1';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(gaugeX, gaugeY, gaugeRadius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
+          // Rock Body (Polygon faceted asteroid shape)
+          ctx.fillStyle = rock.color;
+          ctx.beginPath();
+          const r = rock.radius;
+          ctx.moveTo(-r * 0.8, -r * 0.6);
+          ctx.lineTo(r * 0.4, -r * 0.9);
+          ctx.lineTo(r * 0.9, -r * 0.2);
+          ctx.lineTo(r * 0.7, r * 0.8);
+          ctx.lineTo(-r * 0.3, r * 0.9);
+          ctx.lineTo(-r * 0.9, r * 0.2);
+          ctx.closePath();
+          ctx.fill();
 
-        // Color Arc Segments: Red (0-240), Yellow (240-310), Green (310-440), Red (>440)
-        // Angle range: -Math.PI * 0.75 to Math.PI * 0.75
-        const startAng = -Math.PI * 0.75;
-        const totalAng = Math.PI * 1.5;
+          // Highlight sheen
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(-r * 0.3, -r * 0.3, r * 0.25, 0, Math.PI * 2);
+          ctx.fill();
 
-        // Red Zone (Soft quicksand hazard)
-        ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 6;
-        ctx.beginPath();
-        ctx.arc(gaugeX, gaugeY, gaugeRadius - 7, startAng, startAng + totalAng * 0.5);
-        ctx.stroke();
+          ctx.restore();
+        }
 
-        // Green Zone (Apollo Safe Bedrock: 310 - 450 PSI)
-        ctx.strokeStyle = '#22c55e';
-        ctx.beginPath();
-        ctx.arc(gaugeX, gaugeY, gaugeRadius - 7, startAng + totalAng * 0.5, startAng + totalAng * 0.9);
-        ctx.stroke();
-
-        // Needle Rotation Angle (0 to 500 PSI)
-        const needleRatio = Math.min(1.0, Math.max(0, psi / 500));
-        const needleAngle = startAng + totalAng * needleRatio;
-
-        // Draw Needle
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.moveTo(gaugeX, gaugeY);
-        ctx.lineTo(gaugeX + Math.cos(needleAngle) * (gaugeRadius - 12), gaugeY + Math.sin(needleAngle) * (gaugeRadius - 12));
-        ctx.stroke();
-
-        // Center Pin
-        ctx.fillStyle = '#ef4444';
-        ctx.beginPath();
-        ctx.arc(gaugeX, gaugeY, 5, 0, Math.PI * 2);
-        ctx.fill();
-
-        // PSI Digital Readout Badge
-        ctx.fillStyle = '#020617';
-        ctx.strokeStyle = psi >= 310 && psi <= 450 ? '#22c55e' : '#94a3b8';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.roundRect(gaugeX - 40, gaugeY + 54, 80, 20, 4);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.font = 'bold 10px monospace';
-        ctx.fillStyle = psi >= 310 && psi <= 450 ? '#4ade80' : '#ffffff';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${psi} PSI`, gaugeX, gaugeY + 68);
-
-        // Target Zone Label
-        ctx.font = 'bold 8px monospace';
-        ctx.fillStyle = '#bae6fd';
-        ctx.fillText('TARGET: 400 PSI', gaugeX, gaugeY - 54);
-
-        // Verification Hold Meter
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-        ctx.strokeStyle = '#22c55e';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.roundRect(gaugeX - 55, gaugeY + 78, 110, 14, 3);
-        ctx.fill();
-        ctx.stroke();
-
-        const holdPercent = Math.min(1.0, holdProgressRef.current / 3.0);
-        ctx.fillStyle = '#22c55e';
-        ctx.fillRect(gaugeX - 53, gaugeY + 80, holdPercent * 106, 10);
-
-        ctx.font = 'bold 8px monospace';
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(`HOLD: ${holdTimeSeconds}s / 3.0s`, gaugeX, gaugeY + 88);
-
-        ctx.restore();
+        // Remove old / caught / fallen rocks
+        if (rock.caught || rock.fallen) {
+          rocksRef.current.splice(i, 1);
+        }
       }
 
-      // -------------------------------------------------------------
-      // 7. WINNING CELEBRATION OVERLAY
-      // -------------------------------------------------------------
-      if (phaseRef.current === 'won') {
-        ctx.save();
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
-        ctx.strokeStyle = '#22c55e';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.roundRect(140, 95, 360, 75, 10);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.font = 'bold 13px monospace';
-        ctx.fillStyle = '#4ade80';
-        ctx.textAlign = 'center';
-        ctx.fillText('🏆 BEDROCK BEARING CONFIRMED! 🏆', 320, 124);
-
-        ctx.font = 'bold 9px monospace';
-        ctx.fillStyle = '#bae6fd';
-        ctx.fillText('Soil strength: 400 PSI · Zero quicksand risk!', 320, 144);
-        ctx.fillStyle = '#fde047';
-        ctx.fillText('Surveyor 3 proved Moon is safe for Apollo landings!', 320, 158);
-        ctx.restore();
-      }
-
-      // -------------------------------------------------------------
-      // 8. PARTICLES & FLOATING TEXTS
-      // -------------------------------------------------------------
+      // --- 7. PARTICLES FX ---
       for (let i = particlesRef.current.length - 1; i >= 0; i--) {
         const p = particlesRef.current[i];
         p.x += p.vx;
         p.y += p.vy;
         p.alpha -= p.decay;
-
         if (p.alpha <= 0) {
           particlesRef.current.splice(i, 1);
           continue;
         }
-
-        ctx.save();
-        ctx.globalAlpha = p.alpha;
         ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.alpha;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
         ctx.fill();
-        ctx.restore();
       }
+      ctx.globalAlpha = 1.0;
 
+      // --- 8. FLOATING TEXT NOTIFICATIONS ---
       for (let i = floatingTextsRef.current.length - 1; i >= 0; i--) {
         const ft = floatingTextsRef.current[i];
         ft.y += ft.vy;
-        ft.alpha -= 0.024;
-
+        ft.alpha -= 0.025;
         if (ft.alpha <= 0) {
           floatingTextsRef.current.splice(i, 1);
           continue;
         }
-
         ctx.save();
         ctx.globalAlpha = ft.alpha;
-        ctx.font = 'bold 11px monospace';
         ctx.fillStyle = ft.color;
+        ctx.font = 'bold 12px monospace';
         ctx.textAlign = 'center';
         ctx.shadowColor = '#000000';
         ctx.shadowBlur = 4;
@@ -781,202 +978,164 @@ export const SurveyorBearingContent: React.FC<SurveyorBearingContentProps> = ({
         ctx.restore();
       }
 
-      ctx.restore();
+      // --- 9. 1-2-3 COUNTDOWN OVERLAY ---
+      if (countdownRef.current !== null) {
+        const cd = countdownRef.current;
+        const centerX = CANVAS_WIDTH / 2;
+        const centerY = CANVAS_HEIGHT / 2 - 20;
+
+        ctx.save();
+        // Pulsing glass circle
+        ctx.fillStyle = 'rgba(2, 6, 23, 0.88)';
+        ctx.strokeStyle = cd === 'FLING' ? '#38bdf8' : '#f59e0b';
+        ctx.lineWidth = 3.5;
+        ctx.shadowColor = cd === 'FLING' ? '#38bdf8' : '#f59e0b';
+        ctx.shadowBlur = 18;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, 48, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Big countdown number / text
+        ctx.fillStyle = cd === 'FLING' ? '#38bdf8' : '#f8fafc';
+        ctx.font = cd === 'FLING' ? 'bold 24px monospace' : 'bold 44px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowBlur = 10;
+        ctx.fillText(cd === 'FLING' ? 'FLING!' : String(cd), centerX, centerY);
+
+        // Subtitle banner below
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText('1/6 MOON GRAVITY · GET READY TO CATCH!', centerX, centerY + 68);
+        ctx.restore();
+      }
+
       animId = requestAnimationFrame(render);
     };
 
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
-  }, [addFloatingText, assistActive, holdTimeSeconds, onReactionChange, onWinTrigger, playChimeLock, playMotorHum, playSoilCrunch, reduceMotion, spawnParticles]);
-
-  // Pointer interactions
-  const handlePointerDown = (clientX: number, clientY: number) => {
-    isDraggingRef.current = true;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const x = (clientX - rect.left) * scaleX;
-    const y = (clientY - rect.top) * scaleY;
-
-    if (phaseRef.current === 'digging') {
-      targetXRef.current = Math.max(180, Math.min(520, x));
-      targetYRef.current = Math.max(140, Math.min(235, y));
-    } else if (phaseRef.current === 'bearing') {
-      isPressingForceRef.current = true;
-    }
-  };
-
-  const handlePointerMove = (clientX: number, clientY: number) => {
-    if (!isDraggingRef.current) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const x = (clientX - rect.left) * scaleX;
-    const y = (clientY - rect.top) * scaleY;
-
-    if (phaseRef.current === 'digging') {
-      targetXRef.current = Math.max(180, Math.min(520, x));
-      targetYRef.current = Math.max(140, Math.min(235, y));
-    }
-  };
-
-  const handlePointerUp = () => {
-    isDraggingRef.current = false;
-    isPressingForceRef.current = false;
-  };
-
-  // Keyboard navigation & controls
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' || e.code === 'Enter') {
-        if (phaseRef.current === 'digging') {
-          targetXRef.current = 240 + Math.random() * 260;
-          targetYRef.current = 210;
-        } else if (phaseRef.current === 'bearing') {
-          isPressingForceRef.current = true;
-        }
-      }
-    };
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space' || e.code === 'Enter') {
-        isPressingForceRef.current = false;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, []);
-
-  // Autoplay hook for test automation
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const runAutoplay = () => {
-        trenchDepthsRef.current = new Array(16).fill(36);
-        setTrenchProgress(100);
-        currentPsiRef.current = 400;
-        setBearingPsi(400);
-        holdProgressRef.current = 3.0;
-        setHoldTimeSeconds(3.0);
-        phaseRef.current = 'won';
-        setPhase('won');
-        sound.playSuccess();
-        onWinTrigger({ stars: 3 });
-      };
-
-      (window as any).__surveyorAutoplay = runAutoplay;
-      return () => {
-        delete (window as any).__surveyorAutoplay;
-      };
-    }
-  }, [onWinTrigger]);
+  }, [
+    isWon,
+    assistActive,
+    hopperWidth,
+    hopperHeight,
+    reduceMotion,
+    onReactionChange,
+    onWinTrigger,
+    spawnParticles,
+    spawnFloatingText,
+    flingRock,
+  ]);
 
   return (
-    <div
-      className="w-full h-full flex flex-col items-center justify-between select-none p-1 sm:p-2 max-w-[760px] mx-auto min-h-0"
-      data-testid="surveyor-game"
-    >
-      {/* 1. Header Telemetry HUD */}
-      <div className="w-full flex items-center justify-between px-3 py-1.5 bg-slate-900/80 border border-slate-700/60 rounded-xl shrink-0 text-xs font-mono">
+    <div className="flex flex-col items-center w-full max-w-2xl mx-auto gap-2 select-none" data-testid="surveyor-game">
+      {/* 1. Real-time Mission Telemetry HUD */}
+      <div className="w-full flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-900/90 border border-slate-700/60 shadow-lg text-xs font-mono">
+        {/* Score & Target */}
         <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-slate-200 font-bold uppercase tracking-wider hidden sm:inline">
-            SURVEYOR 3 · BEDROCK BEARING TEST
-          </span>
-          <span className="text-slate-200 font-bold uppercase tracking-wider sm:hidden">
-            BEARING TEST
-          </span>
-          <span
-            data-testid="surveyor-status-pill"
-            className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-400/40 text-[10px]"
-          >
-            {phase === 'digging'
-              ? 'PHASE 1: DIG TRENCH'
-              : phase === 'bearing'
-              ? 'PHASE 2: 400 PSI LOAD TEST'
-              : 'BEARING VERIFIED!'}
-          </span>
-        </div>
-
-        {/* Progress Display */}
-        <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-950 border border-cyan-500/50 shadow-md">
-          <Gauge size={14} className="text-cyan-400 animate-pulse" />
-          <div className="flex flex-col text-right">
-            <span className="text-[9px] text-slate-400 uppercase font-semibold">
-              {phase === 'digging' ? 'Trench Depth' : 'Bearing Load'}
-            </span>
-            <span className="text-xs font-bold font-mono text-cyan-300">
-              {phase === 'digging' ? `${trenchProgress}%` : `${bearingPsi} PSI`}
+          <Award size={15} className="text-cyan-400" />
+          <div className="flex flex-col">
+            <span className="text-[9px] text-slate-400 uppercase font-semibold">Samples Collected</span>
+            <span className="text-sm font-bold text-cyan-300">
+              {score} <span className="text-[10px] text-slate-500">/ {WIN_TARGET_POINTS} PTS</span>
             </span>
           </div>
         </div>
+
+        {/* Combo Multiplier / Countdown Badge */}
+        <div
+          data-testid="surveyor-status-pill"
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-full border shadow transition-all ${
+            countdown !== null
+              ? 'bg-amber-950/70 border-amber-500/60 text-amber-300 animate-pulse'
+              : combo > 1
+              ? 'bg-amber-950/70 border-amber-500/60 text-amber-300 animate-pulse'
+              : 'bg-slate-950/60 border-slate-700 text-slate-400'
+          }`}
+        >
+          <Flame size={14} className={countdown !== null || combo > 1 ? 'text-amber-400' : 'text-slate-500'} />
+          <span className="font-bold text-xs uppercase tracking-wider">
+            {countdown !== null ? `GET READY: ${countdown === 'FLING' ? 'FLING!' : countdown}` : combo > 1 ? `${combo}x COMBO` : '1x COMBO'}
+          </span>
+        </div>
+
+        {/* Mission Timer */}
+        <div className="flex flex-col text-right">
+          <span className="text-[9px] text-slate-400 uppercase font-semibold">Mission Time</span>
+          <span className={`text-sm font-bold ${timeLeft < 10 ? 'text-red-400 animate-pulse' : 'text-emerald-400'}`}>
+            {timeLeft}s
+          </span>
+        </div>
       </div>
 
-      {/* 2. Interactive Lunar Surface Canvas */}
-      <div className="w-full flex-1 flex items-center justify-center my-1 min-h-0 relative overflow-hidden">
+      {/* 2. Interactive Lunar Physics Canvas */}
+      <div className="relative w-full aspect-video max-h-[260px] sm:max-h-[300px] flex items-center justify-center overflow-hidden rounded-2xl border-2 border-slate-800 shadow-2xl">
         <canvas
           ref={canvasRef}
           width={CANVAS_WIDTH}
           height={CANVAS_HEIGHT}
-          onPointerDown={(e) => handlePointerDown(e.clientX, e.clientY)}
-          onPointerMove={(e) => handlePointerMove(e.clientX, e.clientY)}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerLeave={handlePointerUp}
           onPointerCancel={handlePointerUp}
-          className="bg-[#020617] rounded-2xl block border-2 border-slate-800 shadow-2xl cursor-grab active:cursor-grabbing w-full h-full max-h-[220px] sm:max-h-[260px] touch-none select-none aspect-video shrink-0"
+          className="bg-[#020617] rounded-2xl block cursor-crosshair w-full h-full touch-none select-none aspect-video shrink-0"
           data-testid="surveyor-canvas"
         />
 
-        {/* Phase 1 helper banner */}
-        {phase === 'digging' && trenchProgress < 20 && (
-          <div className="absolute bottom-3 left-1/2 transform -translate-x-1/2 pointer-events-none text-[10px] text-cyan-300 font-mono font-bold bg-slate-950/90 px-3 py-1 rounded-full border border-cyan-500/40 shadow animate-pulse">
-            👉 DRAG SCOOP ALONG SOIL TO DIG TRENCH
+        {/* Subtle touch drag guidance on initial launch */}
+        {score === 0 && countdown === null && (
+          <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 pointer-events-none text-[10px] text-cyan-300 font-mono font-bold bg-slate-950/90 px-3 py-1 rounded-full border border-cyan-500/40 shadow animate-pulse">
+            👉 DRAG TO MOVE SIFTER · TAP SCOOP TO FLING
           </div>
         )}
       </div>
 
-      {/* 3. Tactile Action Controls Strip */}
-      <div className="w-full flex items-center justify-between gap-1.5 px-2 py-1.5 bg-slate-900/90 border border-slate-800/80 rounded-xl shrink-0">
+      {/* 3. Tactile Arcade Controls Strip */}
+      <div className="w-full flex items-center gap-2 pt-1">
+        {/* Left Move Button */}
+        <button
+          onClick={() => handleMoveHopper(-65)}
+          className="h-12 w-14 flex items-center justify-center rounded-lg bg-slate-800/80 border border-slate-600 text-slate-200 active:bg-cyan-700/60 transition-all cursor-pointer shadow-md select-none shrink-0"
+          aria-label="Move Sifter Left"
+        >
+          <ArrowLeft size={18} />
+        </button>
+
         {/* Primary Action Button (>=48px touch target) */}
         <button
           data-testid="surveyor-action-btn"
-          onPointerDown={() => {
-            if (phase === 'digging') {
-              targetXRef.current = 240 + Math.random() * 260;
-              targetYRef.current = 210;
-            } else if (phase === 'bearing') {
-              isPressingForceRef.current = true;
-            }
-          }}
-          onPointerUp={() => {
-            isPressingForceRef.current = false;
-          }}
-          className="w-full h-12 flex items-center justify-center gap-2 rounded-lg bg-cyan-950/80 border border-cyan-500/60 text-cyan-300 font-mono font-bold text-xs uppercase tracking-wider active:bg-cyan-700/60 transition-all cursor-pointer shadow-md select-none"
+          onClick={handlePrimaryAction}
+          className="flex-1 h-12 flex items-center justify-center gap-2 rounded-lg bg-cyan-950/90 border border-cyan-500/60 text-cyan-300 font-mono font-bold text-xs uppercase tracking-wider active:bg-cyan-700/60 hover:bg-cyan-900 transition-all cursor-pointer shadow-md select-none"
         >
-          {phase === 'digging' ? (
+          {isWon ? (
             <>
-              <Wrench size={18} className="text-cyan-400" />
-              <span>DIG TRENCH TO BEDROCK ({trenchProgress}%)</span>
+              <CheckCircle2 size={18} className="text-emerald-400" />
+              <span>APOLLO SAMPLES SECURED!</span>
             </>
-          ) : phase === 'bearing' ? (
+          ) : countdown !== null ? (
             <>
-              <Gauge size={18} className="text-emerald-400" />
-              <span>HOLD BEARING FORCE ({bearingPsi} PSI)</span>
+              <Rocket size={18} className="text-amber-400 animate-spin" />
+              <span>LAUNCHING IN {countdown === 'FLING' ? 'FLING!' : countdown}... (TAP TO SKIP)</span>
             </>
           ) : (
             <>
-              <CheckCircle2 size={18} className="text-emerald-400" />
-              <span>APOLLO BEARING CAPACITY CONFIRMED</span>
+              <Rocket size={18} className="text-cyan-400" />
+              <span>{scoopReady ? 'FLING MOON ROCK' : 'CATCHING SPECIMEN...'}</span>
             </>
           )}
+        </button>
+
+        {/* Right Move Button */}
+        <button
+          onClick={() => handleMoveHopper(65)}
+          className="h-12 w-14 flex items-center justify-center rounded-lg bg-slate-800/80 border border-slate-600 text-slate-200 active:bg-cyan-700/60 transition-all cursor-pointer shadow-md select-none shrink-0"
+          aria-label="Move Sifter Right"
+        >
+          <ArrowRight size={18} />
         </button>
       </div>
     </div>
