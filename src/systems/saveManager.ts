@@ -35,9 +35,15 @@ export interface WorldSaveData {
   bonusRpWreckIds?: string[];
 }
 
+export interface MoonChapterData {
+  relicIds: string[];
+  completed: boolean;
+  rpApplied: boolean;
+}
+
 export interface GameProgress {
   version?: number;
-  currentChapter: number; // 0: Main Menu, 1: Prologue, 2: Moon, 3: Mars Crash, 4: Mars Explore, 5: Storm Challenge, 6: Spacecraft Repair, 7: Final Launch, 8: Mission Complete
+  currentChapter: number; // 0: Main Menu, 1: Prologue, 2: Moon (Legacy), 3: Mars Crash, 4: Mars Explore, 5: Storm Challenge, 6: Spacecraft Repair, 7: Final Launch, 8: Moon (Prequel)
   unlockedMissions: string[];
   solvedMiniGames: string[];
   quizzesCompleted: string[];
@@ -47,6 +53,7 @@ export interface GameProgress {
   stormDecisionMade: string | null;
   isMuted?: boolean;
   worldSave?: WorldSaveData;
+  moonChapter?: MoonChapterData;
 }
 
 const STORAGE_KEY_V3 = 'beyond_depth_save_v3';
@@ -64,6 +71,11 @@ const defaultProgress: GameProgress = {
   repairedSubsystems: [],
   stormDecisionMade: null,
   isMuted: false,
+  moonChapter: {
+    relicIds: [],
+    completed: false,
+    rpApplied: false,
+  },
 };
 
 let lastSaveTimestamp = 0;
@@ -116,6 +128,20 @@ function migrateWorldSave(world: any): WorldSaveData {
   };
 }
 
+function parseMoonChapter(moonChapter: any, hasWorldSave: boolean): MoonChapterData {
+  if (!moonChapter) {
+    if (hasWorldSave) {
+      return { relicIds: [], completed: true, rpApplied: true };
+    }
+    return { relicIds: [], completed: false, rpApplied: false };
+  }
+  return {
+    relicIds: Array.isArray(moonChapter.relicIds) ? moonChapter.relicIds : [],
+    completed: Boolean(moonChapter.completed),
+    rpApplied: Boolean(moonChapter.rpApplied),
+  };
+}
+
 /**
  * Retrieve saved progress with v1 & v2 backward compatibility and migration to v3
  */
@@ -128,6 +154,7 @@ export const getSavedProgress = (): GameProgress => {
       if (parsed.worldSave) {
         parsed.worldSave = migrateWorldSave(parsed.worldSave);
       }
+      parsed.moonChapter = parseMoonChapter(parsed.moonChapter, Boolean(parsed.worldSave));
       return { ...defaultProgress, ...parsed, version: 3 };
     }
 
@@ -138,6 +165,7 @@ export const getSavedProgress = (): GameProgress => {
       if (parsed.worldSave) {
         parsed.worldSave = migrateWorldSave(parsed.worldSave);
       }
+      parsed.moonChapter = parseMoonChapter(parsed.moonChapter, Boolean(parsed.worldSave));
       return { ...defaultProgress, ...parsed, version: 3 };
     }
 
@@ -148,6 +176,7 @@ export const getSavedProgress = (): GameProgress => {
       if (parsed.worldSave) {
         parsed.worldSave = migrateWorldSave(parsed.worldSave);
       }
+      parsed.moonChapter = parseMoonChapter(parsed.moonChapter, Boolean(parsed.worldSave));
       return { ...defaultProgress, ...parsed, version: 3 };
     }
 

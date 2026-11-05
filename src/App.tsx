@@ -22,6 +22,7 @@ const QuizModal = React.lazy(() => import('./components/QuizModal').then(m => ({
 const SojournerRoverPuzzle = React.lazy(() => import('./components/MiniGames/SojournerRoverPuzzle').then(m => ({ default: m.SojournerRoverPuzzle })));
 const OpportunityWaterPuzzle = React.lazy(() => import('./components/MiniGames/OpportunityWaterPuzzle').then(m => ({ default: m.OpportunityWaterPuzzle })));
 const InSightSeismicPuzzle = React.lazy(() => import('./components/MiniGames/InSightSeismicPuzzle').then(m => ({ default: m.InSightSeismicPuzzle })));
+const MoonScene = React.lazy(() => import('./components/MoonScene').then(m => ({ default: m.MoonScene })));
 
 // Overhaul feature flag: Mars top-down open world
 export const USE_TOPDOWN_WORLD = true;
@@ -250,7 +251,9 @@ export default function App() {
               goToChapter(1); // Launch prologue leading into open world
             }}
             onContinueMission={() => {
-              if (hasSavedWorldRun()) {
+              if (progress.currentChapter === 8) {
+                goToChapter(8);
+              } else if (hasSavedWorldRun()) {
                 goToChapter(4);
               } else {
                 const ch = progress.currentChapter === 0 ? 4 : progress.currentChapter;
@@ -267,7 +270,15 @@ export default function App() {
 
         {/* CHAPTER 1: PROLOGUE — THE EXPEDITION TO MARS */}
         {progress.currentChapter === 1 && (
-          <PrologueScene onComplete={() => goToChapter(4)} />
+          <PrologueScene
+            onComplete={() => {
+              if (USE_TOPDOWN_WORLD && !progress.moonChapter?.completed) {
+                goToChapter(8);
+              } else {
+                goToChapter(4);
+              }
+            }}
+          />
         )}
 
         {/* CHAPTER 2: ECHOES OF THE MOON (SURFACE EXPLORATION - LEGACY) */}
@@ -381,6 +392,42 @@ export default function App() {
               setProgress(getSavedProgress());
               goToChapter(1);
             }}
+          />
+        )}
+
+        {/* CHAPTER 8: THE MOON PREQUEL (SURFACE HOP & RELIC SURVEY) */}
+        {progress.currentChapter === 8 && (
+          <MoonScene
+            onComplete={() => {
+              const latest = getSavedProgress();
+              const next: GameProgress = {
+                ...latest,
+                currentChapter: 4,
+                moonChapter: {
+                  relicIds: latest.moonChapter?.relicIds || [],
+                  completed: true,
+                  rpApplied: false,
+                },
+              };
+              saveProgress(next, true);
+              setProgress(next);
+            }}
+            onSkip={() => {
+              const latest = getSavedProgress();
+              const next: GameProgress = {
+                ...latest,
+                currentChapter: 4,
+                moonChapter: {
+                  relicIds: latest.moonChapter?.relicIds || [],
+                  completed: true,
+                  rpApplied: false,
+                },
+              };
+              saveProgress(next, true);
+              setProgress(next);
+            }}
+            isMuted={isMuted}
+            onToggleSound={toggleSound}
           />
         )}
 

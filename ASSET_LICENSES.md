@@ -43,6 +43,7 @@ During Phase 7 (Release Pass), all prototype stock, watermarked, and restricted-
     7. *Apollo Lunar Roving Vehicle (LRV)* (1972)
     8. *Surveyor 3 Surface Sampler* (1967)
   - **Terrain Biomes**: Red Mars regolith plains, dunes, polar snow/ice, terraformed grassland, deep craters, dithered biome borders, and non-blocking ground decor.
+  - **Moon Surface Biome (Chapter 8 Prequel - in-project)**: Grey regolith base (`tile_moon_regolith`) + crater variant (`tile_moon_regolith_variant`), crater rim wall (`tile_moon_crater_rim`), pit gap void (`tile_moon_pit`), and small lunar rocks/boulders (`prop_moon_rock`). 100% procedural, no external downloads.
   - **UI & Part Icons**: Gear, solar panel, microchip, plasma wrench, satellite dish, isotope battery, fuel cell, nanotech toolbox, and [W][A][S][D][E] keycaps.
 
 ---

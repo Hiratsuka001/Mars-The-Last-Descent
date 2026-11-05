@@ -19,6 +19,7 @@ export interface MiniGameShellProps {
   title: string;
   instruction: string;
   winTitle?: string;
+  claimLabel?: string;
   onWin: () => void;
   onExit: () => void;
   onRetry?: () => void;
@@ -34,6 +35,7 @@ export const MiniGameShell: React.FC<MiniGameShellProps> = ({
   title,
   instruction,
   winTitle,
+  claimLabel = 'Claim Ship Part →',
   onWin,
   onExit,
   onRetry,
@@ -281,7 +283,7 @@ export const MiniGameShell: React.FC<MiniGameShellProps> = ({
                 }}
                 className="w-full min-h-[44px] py-2.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-slate-950 font-bold text-sm tracking-wide shadow-lg shadow-cyan-500/20 cursor-pointer flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
               >
-                Claim Ship Part →
+                {claimLabel}
               </button>
             </div>
           )}

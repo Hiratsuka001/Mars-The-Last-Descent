@@ -28,7 +28,7 @@ import { EndingScreen } from './EndingScreen';
 import { CreditsModal } from './CreditsModal';
 import { MissionArchiveModal } from './MissionArchiveModal';
 import { FogOfWarSystem, MinimapRenderer, MINIMAP_VIEW_RADIUS, REVEAL_RADIUS_TILES } from '../render/minimap';
-import { saveWorldProgress, getSavedProgress, resetProgress, formatPlayTime, PlayerUpgrades, isReduceMotionEnabled, setReduceMotionEnabled } from '../systems/saveManager';
+import { saveWorldProgress, getSavedProgress, saveProgress, resetProgress, formatPlayTime, PlayerUpgrades, GameProgress, isReduceMotionEnabled, setReduceMotionEnabled } from '../systems/saveManager';
 import { getSampleResearchPoints } from '../data/samples';
 import { sound } from '../systems/audio';
 import { Sparkles, CheckCircle2, Wrench, RotateCcw, Save, ShieldCheck, Zap, Radio, Sun, Moon, Heart, Flame, Microscope, Compass, X } from 'lucide-react';
@@ -473,9 +473,32 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         playerRef.current.y = safeSpawn.y;
       }
     } else {
+      let initialRp = 0;
+      if (saved.moonChapter?.completed && !saved.moonChapter?.rpApplied) {
+        initialRp = saved.moonChapter.relicIds?.length ?? 0;
+        const updatedSaved: GameProgress = {
+          ...saved,
+          moonChapter: {
+            ...saved.moonChapter,
+            rpApplied: true,
+          },
+        };
+        saveProgress(updatedSaved, true);
+      }
+      setResearchPoints(initialRp);
+      researchPointsRef.current = initialRp;
       playerRef.current.x = safeSpawn.x;
       playerRef.current.y = safeSpawn.y;
       fogRef.current.revealArea(safeSpawn.tileX, safeSpawn.tileY, REVEAL_RADIUS_TILES);
+      saveWorldProgress(
+        {
+          seed: config.seed,
+          playerTileX: safeSpawn.tileX,
+          playerTileY: safeSpawn.tileY,
+          researchPoints: initialRp,
+        },
+        true
+      );
     }
 
     cameraRef.current.x = playerRef.current.x;
@@ -1046,6 +1069,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
 
   // Autosave Helper
   const triggerAutoSave = useCallback((force = false): boolean => {
+    if (typeof window !== 'undefined' && (window as any).__disableAutoSave) return false;
     const player = playerRef.current;
     const tileX = Math.floor(player.x / 16);
     const tileY = Math.floor(player.y / 16);

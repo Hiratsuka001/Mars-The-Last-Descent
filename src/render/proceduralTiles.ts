@@ -84,6 +84,84 @@ export function generateTileCanvas(config: ProceduralTileConfig, seed = 12345): 
  */
 export const PROCEDURAL_TILE_DEFS: ProceduralTileConfig[] = [
   // ==========================================
+  // MOON SURFACE (Prequel Chapter 8)
+  // Desaturated monochrome lunar greys, crater rims, pits, and small rocks
+  // ==========================================
+  {
+    key: 'tile_moon_regolith',
+    name: 'Moon Regolith Base',
+    biome: 'moon',
+    baseColor: '#525a66',
+    pattern: (_x, _y, rng) => {
+      const r = rng();
+      if (r < 0.08) return '#404752'; // subtle shadow speck
+      if (r < 0.15) return '#6b7482'; // subtle highlight speck
+      return null;
+    },
+  },
+  {
+    key: 'tile_moon_regolith_variant',
+    name: 'Moon Regolith Variant',
+    biome: 'moon',
+    baseColor: '#4a525e',
+    pattern: (_x, _y, rng) => {
+      const r = rng();
+      if (r < 0.09) return '#3a414c';
+      if (r < 0.16) return '#5e6775';
+      if (r < 0.20) return '#282e38'; // micro-crater pockmark
+      return null;
+    },
+  },
+  {
+    key: 'tile_moon_crater_rim',
+    name: 'Moon Crater Rim Wall',
+    biome: 'moon',
+    baseColor: '#181e28',
+    pattern: (_x, _y, rng) => {
+      // Solid dark regolith with organic subtle grain (no horizontal scanline stripes)
+      const r = rng();
+      if (r < 0.08) return '#121620';
+      if (r < 0.16) return '#202735';
+      if (r < 0.22) return '#262f40';
+      if (r < 0.27) return '#151a24';
+      return null;
+    },
+  },
+  {
+    key: 'tile_moon_pit',
+    name: 'Moon Pit Void',
+    biome: 'moon',
+    baseColor: '#050811',
+    pattern: (x, y, rng) => {
+      // Crater bowl: dark sunken center with subtle organic depth
+      const distFromCenter = Math.hypot(x - 7.5, y - 7.5);
+      if (distFromCenter < 4.0 && rng() < 0.20) return '#020409';
+      if (rng() < 0.05) return '#0a0f1a';
+      return null;
+    },
+  },
+  {
+    key: 'prop_moon_rock',
+    name: 'Moon Boulder Prop',
+    biome: 'moon',
+    width: 16,
+    height: 16,
+    pixels: [
+      { x: 3, y: 14, color: '#090d14' }, { x: 4, y: 14, color: '#090d14' }, { x: 5, y: 14, color: '#090d14' },
+      { x: 6, y: 14, color: '#090d14' }, { x: 7, y: 14, color: '#090d14' }, { x: 8, y: 14, color: '#090d14' },
+      { x: 9, y: 14, color: '#090d14' }, { x: 10, y: 14, color: '#090d14' }, { x: 11, y: 14, color: '#090d14' },
+      { x: 5, y: 3, color: '#9ba4b3' }, { x: 6, y: 3, color: '#9ba4b3' }, { x: 7, y: 3, color: '#9ba4b3' },
+      { x: 4, y: 4, color: '#9ba4b3' }, { x: 5, y: 4, color: '#bdc5d1' }, { x: 6, y: 4, color: '#9ba4b3' }, { x: 7, y: 4, color: '#7b8493' }, { x: 8, y: 4, color: '#7b8493' },
+      { x: 3, y: 5, color: '#9ba4b3' }, { x: 4, y: 5, color: '#bdc5d1' }, { x: 5, y: 5, color: '#bdc5d1' }, { x: 6, y: 5, color: '#9ba4b3' }, { x: 7, y: 5, color: '#7b8493' }, { x: 8, y: 5, color: '#5b6473' }, { x: 9, y: 5, color: '#5b6473' },
+      { x: 3, y: 6, color: '#7b8493' }, { x: 4, y: 6, color: '#9ba4b3' }, { x: 5, y: 6, color: '#7b8493' }, { x: 6, y: 6, color: '#5b6473' }, { x: 7, y: 6, color: '#3d4451' }, { x: 8, y: 6, color: '#3d4451' }, { x: 9, y: 6, color: '#3d4451' }, { x: 10, y: 6, color: '#272d37' },
+      { x: 2, y: 7, color: '#7b8493' }, { x: 3, y: 7, color: '#7b8493' }, { x: 4, y: 7, color: '#5b6473' }, { x: 5, y: 7, color: '#5b6473' }, { x: 6, y: 7, color: '#3d4451' }, { x: 7, y: 7, color: '#3d4451' }, { x: 8, y: 7, color: '#272d37' }, { x: 9, y: 7, color: '#272d37' }, { x: 10, y: 7, color: '#1a1f27' }, { x: 11, y: 7, color: '#1a1f27' },
+      { x: 2, y: 8, color: '#5b6473' }, { x: 3, y: 8, color: '#5b6473' }, { x: 4, y: 8, color: '#3d4451' }, { x: 5, y: 8, color: '#3d4451' }, { x: 6, y: 8, color: '#272d37' }, { x: 7, y: 8, color: '#272d37' }, { x: 8, y: 8, color: '#1a1f27' }, { x: 9, y: 8, color: '#1a1f27' }, { x: 10, y: 8, color: '#10141a' }, { x: 11, y: 8, color: '#10141a' },
+      { x: 3, y: 9, color: '#3d4451' }, { x: 4, y: 9, color: '#3d4451' }, { x: 5, y: 9, color: '#272d37' }, { x: 6, y: 9, color: '#272d37' }, { x: 7, y: 9, color: '#1a1f27' }, { x: 8, y: 9, color: '#1a1f27' }, { x: 9, y: 9, color: '#10141a' }, { x: 10, y: 9, color: '#10141a' },
+      { x: 4, y: 10, color: '#272d37' }, { x: 5, y: 10, color: '#272d37' }, { x: 6, y: 10, color: '#1a1f27' }, { x: 7, y: 10, color: '#1a1f27' }, { x: 8, y: 10, color: '#10141a' }, { x: 9, y: 10, color: '#10141a' },
+    ],
+  },
+
+  // ==========================================
   // MARS REGOLITH / ROCKY PLAINS (Default Spawn Terrain)
   // Palette: Rusty Mars red-orange ochre
   // ==========================================

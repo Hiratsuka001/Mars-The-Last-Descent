@@ -7,4 +7,7 @@ export const DID_YOU_KNOW: Record<string, string> = {
   eq_phoenix: "Phoenix photographed white chunks in its trench, and they were gone a few days later. Salt wouldn't do that, so it was ice.",
   eq_lrv_buggy: "The Moon buggy folded up to fit inside the lunar module. Apollo astronauts drove it on three missions.",
   eq_surveyor: "Apollo 12 astronauts visited Surveyor 3 in 1969 and brought parts of it home to Earth.",
+  moon_luna9: "Luna 9 touched down on 3 Feb 1966 and sent home the first photos ever taken from the Moon's surface. Airbags cushioned its landing!",
+  moon_apollo11: "Fact coming in the next update.",
+  moon_lunokhod1: "Fact coming in the next update.",
 };

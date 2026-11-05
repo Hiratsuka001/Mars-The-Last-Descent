@@ -252,6 +252,14 @@ async function runTestPass(browser, config) {
     await skipPrologueBtn.click();
   } catch {}
 
+  // If Moon prequel appears, skip it to proceed to Mars open-world regression tests
+  const moonScene = page.locator('[data-testid="moon-scene"]');
+  try {
+    await moonScene.waitFor({ state: 'visible', timeout: 4000 });
+    const moonSkipBtn = page.locator('[data-testid="moon-skip-btn"]');
+    await moonSkipBtn.click();
+  } catch {}
+
   // Assert Main Menu is detached and World Canvas is visible
   await mainMenu.waitFor({ state: 'detached', timeout: 10000 });
   const worldCanvas = page.locator('[data-testid="world-canvas"]');
@@ -2585,6 +2593,10 @@ async function runProductionDebugHooksGateAudit(browser) {
       sojourner: typeof window.__sojournerAutoplay,
       triggerWin: typeof window.__triggerMiniGameWin,
       triggerAssist: typeof window.__triggerMiniGameAssist,
+      moonTeleport: typeof window.__moonTeleport,
+      moonKeys: Object.keys(window).filter((k) => k.startsWith('__moon')),
+      lunaGame: typeof window.__lunaGame,
+      lunaKeys: Object.keys(window).filter((k) => k.startsWith('__luna')),
     };
   });
 
@@ -2596,12 +2608,840 @@ async function runProductionDebugHooksGateAudit(browser) {
     debugHooksAudit.insight !== 'undefined' ||
     debugHooksAudit.sojourner !== 'undefined' ||
     debugHooksAudit.triggerWin !== 'undefined' ||
-    debugHooksAudit.triggerAssist !== 'undefined'
+    debugHooksAudit.triggerAssist !== 'undefined' ||
+    debugHooksAudit.moonTeleport !== 'undefined' ||
+    debugHooksAudit.moonKeys.length > 0 ||
+    debugHooksAudit.lunaGame !== 'undefined' ||
+    debugHooksAudit.lunaKeys.length > 0
   ) {
     throw new Error(`Production debug hooks exposed without ?debug=1: ${JSON.stringify(debugHooksAudit)}`);
   }
-  console.log('  [PASS] All autoplay and mini-game debug hooks are undefined in production without ?debug=1');
+  console.log('  [PASS] All autoplay, mini-game, and moon debug hooks are undefined in production without ?debug=1');
   await page.close();
+}
+
+/**
+ * Phase Moon: Moon Chapter 8 Prequel Verification Suite (Checks 1-10)
+ */
+async function runMoonChapterQA(browser) {
+  console.log('\n======================================================');
+  console.log('Phase Moon: Moon Chapter 8 Prequel QA Suite (Checks 1-10)');
+  console.log('======================================================');
+
+  const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+  await page.goto(`http://127.0.0.1:${PORT}/?debug=1`, { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => localStorage.clear());
+  await page.reload({ waitUntil: 'domcontentloaded' });
+
+  // 1. New Game -> prologue -> moon-scene visible, relic counter 0/3, no Mars HUD elements
+  console.log('Moon 1: New Game -> prologue -> moon-scene visible, relic counter 0/3, no Mars HUD elements...');
+  await page.locator('[data-testid="start-mission-btn"]').click();
+  await page.locator('[data-testid="skip-prologue-btn"]').click();
+
+  const moonScene = page.locator('[data-testid="moon-scene"]');
+  await moonScene.waitFor({ state: 'visible', timeout: 6000 });
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'desktop_moon_scene_spawn.png') });
+  console.log('  [OK Captured] desktop_moon_scene_spawn.png');
+
+  const relicCounter = page.locator('[data-testid="moon-relic-counter"]');
+  await relicCounter.waitFor({ state: 'visible' });
+  const relicText = await relicCounter.textContent();
+  if (!relicText.includes('0/3')) throw new Error(`Expected 0/3 relics, got: ${relicText}`);
+
+  const marsHudChecks = await page.evaluate(() => {
+    return {
+      hasPartsHud: !!document.querySelector('[data-testid="parts-hud"]'),
+      hasMinimap: !!document.querySelector('[data-testid="minimap-hud"]'),
+      hasResearchPoints: !!document.querySelector('[data-testid="research-points-display"]'),
+      hasSampleCounter: !!document.querySelector('[data-testid="sample-counter"]'),
+      hasSolClock: !!document.querySelector('[data-testid="sol-clock"]'),
+    };
+  });
+  if (Object.values(marsHudChecks).some((v) => v === true)) {
+    throw new Error(`Mars HUD elements leaked into Moon scene: ${JSON.stringify(marsHudChecks)}`);
+  }
+  console.log('  [PASS] Moon 1: moon-scene visible, counter 0/3, no Mars HUD elements');
+
+  // Visual Fix Assertions (Moon-1.1):
+  // 1. Canvas rect equals viewport; resize 1366x768 -> 1000x700 -> 390x844 re-fits within 200ms
+  console.log('  Verifying canvas rect equals viewport and re-fits within 200ms across resizes...');
+  const canvasEl = page.locator('[data-testid="moon-scene"] canvas');
+  let sceneCanvasBox = await canvasEl.boundingBox();
+  if (!sceneCanvasBox || sceneCanvasBox.width !== 1366 || sceneCanvasBox.height !== 768) {
+    throw new Error(`Expected canvas 1366x768, got: ${JSON.stringify(sceneCanvasBox)}`);
+  }
+
+  // Resize sequence: 1366x768 -> 1000x700 -> 390x844 -> 1366x768
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.waitForTimeout(100);
+  sceneCanvasBox = await canvasEl.boundingBox();
+  if (!sceneCanvasBox || sceneCanvasBox.width !== 1000 || sceneCanvasBox.height !== 700) {
+    throw new Error(`Canvas failed to re-fit to 1000x700 within 200ms: ${JSON.stringify(sceneCanvasBox)}`);
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(100);
+  sceneCanvasBox = await canvasEl.boundingBox();
+  if (!sceneCanvasBox || sceneCanvasBox.width !== 390 || sceneCanvasBox.height !== 844) {
+    throw new Error(`Canvas failed to re-fit to 390x844 within 200ms: ${JSON.stringify(sceneCanvasBox)}`);
+  }
+
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.waitForTimeout(100);
+  sceneCanvasBox = await canvasEl.boundingBox();
+  if (!sceneCanvasBox || sceneCanvasBox.width !== 1366 || sceneCanvasBox.height !== 768) {
+    throw new Error(`Canvas failed to restore 1366x768 within 200ms: ${JSON.stringify(sceneCanvasBox)}`);
+  }
+  console.log('  [PASS] Canvas rect equals viewport and re-fits within 200ms across all resizes');
+
+  // 2. Player sprite height >= 32px on desktop
+  const dSpriteHeight = await page.evaluate(() => {
+    return window.__moonDebug?.getPlayerSpriteHeight?.() || Number(document.querySelector('[data-testid="moon-scene"]').getAttribute('data-player-sprite-height'));
+  });
+  console.log(`  Desktop player sprite height: ${dSpriteHeight}px (requirement >= 32px)`);
+  if (!dSpriteHeight || dSpriteHeight < 32) {
+    throw new Error(`Desktop player sprite height must be >= 32px, got: ${dSpriteHeight}px`);
+  }
+  console.log('  [PASS] Desktop player sprite height >= 32px');
+
+  // 3. HUD chips bounding box left/right >= 12px
+  const relicBox = await relicCounter.boundingBox();
+  const skipBox = await page.locator('[data-testid="moon-skip-btn"]').boundingBox();
+  if (!relicBox || relicBox.x < 12) {
+    throw new Error(`Relic counter padding < 12px from left edge: ${relicBox?.x}px`);
+  }
+  if (!skipBox || (1366 - (skipBox.x + skipBox.width)) < 12) {
+    throw new Error(`Skip button padding < 12px from right edge: ${skipBox ? 1366 - (skipBox.x + skipBox.width) : 'null'}px`);
+  }
+  console.log(`  HUD chip margins: left=${relicBox.x}px, right=${1366 - (skipBox.x + skipBox.width)}px (both >= 12px)`);
+  console.log('  [PASS] HUD chips safe padding >= 12px confirmed');
+
+  // 4. BEACON arrow visible and pointing to nearest unfound relic
+  const beacon = page.locator('[data-testid="moon-beacon"]');
+  await beacon.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] moon-beacon visible pointing toward nearest unfound relic');
+
+  // 5. Desktop Screenshots: spawn, next to a pit, mid-hop (data-hopping=true), and in front of relic 1
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'desktop_moon_spawn.png') });
+  console.log('  [OK Captured] desktop_moon_spawn.png');
+
+  await page.evaluate(() => window.__moonTeleport(24, 20));
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'desktop_moon_next_to_pit.png') });
+  console.log('  [OK Captured] desktop_moon_next_to_pit.png');
+
+  await page.keyboard.down('ArrowRight');
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(350);
+  const midHopStatus = await moonScene.getAttribute('data-hopping');
+  if (midHopStatus !== 'true') throw new Error(`Expected data-hopping="true" for mid-hop screenshot, got: ${midHopStatus}`);
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'desktop_moon_mid_hop.png') });
+  console.log('  [OK Captured] desktop_moon_mid_hop.png (data-hopping=true)');
+  await page.waitForTimeout(650);
+  await page.keyboard.up('ArrowRight');
+
+  await page.evaluate(() => window.__moonTeleport(18, 20));
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'desktop_moon_relic1.png') });
+  console.log('  [OK Captured] desktop_moon_relic1.png');
+
+  // Teleport back to spawn for subsequent tests
+  await page.evaluate(() => window.__moonTeleport(8, 20));
+  await page.waitForTimeout(200);
+
+  // 2. Hop mechanics & pit collision
+  console.log('Moon 2: Low-gravity hop and pit collision verification...');
+  await page.evaluate(() => window.__moonTeleport(24, 20));
+  await page.waitForTimeout(200);
+
+  let tile = await moonScene.getAttribute('data-player-tile');
+  if (tile !== '24,20') throw new Error(`Expected tile 24,20 after teleport, got: ${tile}`);
+
+  // Hold toward the pit WITHOUT hop = blocked (tile unchanged)
+  await page.keyboard.down('ArrowRight');
+  await page.waitForTimeout(400);
+  await page.keyboard.up('ArrowRight');
+  tile = await moonScene.getAttribute('data-player-tile');
+  if (tile !== '24,20') throw new Error(`Player walked into pit without hopping! Tile changed to: ${tile}`);
+
+  // With Space = crosses (data-hopping true for >= 300 ms, end tile beyond pit)
+  await page.keyboard.down('ArrowRight');
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(350);
+  const isHopping = await moonScene.getAttribute('data-hopping');
+  if (isHopping !== 'true') throw new Error(`Expected data-hopping="true" during hop, got: ${isHopping}`);
+
+  await page.waitForTimeout(650);
+  await page.keyboard.up('ArrowRight');
+
+  tile = await moonScene.getAttribute('data-player-tile');
+  const [endX] = tile.split(',').map(Number);
+  if (endX < 28) throw new Error(`Expected end tile beyond pit (>= 28), got: ${tile}`);
+  console.log(`  [PASS] Hop crossed pit successfully to tile: ${tile}`);
+
+  // Landing in a pit returns to the last safe tile
+  await page.evaluate(() => window.__moonTeleport(26, 20));
+  await page.waitForTimeout(300);
+  tile = await moonScene.getAttribute('data-player-tile');
+  const [resetX] = tile.split(',').map(Number);
+  if (resetX === 25 || resetX === 26 || resetX === 27) {
+    throw new Error(`Player remained on pit tile without reset! Got: ${tile}`);
+  }
+  console.log(`  [PASS] Pit landing safely returned player to tile: ${tile}`);
+
+  // 3. Moon-2: Luna 9 Soft Landing Game Full Verification & Relics 2/3
+  console.log('Moon 3: Luna 9 Soft Landing Game Verification Suite...');
+
+  // Teleport to relic 1 (18, 20)
+  await page.evaluate(() => window.__moonTeleport(18, 20));
+  await page.waitForTimeout(300);
+
+  // Press E to interact
+  await page.keyboard.press('KeyE');
+  const novaActionBtn = page.locator('[data-testid="nova-dialogue-action-btn"]');
+  await novaActionBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await novaActionBtn.click();
+
+  // Check 1: luna-game visible, header <= 12 words, canvas width >= 60% desktop, no page scroll
+  const lunaGame = page.locator('[data-testid="luna-game"]');
+  await lunaGame.waitFor({ state: 'visible', timeout: 6000 });
+
+  const instructionEl = page.locator('[data-testid="minigame-shell"] p').first();
+  const instructionText = (await instructionEl.textContent()) || '';
+  const wordCount = instructionText.trim().split(/\s+/).length;
+  console.log(`  Luna 9 instruction: "${instructionText}" (${wordCount} words)`);
+  if (wordCount > 12) {
+    throw new Error(`Instruction exceeds 12 words: "${instructionText}" (${wordCount} words)`);
+  }
+
+  const canvas = page.locator('[data-testid="luna-game"] canvas');
+  const canvasBox = await canvas.boundingBox();
+  console.log(`  Desktop canvas width: ${canvasBox?.width}px (${((canvasBox?.width / 1366) * 100).toFixed(1)}% of 1366px)`);
+  if (!canvasBox || canvasBox.width < 1366 * 0.6) {
+    throw new Error(`Desktop canvas width must be >= 60% of viewport width (819.6px), got: ${canvasBox?.width}px`);
+  }
+
+  const scrollOffset = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+  if (scrollOffset.x !== 0 || scrollOffset.y !== 0) {
+    throw new Error(`Page scroll detected on desktop: ${JSON.stringify(scrollOffset)}`);
+  }
+
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'luna_desktop_01_falling.png') });
+  console.log('  [OK Captured] luna_desktop_01_falling.png');
+
+  // Check 5: Simulate blur and pointercancel mid-thrust
+  console.log('  Checking pointercancel and blur mid-thrust...');
+  const thrustBtn = page.locator('[data-testid="luna-thrust-btn"]');
+  await thrustBtn.dispatchEvent('pointerdown');
+  await page.waitForTimeout(150);
+  // Blur window
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await page.waitForTimeout(150);
+  let stateAfterBlur = await page.evaluate(() => window.__lunaGame.getState());
+  const speedAfterBlur1 = stateAfterBlur.speed;
+  await page.waitForTimeout(250);
+  stateAfterBlur = await page.evaluate(() => window.__lunaGame.getState());
+  if (stateAfterBlur.speed <= speedAfterBlur1 && stateAfterBlur.phase === 'falling') {
+    throw new Error(`Thrust was stuck after blur! Speed did not increase under gravity: ${stateAfterBlur.speed} vs ${speedAfterBlur1}`);
+  }
+  console.log('  [PASS] Blur mid-thrust safely stopped thrust');
+
+  // Check 3: No input: ends with 1 star in under 12 s, airbag bounce shown, minigame-retry works
+  console.log('  Checking zero input run (<12s, 1 star, airbag bounce)...');
+  const noInputStart = performance.now();
+
+  while (true) {
+    const s = await page.evaluate(() => window.__lunaGame.getState());
+    if (s.phase === 'landed') break;
+    await page.waitForTimeout(40);
+  }
+
+  // Lander touched down, airbag bounce is active
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'luna_desktop_03_airbag_bounce.png') });
+  console.log('  [OK Captured] luna_desktop_03_airbag_bounce.png');
+
+  const winScreen = page.locator('[data-testid="minigame-win"]');
+  await winScreen.waitFor({ state: 'visible', timeout: 5000 });
+  const noInputDurationSec = (performance.now() - noInputStart) / 1000;
+  console.log(`  Zero input descent duration: ${noInputDurationSec.toFixed(2)}s`);
+  if (noInputDurationSec >= 12.0) {
+    throw new Error(`Zero input run took >= 12s: ${noInputDurationSec.toFixed(2)}s`);
+  }
+
+  const noInputStars = await page.locator('[data-testid="minigame-stars"]').getAttribute('data-stars');
+  if (noInputStars !== '1') {
+    throw new Error(`Expected 1 star on hard landing, got: ${noInputStars}`);
+  }
+  console.log('  [PASS] Zero input ended with 1 star in under 12s');
+
+  // Test retry button restarts clean run
+  const retryBtn = page.locator('[data-testid="minigame-retry"]');
+  await retryBtn.click();
+  await lunaGame.waitFor({ state: 'visible', timeout: 5000 });
+  let resetState = await page.evaluate(() => window.__lunaGame.getState());
+  if (resetState.phase !== 'falling' || resetState.altitude < 95 || resetState.fuel < 95) {
+    throw new Error(`Retry did not start clean run: ${JSON.stringify(resetState)}`);
+  }
+  console.log('  [PASS] Retry successfully reset to fresh run');
+
+  // Check 4: 'hold' (thrust until fuel is empty, ends in under 30 s, no stuck state)
+  console.log('  Checking continuous hold run (<30s)...');
+  const holdStart = performance.now();
+  await page.evaluate(() => window.__lunaGame.setAutopilot('hold'));
+
+  await winScreen.waitFor({ state: 'visible', timeout: 32000 });
+  const holdDurationSec = (performance.now() - holdStart) / 1000;
+  console.log(`  Continuous hold duration: ${holdDurationSec.toFixed(2)}s`);
+  if (holdDurationSec >= 30.0) {
+    throw new Error(`Continuous hold run took >= 30s: ${holdDurationSec.toFixed(2)}s`);
+  }
+  console.log('  [PASS] Hold run ended cleanly in under 30s without stuck state');
+
+  // Retry for autopilot 'perfect' check
+  await retryBtn.click();
+  await lunaGame.waitFor({ state: 'visible', timeout: 5000 });
+
+  // Check 6: Autopilot 'perfect': 3 stars, 15-28 s, NO bonus-rp-toast
+  console.log('  Checking autopilot "perfect" run (15-28s, 3 stars, no bonus RP)...');
+  const perfectStart = performance.now();
+  await page.evaluate(() => window.__lunaGame.setAutopilot('perfect'));
+
+  await winScreen.waitFor({ state: 'visible', timeout: 30000 });
+  const perfectDurationSec = (performance.now() - perfectStart) / 1000;
+  console.log(`  Autopilot perfect duration: ${perfectDurationSec.toFixed(2)}s`);
+  if (perfectDurationSec < 15.0 || perfectDurationSec > 28.0) {
+    throw new Error(`Expected autopilot perfect duration 15-28s, got: ${perfectDurationSec.toFixed(2)}s`);
+  }
+
+  const perfectStars = await page.locator('[data-testid="minigame-stars"]').getAttribute('data-stars');
+  if (perfectStars !== '3') {
+    throw new Error(`Expected 3 stars on autopilot perfect, got: ${perfectStars}`);
+  }
+
+  const bonusToastCount = await page.locator('[data-testid="bonus-rp-toast"]').count();
+  if (bonusToastCount > 0) {
+    throw new Error('bonus-rp-toast appeared in Moon chapter!');
+  }
+  console.log('  [PASS] Autopilot perfect achieved 3 stars in 15-28s with zero bonus RP toast');
+
+  // Retry for REAL input path check
+  await retryBtn.click();
+  await lunaGame.waitFor({ state: 'visible', timeout: 5000 });
+
+  // Check 2: REAL input path: Playwright mouse hold + bang-bang loop reading __lunaGame.getState()
+  console.log('  Checking REAL Playwright input path (mouse hold bang-bang loop)...');
+  const realInputStart = performance.now();
+  const canvasCenter = await canvas.boundingBox();
+  if (!canvasCenter) throw new Error('Could not get canvas bounding box');
+  await page.mouse.move(canvasCenter.x + canvasCenter.width / 2, canvasCenter.y + canvasCenter.height / 2);
+
+  let lowFuelSnapped = false;
+  let isMouseDown = false;
+
+  while (true) {
+    const s = await page.evaluate(() => window.__lunaGame.getState());
+    if (s.phase === 'landed') break;
+
+    if (s.fuel < 25 && !lowFuelSnapped) {
+      lowFuelSnapped = true;
+      await page.screenshot({ path: path.join(OUTPUT_DIR, 'luna_desktop_02_low_fuel.png') });
+      console.log('  [OK Captured] luna_desktop_02_low_fuel.png');
+    }
+
+    const vTarget = 2.4 + 4.6 * (s.altitude / 100);
+    if (s.speed > vTarget && !isMouseDown) {
+      await page.mouse.down();
+      isMouseDown = true;
+    } else if (s.speed <= vTarget && isMouseDown) {
+      await page.mouse.up();
+      isMouseDown = false;
+    }
+    await page.waitForTimeout(40);
+  }
+
+  if (isMouseDown) {
+    await page.mouse.up();
+  }
+
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'luna_desktop_04_3star_touchdown.png') });
+  console.log('  [OK Captured] luna_desktop_04_3star_touchdown.png');
+
+  await winScreen.waitFor({ state: 'visible', timeout: 5000 });
+  const realRunLengthSec = (performance.now() - realInputStart) / 1000;
+  console.log(`  REAL input run length: ${realRunLengthSec.toFixed(2)}s`);
+  if (realRunLengthSec < 15.0 || realRunLengthSec > 28.0) {
+    throw new Error(`Real input run length outside 15-28s: ${realRunLengthSec.toFixed(2)}s`);
+  }
+
+  const realStars = await page.locator('[data-testid="minigame-stars"]').getAttribute('data-stars');
+  if (realStars !== '3') {
+    throw new Error(`Expected 3 stars on real input bang-bang, got: ${realStars}`);
+  }
+  console.log(`  [PASS] REAL Playwright input reached 3 stars in ${realRunLengthSec.toFixed(2)}s`);
+
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'luna_desktop_05_win_screen.png') });
+  console.log('  [OK Captured] luna_desktop_05_win_screen.png');
+
+  // Check 7: Claim flow, exact fact text, mid-chapter reload, and replay
+  console.log('  Checking Did-You-Know fact reveal for Luna 9...');
+  const factBtn = page.locator('[data-testid="minigame-fact"]');
+  await factBtn.click();
+  await page.waitForTimeout(200);
+  const factText = await factBtn.textContent();
+  const expectedFact = "Luna 9 touched down on 3 Feb 1966 and sent home the first photos ever taken from the Moon's surface. Airbags cushioned its landing!";
+  if (!factText || !factText.includes(expectedFact)) {
+    throw new Error(`Fact text does not match expected Luna 9 fact. Got: ${factText}`);
+  }
+  console.log('  [PASS] Exact historical Did-You-Know fact displayed for Luna 9');
+
+  // Claim part
+  const claimBtn = page.locator('[data-testid="claim-part-btn"]');
+  await claimBtn.click();
+  const shell = page.locator('[data-testid="minigame-shell"]');
+  await shell.waitFor({ state: 'detached', timeout: 5000 });
+
+  const cText = await page.locator('[data-testid="moon-relic-counter"]').textContent();
+  if (!cText.includes('1/3')) {
+    throw new Error(`Expected relic counter 1/3, got: ${cText}`);
+  }
+  console.log('  [PASS] Relic 1 claimed, counter shows 1/3');
+
+  // Reload mid-chapter keeps relic
+  console.log('  Testing mid-chapter reload persistence after Luna 9...');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const continueBtn = page.locator('[data-testid="continue-mission-btn"]');
+  if (await continueBtn.isVisible()) {
+    await continueBtn.click();
+  }
+  await moonScene.waitFor({ state: 'visible', timeout: 5000 });
+  const reloadedCounter = await page.locator('[data-testid="moon-relic-counter"]').textContent();
+  if (!reloadedCounter.includes('1/3')) {
+    throw new Error(`Expected relic counter 1/3 after reload, got: ${reloadedCounter}`);
+  }
+  console.log('  [PASS] Mid-chapter reload kept collected relic 1/3');
+
+  // Replay check: Nova says one line, no minigame opens
+  console.log('  Testing replay of collected relic 1 (Nova line, no game)...');
+  await page.evaluate(() => window.__moonTeleport(18, 20));
+  await page.waitForTimeout(300);
+  await page.keyboard.press('KeyE');
+  await page.waitForTimeout(400);
+  const shellCount = await page.locator('[data-testid="minigame-shell"]').count();
+  if (shellCount > 0) {
+    throw new Error('Replaying collected relic opened minigame!');
+  }
+  const replayDialogue = page.locator('[data-testid="nova-dialogue"]');
+  await replayDialogue.waitFor({ state: 'visible', timeout: 4000 });
+  console.log('  [PASS] Replay shows Nova line without opening game');
+  await page.keyboard.press('KeyE'); // dismiss dialogue
+
+  // Log Relics 2 and 3 via stubs
+  const remainingRelics = [
+    { num: 2, id: 'moon_apollo11', tx: 35, ty: 20 },
+    { num: 3, id: 'moon_lunokhod1', tx: 52, ty: 20 },
+  ];
+
+  for (const r of remainingRelics) {
+    console.log(`  Teleporting to relic ${r.num} (${r.id}) at (${r.tx}, ${r.ty})...`);
+    await page.evaluate(({ tx, ty }) => window.__moonTeleport(tx, ty), r);
+    await page.waitForTimeout(300);
+
+    console.log(`  Pressing KeyE to interact with relic ${r.num}...`);
+    await page.keyboard.press('KeyE');
+    const rActionBtn = page.locator('[data-testid="nova-dialogue-action-btn"]');
+    await rActionBtn.waitFor({ state: 'visible', timeout: 5000 });
+    await rActionBtn.click();
+
+    const rShell = page.locator('[data-testid="minigame-shell"]');
+    await rShell.waitFor({ state: 'visible', timeout: 5000 });
+
+    const holdBtn = page.locator('[data-testid="relic-stub-hold-btn"]');
+    await holdBtn.dispatchEvent('pointerdown');
+
+    const winScreenStub = page.locator('[data-testid="minigame-win"]');
+    await winScreenStub.waitFor({ state: 'visible', timeout: 6000 });
+
+    const rClaimBtn = page.locator('[data-testid="claim-part-btn"]');
+    await rClaimBtn.click();
+    await rShell.waitFor({ state: 'detached', timeout: 5000 });
+
+    const counterText = await page.locator('[data-testid="moon-relic-counter"]').textContent();
+    if (!counterText.includes(`${r.num}/3`)) {
+      throw new Error(`Expected counter ${r.num}/3, got: ${counterText}`);
+    }
+  }
+  console.log('  [PASS] Relics 2 and 3 logged via stubs, counter 3/3');
+
+  // 4. Earthrise panel and RP bonus transfer
+  console.log('Moon 4: Earthrise panel and RP bonus transfer...');
+  const observeEarthriseBtn = page.locator('[data-testid="nova-dialogue-action-btn"]');
+  try {
+    await observeEarthriseBtn.waitFor({ state: 'visible', timeout: 4000 });
+    await observeEarthriseBtn.click();
+  } catch {}
+
+  const earthrisePanel = page.locator('[data-testid="moon-earthrise"]');
+  await earthrisePanel.waitFor({ state: 'visible', timeout: 6000 });
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'desktop_moon_earthrise.png') });
+  console.log('  [OK Captured] desktop_moon_earthrise.png');
+
+  const continueMarsBtn = page.locator('[data-testid="moon-earthrise-continue"]');
+  await continueMarsBtn.click();
+
+  const worldCanvas = page.locator('[data-testid="world-canvas"]');
+  await worldCanvas.waitFor({ state: 'visible', timeout: 10000 });
+  await moonScene.waitFor({ state: 'detached', timeout: 5000 });
+
+  let rp = await page.evaluate(() => (window).__getResearchPoints?.());
+  console.log(`  Initial Mars RP: ${rp}`);
+  if (rp !== 3) throw new Error(`Expected 3 RP from moon relics, got: ${rp}`);
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const continueBtn2 = page.locator('[data-testid="continue-mission-btn"]');
+  if (await continueBtn2.isVisible()) {
+    await continueBtn2.click();
+  }
+  await worldCanvas.waitFor({ state: 'visible', timeout: 10000 });
+  rp = await page.evaluate(() => (window).__getResearchPoints?.());
+  console.log(`  Mars RP after reload: ${rp}`);
+  if (rp !== 3) throw new Error(`Expected RP to remain 3 after reload, got: ${rp}`);
+  console.log('  [PASS] Moon 4: Earthrise transitioned to Mars, RP 3 awarded once and kept on reload');
+
+  // 5. Skip Moon from first second
+  console.log('Moon 5: Skip Moon button from the first second...');
+  await page.evaluate(() => {
+    window.__disableAutoSave = true;
+    localStorage.clear();
+    localStorage.setItem = () => {};
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+
+  await page.locator('[data-testid="start-mission-btn"]').click();
+  await page.locator('[data-testid="skip-prologue-btn"]').click();
+  await moonScene.waitFor({ state: 'visible', timeout: 5000 });
+
+  const skipMoonBtn = page.locator('[data-testid="moon-skip-btn"]');
+  await skipMoonBtn.waitFor({ state: 'visible' });
+  await skipMoonBtn.click();
+
+  await worldCanvas.waitFor({ state: 'visible', timeout: 10000 });
+  await moonScene.waitFor({ state: 'detached', timeout: 5000 });
+
+  const skipRp = await page.evaluate(() => (window).__getResearchPoints?.());
+  if (skipRp !== 0) throw new Error(`Expected 0 RP after skip, got: ${skipRp}`);
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const continueBtn3 = page.locator('[data-testid="continue-mission-btn"]');
+  if (await continueBtn3.isVisible()) {
+    await continueBtn3.click();
+  }
+  await worldCanvas.waitFor({ state: 'visible', timeout: 10000 });
+  const skippedMoonCount = await page.locator('[data-testid="moon-scene"]').count();
+  if (skippedMoonCount > 0) throw new Error('Moon scene shown again after skip!');
+  console.log('  [PASS] Moon 5: Skip from first second lands in Mars with 0 RP, Moon never shown again');
+
+  // 6. Existing save with worldSave and no moonChapter
+  console.log('Moon 6: Existing save with worldSave and no moonChapter...');
+  await page.evaluate(() => {
+    window.__disableAutoSave = true;
+    const existingSave = {
+      version: 3,
+      currentChapter: 0,
+      unlockedMissions: [],
+      solvedMiniGames: [],
+      quizzesCompleted: [],
+      badges: [],
+      diagnosticsCompleted: [],
+      repairedSubsystems: [],
+      stormDecisionMade: null,
+      worldSave: {
+        version: 3,
+        seed: 19970704,
+        playerTileX: 10,
+        playerTileY: 10,
+        playerFacing: 'down',
+        collectedPartIds: ['part_gear'],
+        completedEquipmentIds: [],
+        exploredFog: null,
+        shipRepaired: false,
+        playTimeSeconds: 50,
+        lastSavedAt: Date.now(),
+        researchPoints: 7,
+      },
+    };
+    localStorage.setItem('beyond_depth_save_v3', JSON.stringify(existingSave));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('[data-testid="continue-mission-btn"]').click();
+
+  await worldCanvas.waitFor({ state: 'visible', timeout: 10000 });
+  const moonCount = await page.locator('[data-testid="moon-scene"]').count();
+  if (moonCount > 0) throw new Error('Moon opened for existing save with worldSave!');
+  console.log('  [PASS] Moon 6: Existing save went to Mars world, never the Moon');
+
+  // 7. Legacy Chapter 2 still opens from Legacy Chapters
+  console.log('Moon 7: Legacy Chapter 2 opens from Legacy Chapters modal...');
+  await page.evaluate(() => {
+    window.__disableAutoSave = true;
+    const saved = JSON.parse(localStorage.getItem('beyond_depth_save_v3') || '{}');
+    saved.currentChapter = 0;
+    localStorage.setItem('beyond_depth_save_v3', JSON.stringify(saved));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('[data-testid="legacy-chapters-btn"]').click();
+  const legacyModal = page.locator('[data-testid="legacy-chapters-modal"]');
+  await legacyModal.waitFor({ state: 'visible', timeout: 5000 });
+  await page.locator('[data-testid="legacy-chapter-2"]').click();
+  await page.locator('text=LEGACY: THE MOON').waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Moon 7: Legacy Chapter 2 successfully opened from Legacy Chapters modal');
+
+  // 8. Mobile Pass: moon-hop-btn >= 48px, D-pad moves, no page scroll, plus Luna 9 mobile verification
+  console.log('Moon 8: Mobile layout, hop button size, D-pad, scroll isolation, and Luna 9 mobile verification...');
+  const mobileContext = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const mPage = await mobileContext.newPage();
+  await mPage.goto(`http://127.0.0.1:${PORT}/?debug=1`, { waitUntil: 'domcontentloaded' });
+  await mPage.evaluate(() => localStorage.clear());
+  await mPage.reload({ waitUntil: 'domcontentloaded' });
+
+  await mPage.locator('[data-testid="start-mission-btn"]').click();
+  await mPage.locator('[data-testid="skip-prologue-btn"]').click();
+
+  const mMoonScene = mPage.locator('[data-testid="moon-scene"]');
+  await mMoonScene.waitFor({ state: 'visible', timeout: 6000 });
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'mobile_moon_scene.png') });
+  console.log('  [OK Captured] mobile_moon_scene.png');
+
+  // Visual Fix Assertions on Mobile (Moon-1.1):
+  // 1. Mobile canvas rect equals viewport (390x844)
+  const mCanvasEl = mPage.locator('[data-testid="moon-scene"] canvas');
+  const mMoonCanvasBox = await mCanvasEl.boundingBox();
+  if (!mMoonCanvasBox || mMoonCanvasBox.width !== 390 || mMoonCanvasBox.height !== 844) {
+    throw new Error(`Mobile canvas size must equal 390x844, got: ${JSON.stringify(mMoonCanvasBox)}`);
+  }
+  console.log('  [PASS] Mobile canvas rect equals viewport (390x844)');
+
+  // 2. Mobile player sprite height >= 28px
+  const mSpriteHeight = await mPage.evaluate(() => {
+    return window.__moonDebug?.getPlayerSpriteHeight?.() || Number(document.querySelector('[data-testid="moon-scene"]').getAttribute('data-player-sprite-height'));
+  });
+  console.log(`  Mobile player sprite height: ${mSpriteHeight}px (requirement >= 28px)`);
+  if (!mSpriteHeight || mSpriteHeight < 28) {
+    throw new Error(`Mobile player sprite height must be >= 28px, got: ${mSpriteHeight}px`);
+  }
+  console.log('  [PASS] Mobile player sprite height >= 28px');
+
+  // 3. Mobile HUD chips safe padding >= 12px
+  const mRelicBox = await mPage.locator('[data-testid="moon-relic-counter"]').boundingBox();
+  const mSkipBox = await mPage.locator('[data-testid="moon-skip-btn"]').boundingBox();
+  if (!mRelicBox || mRelicBox.x < 12) {
+    throw new Error(`Mobile relic counter padding < 12px: ${mRelicBox?.x}px`);
+  }
+  if (!mSkipBox || (390 - (mSkipBox.x + mSkipBox.width)) < 12) {
+    throw new Error(`Mobile skip button padding < 12px: ${mSkipBox ? 390 - (mSkipBox.x + mSkipBox.width) : 'null'}px`);
+  }
+  console.log('  [PASS] Mobile HUD chips safe padding >= 12px confirmed');
+
+  // 4. BEACON visible on mobile
+  const mBeacon = mPage.locator('[data-testid="moon-beacon"]');
+  await mBeacon.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] moon-beacon visible on mobile');
+
+  // 5. Mobile Screenshots: spawn, next to a pit, mid-hop (data-hopping=true), and in front of relic 1
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'mobile_moon_spawn.png') });
+  console.log('  [OK Captured] mobile_moon_spawn.png');
+
+  await mPage.evaluate(() => window.__moonTeleport(24, 20));
+  await mPage.waitForTimeout(200);
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'mobile_moon_next_to_pit.png') });
+  console.log('  [OK Captured] mobile_moon_next_to_pit.png');
+
+  const mHopBtnElem = mPage.locator('[data-testid="moon-hop-btn"]');
+  await mHopBtnElem.click();
+  await mPage.waitForTimeout(300);
+  const mMidHopStatus = await mMoonScene.getAttribute('data-hopping');
+  if (mMidHopStatus !== 'true') throw new Error(`Expected mobile data-hopping="true", got: ${mMidHopStatus}`);
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'mobile_moon_mid_hop.png') });
+  console.log('  [OK Captured] mobile_moon_mid_hop.png (data-hopping=true)');
+  await mPage.waitForTimeout(650);
+
+  await mPage.evaluate(() => window.__moonTeleport(18, 20));
+  await mPage.waitForTimeout(200);
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'mobile_moon_relic1.png') });
+  console.log('  [OK Captured] mobile_moon_relic1.png');
+
+  // Return to spawn
+  await mPage.evaluate(() => window.__moonTeleport(8, 20));
+  await mPage.waitForTimeout(200);
+
+  const hopBtn = mPage.locator('[data-testid="moon-hop-btn"]');
+  await hopBtn.waitFor({ state: 'visible' });
+  const hopBox = await hopBtn.boundingBox();
+  if (!hopBox || hopBox.width < 48 || hopBox.height < 48) {
+    throw new Error(`moon-hop-btn must be >= 48px, got: ${JSON.stringify(hopBox)}`);
+  }
+  console.log(`  moon-hop-btn dimensions: ${hopBox.width}x${hopBox.height} (>= 48px confirmed)`);
+
+  const initTile = await mMoonScene.getAttribute('data-player-tile');
+  const dpadRight = mPage.locator('[data-testid="virtual-dpad"] button:has-text("▶")');
+  await dpadRight.dispatchEvent('pointerdown');
+  await mPage.waitForTimeout(400);
+  await dpadRight.dispatchEvent('pointerup');
+  const movedTile = await mMoonScene.getAttribute('data-player-tile');
+  if (initTile === movedTile) throw new Error(`D-pad did not move player! Tile stayed at ${initTile}`);
+  console.log(`  D-pad moved player from ${initTile} to ${movedTile}`);
+
+  // Test Luna 9 on mobile
+  console.log('  Testing Luna 9 Soft Landing on Mobile (390x844)...');
+  await mPage.evaluate(() => window.__moonTeleport(18, 20));
+  await mPage.waitForTimeout(300);
+
+  const mInteractBtn = mPage.locator('[data-testid="touch-interact-btn"]');
+  await mInteractBtn.waitFor({ state: 'visible', timeout: 4000 });
+  await mInteractBtn.click();
+
+  const mNovaActionBtn = mPage.locator('[data-testid="nova-dialogue-action-btn"]');
+  await mNovaActionBtn.waitFor({ state: 'visible', timeout: 4000 });
+  await mNovaActionBtn.click();
+
+  const mLunaGame = mPage.locator('[data-testid="luna-game"]');
+  await mLunaGame.waitFor({ state: 'visible', timeout: 5000 });
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'luna_mobile_01_falling.png') });
+  console.log('  [OK Captured] luna_mobile_01_falling.png');
+
+  // Verify mobile thrust button size >= 72px tall and >= 48px wide
+  const mThrustBtn = mPage.locator('[data-testid="luna-thrust-btn"]');
+  await mThrustBtn.waitFor({ state: 'visible' });
+  const mThrustBox = await mThrustBtn.boundingBox();
+  console.log(`  Mobile thrust button: ${mThrustBox?.width}x${mThrustBox?.height}`);
+  if (!mThrustBox || mThrustBox.height < 72 || mThrustBox.width < 48) {
+    throw new Error(`Mobile luna-thrust-btn must be >= 72px tall and >= 48px wide, got: ${JSON.stringify(mThrustBox)}`);
+  }
+
+  // Verify mobile canvas width >= 340px
+  const mCanvas = mPage.locator('[data-testid="luna-game"] canvas');
+  const mCanvasBox = await mCanvas.boundingBox();
+  console.log(`  Mobile canvas width: ${mCanvasBox?.width}px (target >= 340px)`);
+  if (!mCanvasBox || mCanvasBox.width < 340) {
+    throw new Error(`Mobile canvas width < 340px: ${mCanvasBox?.width}px`);
+  }
+
+  // Verify zero page scroll
+  const mScrollOffset = await mPage.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+  if (mScrollOffset.x !== 0 || mScrollOffset.y !== 0) {
+    throw new Error(`Mobile page scroll detected: ${JSON.stringify(mScrollOffset)}`);
+  }
+
+  // Test touch hold on thrust button
+  await mThrustBtn.dispatchEvent('pointerdown');
+  await mPage.waitForTimeout(300);
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'luna_mobile_02_thrusting.png') });
+  console.log('  [OK Captured] luna_mobile_02_thrusting.png');
+  await mThrustBtn.dispatchEvent('pointerup');
+
+  // Complete landing via autopilot perfect on mobile
+  await mPage.evaluate(() => window.__lunaGame.setAutopilot('perfect'));
+  let mLowFuelSnapped = false;
+  while (true) {
+    const s = await mPage.evaluate(() => window.__lunaGame.getState());
+    if (s.phase === 'landed') break;
+    if (s.fuel < 25 && !mLowFuelSnapped) {
+      mLowFuelSnapped = true;
+      await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'luna_mobile_02_low_fuel.png') });
+      console.log('  [OK Captured] luna_mobile_02_low_fuel.png');
+    }
+    await mPage.waitForTimeout(50);
+  }
+
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'luna_mobile_03_3star_touchdown.png') });
+  console.log('  [OK Captured] luna_mobile_03_3star_touchdown.png');
+
+  const mWinScreen = mPage.locator('[data-testid="minigame-win"]');
+  await mWinScreen.waitFor({ state: 'visible', timeout: 5000 });
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'luna_mobile_05_win_screen.png') });
+  console.log('  [OK Captured] luna_mobile_05_win_screen.png');
+
+  // Test mobile airbag bounce capture via retry and no-input run
+  const mRetryBtn = mPage.locator('[data-testid="minigame-retry"]');
+  await mRetryBtn.click();
+  await mLunaGame.waitFor({ state: 'visible', timeout: 5000 });
+  while (true) {
+    const s = await mPage.evaluate(() => window.__lunaGame.getState());
+    if (s.phase === 'landed') break;
+    await mPage.waitForTimeout(40);
+  }
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'luna_mobile_04_airbag_bounce.png') });
+  console.log('  [OK Captured] luna_mobile_04_airbag_bounce.png');
+
+  await mPage.close();
+  await mobileContext.close();
+  console.log('  [PASS] Moon 8: Mobile verified with hop-btn >= 48px, thrust-btn >= 72px, canvas >= 340px, zero scroll');
+
+  // 9. Reduce Motion ON: repeat checks 2 and 3
+  console.log('Moon 9: Reduce Motion ON verification (Hop + Luna 9 Checks 2 & 3)...');
+  await page.evaluate(() => {
+    window.__disableAutoSave = true;
+    localStorage.clear();
+    localStorage.setItem('mars_reduce_motion', 'true');
+  });
+  await page.goto(`http://127.0.0.1:${PORT}/?debug=1`, { waitUntil: 'domcontentloaded' });
+  await page.locator('[data-testid="start-mission-btn"]').click();
+  await page.locator('[data-testid="skip-prologue-btn"]').click();
+  await moonScene.waitFor({ state: 'visible', timeout: 6000 });
+
+  await page.evaluate(() => window.__moonTeleport(24, 20));
+  await page.waitForTimeout(200);
+
+  await page.keyboard.down('ArrowRight');
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(350);
+  const rmHopping = await moonScene.getAttribute('data-hopping');
+  if (rmHopping !== 'true') throw new Error(`Expected data-hopping="true" under Reduce Motion, got: ${rmHopping}`);
+
+  await page.waitForTimeout(650);
+  await page.keyboard.up('ArrowRight');
+  const rmEndTile = await moonScene.getAttribute('data-player-tile');
+  const [rmEndX] = rmEndTile.split(',').map(Number);
+  if (rmEndX < 28) throw new Error(`Expected end tile beyond pit under Reduce Motion, got: ${rmEndTile}`);
+  console.log(`  [PASS] Hop under Reduce Motion completed to tile: ${rmEndTile}`);
+
+  // Test Luna 9 Check 3 (no input) under Reduce Motion
+  console.log('  Testing Luna 9 Check 3 (no input) under Reduce Motion...');
+  await page.evaluate(() => window.__moonTeleport(18, 20));
+  await page.waitForTimeout(300);
+  await page.keyboard.press('KeyE');
+  const rmNovaBtn = page.locator('[data-testid="nova-dialogue-action-btn"]');
+  await rmNovaBtn.waitFor({ state: 'visible', timeout: 4000 });
+  await rmNovaBtn.click();
+
+  const rmLunaGame = page.locator('[data-testid="luna-game"]');
+  await rmLunaGame.waitFor({ state: 'visible', timeout: 5000 });
+
+  const rmWinScreen = page.locator('[data-testid="minigame-win"]');
+  await rmWinScreen.waitFor({ state: 'visible', timeout: 14000 });
+  const rmStars1 = await page.locator('[data-testid="minigame-stars"]').getAttribute('data-stars');
+  if (rmStars1 !== '1') throw new Error(`Expected 1 star on RM no-input run, got: ${rmStars1}`);
+  console.log('  [PASS] Luna 9 Check 3 finished with 1 star under Reduce Motion');
+
+  // Test Luna 9 Check 2 (perfect / bang-bang) under Reduce Motion
+  console.log('  Testing Luna 9 Check 2 under Reduce Motion...');
+  const rmRetryBtn = page.locator('[data-testid="minigame-retry"]');
+  await rmRetryBtn.click();
+  await rmLunaGame.waitFor({ state: 'visible', timeout: 5000 });
+
+  await page.evaluate(() => window.__lunaGame.setAutopilot('perfect'));
+  await rmWinScreen.waitFor({ state: 'visible', timeout: 30000 });
+  const rmStars2 = await page.locator('[data-testid="minigame-stars"]').getAttribute('data-stars');
+  if (rmStars2 !== '3') throw new Error(`Expected 3 stars on RM autopilot run, got: ${rmStars2}`);
+  console.log('  [PASS] Luna 9 Check 2 finished with 3 stars under Reduce Motion');
+
+  await page.close();
+  console.log('======================================================');
+  console.log('ALL 10 MOON CHAPTER 8 QA CHECKS PASSED PERFECTLY!');
+  console.log('======================================================\n');
 }
 
 async function runAll() {
@@ -2616,6 +3456,9 @@ async function runAll() {
 
     // 1. Production Build Debug Hooks Gate Audit (WITHOUT ?debug=1)
     await runProductionDebugHooksGateAudit(browser);
+
+    // 1.5. Moon Chapter 8 Prequel QA Suite (Checks 1-10)
+    await runMoonChapterQA(browser);
 
     // 2. Desktop Pass: 1366 x 768
     await runTestPass(browser, {

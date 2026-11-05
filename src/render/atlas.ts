@@ -30,6 +30,39 @@ export const SPRITE_MANIFEST: Record<string, SpriteDefinition> = {
   // 100% solid, opaque, coherent biomes with zero stray UI/structure tiles.
   // ==========================================
   
+  // Moon Surface Prequel (Chapter 8)
+  tile_moon_regolith: {
+    sheet: 'procedural',
+    x: 0, y: 0, w: 16, h: 16,
+    renderW: 16, renderH: 16,
+    license: 'cc0',
+  },
+  tile_moon_regolith_variant: {
+    sheet: 'procedural',
+    x: 0, y: 0, w: 16, h: 16,
+    renderW: 16, renderH: 16,
+    license: 'cc0',
+  },
+  tile_moon_crater_rim: {
+    sheet: 'procedural',
+    x: 0, y: 0, w: 16, h: 16,
+    renderW: 16, renderH: 16,
+    license: 'cc0',
+  },
+  tile_moon_pit: {
+    sheet: 'procedural',
+    x: 0, y: 0, w: 16, h: 16,
+    renderW: 16, renderH: 16,
+    license: 'cc0',
+  },
+  prop_moon_rock: {
+    sheet: 'procedural',
+    x: 0, y: 0, w: 16, h: 16,
+    renderW: 16, renderH: 16,
+    offsetY: 0,
+    license: 'cc0',
+  },
+
   // Mars Red Regolith / Rocky Plains Biome (Calm Default Surface)
   tile_mars_regolith: {
     sheet: 'procedural',
