@@ -47,6 +47,7 @@ export interface PlacedLandmark {
   distanceFromSpawn: number;
   widthTiles: number;
   heightTiles: number;
+  isSounded?: boolean;
 }
 
 // Distance rings for progressive placement
@@ -256,6 +257,7 @@ export class EquipmentPlacementSystem {
   public generateSamples(): PlacedSample[] {
     if (this.isSamplesGenerated) return this.placedSamples;
     if (!this.isGenerated) this.generate();
+    if (!this.isLandmarksGenerated) this.generateLandmarks();
 
     const rng = new SeededRNG(typeof this.seed === 'number' ? this.seed + 9999 : this.seed + '_samples');
     const sampleKeys = Object.keys(SCIENCE_SAMPLES);
@@ -263,6 +265,7 @@ export class EquipmentPlacementSystem {
     this.placedSamples = [];
 
     const existingCoords: [number, number][] = this.placedEquipment.map((e) => [e.tileX, e.tileY]);
+    const canyonLm = this.placedLandmarks.find((lm) => lm.id === 'canyon_rim');
 
     for (let i = 0; i < targetSamplesCount; i++) {
       const defKey = sampleKeys[i % sampleKeys.length];
@@ -272,8 +275,29 @@ export class EquipmentPlacementSystem {
 
       let bestCand: { x: number; y: number } | null = null;
 
+      // Anchor one high-value specimen directly on the Valles Marineris cliffside spur
+      if (defKey === 'sample_stromatolite_fossil' && canyonLm && !this.placedSamples.some((s) => s.def.id === 'sample_stromatolite_fossil')) {
+        const cliffOffsets = [
+          [4, -2],
+          [4, -1],
+          [4, -3],
+          [-4, -2],
+          [3, -3],
+        ];
+        for (const [ox, oy] of cliffOffsets) {
+          const testX = canyonLm.tileX + ox;
+          const testY = canyonLm.tileY + oy;
+          const biome = this.world.getTileBiome(testX, testY);
+          if (this.reachableTiles.has(this.encodeCoord(testX, testY)) && biome !== 'water' && def.preferredBiomes.includes(biome)) {
+            bestCand = { x: testX, y: testY };
+            break;
+          }
+        }
+      }
+
       // 1. Radial stochastic search within preferred biomes
-      for (let attempt = 0; attempt < 80; attempt++) {
+      if (!bestCand) {
+        for (let attempt = 0; attempt < 80; attempt++) {
         const angle = rng.next() * Math.PI * 2;
         const dist = minDist + rng.next() * (maxDist - minDist + (attempt > 40 ? (attempt - 40) * 1.5 : 0));
         const cx = Math.round(this.spawnTileX + Math.cos(angle) * dist);
@@ -293,6 +317,7 @@ export class EquipmentPlacementSystem {
         bestCand = { x: cx, y: cy };
         break;
       }
+    }
 
       // 2. Deterministic reachableTiles fallback if radial search did not find preferred biome
       if (!bestCand) {

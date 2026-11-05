@@ -10,9 +10,15 @@ import { drawLandmark } from '../render/landmarkRender';
 import { ORDERED_LOGS, getLogForPart, getLogForWreck, deriveLogIdsFromParts } from '../data/logs';
 import { PartsHUD } from './PartsHUD';
 import { NovaDialogue } from './NovaDialogue';
-import { SojournerRoverPuzzle } from './MiniGames/SojournerRoverPuzzle';
+import { SojournerRoverGame } from './MiniGames/SojournerRoverGame';
 import { OpportunityWaterPuzzle } from './MiniGames/OpportunityWaterPuzzle';
-import { InSightSeismicPuzzle } from './MiniGames/InSightSeismicPuzzle';
+import { OpportunityBlueberryGame } from './MiniGames/OpportunityBlueberryGame';
+import { InSightSeismicGame } from './MiniGames/InSightSeismicGame';
+import { PhoenixIceDigGame } from './MiniGames/PhoenixIceDigGame';
+import { SpiritWheelGame } from './MiniGames/SpiritWheelGame';
+import { DeepSpaceDishGame } from './MiniGames/DeepSpaceDishGame';
+import { ApolloLrvGame } from './MiniGames/ApolloLrvGame';
+import { SurveyorSalvageGame } from './MiniGames/SurveyorSalvageGame';
 import { FieldQuizModal } from './FieldQuizModal';
 import { TileDebugModal } from './TileDebugModal';
 import { MinimapHUD } from './MinimapHUD';
@@ -45,10 +51,8 @@ interface WorldSceneProps {
 
 export const CAMERA_SCALE = 3;
 
-export const isDebugMode = Boolean(
-  import.meta.env.DEV ||
-  (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1')
-);
+import { isDebugMode } from '../systems/debug';
+export { isDebugMode };
 
 interface RenderEntity {
   type: 'prop' | 'player' | 'nova' | 'ship' | 'equipment' | 'sample';
@@ -153,6 +157,11 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
   const [discoveredLandmarkIds, setDiscoveredLandmarkIds] = useState<string[]>([]);
   const discoveredLandmarksRef = useRef<string[]>([]);
   discoveredLandmarksRef.current = discoveredLandmarkIds;
+  const [soundedLandmarkIds, setSoundedLandmarkIds] = useState<string[]>([]);
+  const soundedLandmarksRef = useRef<string[]>([]);
+  soundedLandmarksRef.current = soundedLandmarkIds;
+  const [canProbeCanyon, setCanProbeCanyon] = useState<boolean>(false);
+  const canProbeCanyonRef = useRef<boolean>(false);
   const [landmarkToast, setLandmarkToast] = useState<{ name: string; fact: string } | null>(null);
   const lastPlayerTileRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -180,6 +189,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
   // Research Points & Upgrades Progression Loop (2 levels each)
   const [researchPoints, setResearchPoints] = useState<number>(0);
   const researchPointsRef = useRef<number>(0);
+  const [bonusRpWreckIds, setBonusRpWreckIds] = useState<string[]>([]);
+  const bonusRpWreckIdsRef = useRef<string[]>([]);
   const [upgrades, setUpgrades] = useState<PlayerUpgrades>({
     jetpack: 0,
     scan: 0,
@@ -260,7 +271,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
 
   const [activeMiniGame, setActiveMiniGame] = useState<{
     equipId: string;
-    type: 'sojourner' | 'opportunity' | 'insight' | 'quiz';
+    type: EquipmentDefinition['miniGameType'];
     def: EquipmentDefinition;
   } | null>(null);
 
@@ -406,6 +417,12 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       collectedSamplesRef.current = worldSave.collectedSampleIds || [];
       setDiscoveredLandmarkIds(worldSave.discoveredLandmarkIds || []);
       discoveredLandmarksRef.current = worldSave.discoveredLandmarkIds || [];
+      const loadedSounded = Array.isArray(worldSave.soundedLandmarkIds) ? worldSave.soundedLandmarkIds : [];
+      setSoundedLandmarkIds(loadedSounded);
+      soundedLandmarksRef.current = loadedSounded;
+      landmarksListRef.current.forEach((lm) => {
+        if (loadedSounded.includes(lm.id)) lm.isSounded = true;
+      });
       const loadedLogs = Array.isArray(worldSave.recoveredLogIds)
         ? worldSave.recoveredLogIds
         : deriveLogIdsFromParts(worldSave.collectedPartIds || [], worldSave.completedEquipmentIds || []);
@@ -413,6 +430,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       recoveredLogIdsRef.current = loadedLogs;
       setResearchPoints(worldSave.researchPoints || 0);
       researchPointsRef.current = worldSave.researchPoints || 0;
+      setBonusRpWreckIds(worldSave.bonusRpWreckIds || []);
+      bonusRpWreckIdsRef.current = worldSave.bonusRpWreckIds || [];
       const parseUpgradeLvl = (v: any): number => {
         if (typeof v === 'number') return Math.min(2, Math.max(0, Math.floor(v)));
         return v ? 1 : 0;
@@ -549,6 +568,22 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     (window as any).__getDiscoveredLandmarks = () => discoveredLandmarksRef.current;
     (window as any).__getResearchPoints = () => researchPointsRef.current;
     (window as any).__getUpgrades = () => upgradesRef.current;
+    (window as any).__getCollectedPartIds = () => collectedPartIdsRef.current;
+    (window as any).__getRecoveredLogIds = () => recoveredLogIdsRef.current;
+    (window as any).__getBonusRpWreckIds = () => bonusRpWreckIdsRef.current;
+    (window as any).__teleportToWreck = (wreckIdOrIndex: string | number) => {
+      const list = equipmentListRef.current;
+      const target = typeof wreckIdOrIndex === 'number'
+        ? list[wreckIdOrIndex]
+        : list.find((e) => e.def.id === wreckIdOrIndex);
+      if (target) {
+        teleportToEquipment(target.tileX, target.tileY);
+        fogRef.current.revealArea(target.tileX, target.tileY, 18);
+        sound.playHover();
+        return { success: true, id: target.def.id, name: target.def.name };
+      }
+      return { success: false };
+    };
     (window as any).__teleportToSample = (index: number = 0) => {
       const uncollected = samplesListRef.current.filter((s) => !collectedSamplesRef.current.includes(s.id));
       const target = uncollected[index] || samplesListRef.current[index];
@@ -941,6 +976,10 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       delete (window as any).__grantAllParts;
       delete (window as any).__getResearchPoints;
       delete (window as any).__getUpgrades;
+      delete (window as any).__getCollectedPartIds;
+      delete (window as any).__getRecoveredLogIds;
+      delete (window as any).__getBonusRpWreckIds;
+      delete (window as any).__teleportToWreck;
       delete (window as any).__teleportToSample;
       delete (window as any).__teleportToLandmark;
       delete (window as any).__teleportNearLandmark;
@@ -1024,10 +1063,12 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         playTimeSeconds: playTimeRef.current,
         collectedSampleIds: collectedSamplesRef.current,
         discoveredLandmarkIds: discoveredLandmarksRef.current,
+        soundedLandmarkIds: soundedLandmarksRef.current,
         recoveredLogIds: recoveredLogIdsRef.current,
         solTime: solTimeRef.current,
         researchPoints: researchPointsRef.current,
         upgrades: upgradesRef.current,
+        bonusRpWreckIds: bonusRpWreckIdsRef.current,
       },
       force
     );
@@ -1089,6 +1130,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       recoveredLogIdsRef.current = loadedLogs;
       setResearchPoints(saved.researchPoints || 0);
       researchPointsRef.current = saved.researchPoints || 0;
+      setBonusRpWreckIds(saved.bonusRpWreckIds || []);
+      bonusRpWreckIdsRef.current = saved.bonusRpWreckIds || [];
       const parseUpgradeLvl = (v: any): number => {
         if (typeof v === 'number') return Math.min(2, Math.max(0, Math.floor(v)));
         return v ? 1 : 0;
@@ -1138,6 +1181,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     recoveredLogIdsRef.current = [];
     setResearchPoints(0);
     researchPointsRef.current = 0;
+    setBonusRpWreckIds([]);
+    bonusRpWreckIdsRef.current = [];
     setUpgrades({ jetpack: 0, scan: 0, minimap: 0 });
     upgradesRef.current = { jetpack: 0, scan: 0, minimap: 0 };
     solTimeRef.current = 0.35;
@@ -1254,6 +1299,42 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     novaBubbleTimerRef.current = 4.0;
     generalBubbleCooldownRef.current = 15.0;
   }, [triggerAutoSave]);
+
+  // Deploy Depth Sounder Probe into Valles Marineris Abyss (+3 RP)
+  const triggerCanyonProbe = useCallback(() => {
+    if (soundedLandmarksRef.current.includes('canyon_rim')) return;
+    const canyon = landmarksListRef.current.find((lm) => lm.id === 'canyon_rim');
+    if (!canyon) return;
+
+    const nextSounded = [...soundedLandmarksRef.current, 'canyon_rim'];
+    soundedLandmarksRef.current = nextSounded;
+    setSoundedLandmarkIds(nextSounded);
+    canyon.isSounded = true;
+
+    sound.playCanyonEcho();
+    triggerCameraShake(4.5, 0.45);
+
+    const nextPoints = researchPointsRef.current + 3;
+    setResearchPoints(nextPoints);
+    researchPointsRef.current = nextPoints;
+
+    triggerAutoSave(true);
+
+    setLandmarkToast({
+      name: 'Valles Marineris Depth Sounder',
+      fact: 'Descent probe verified 7,420 m depth. Ancient crustal basalt strata & echo profile recorded! (+3 RP)',
+    });
+    setTimeout(() => {
+      setLandmarkToast(null);
+    }, 5500);
+
+    setNovaBubble({
+      text: 'Acoustic telemetry return confirmed! Canyon floor is 7.4 km down. Deep core data secured!',
+      mood: 'celebrate',
+    });
+    novaBubbleTimerRef.current = 5.0;
+    generalBubbleCooldownRef.current = 15.0;
+  }, [triggerAutoSave, triggerCameraShake]);
 
   // Buy Subsystem Upgrade at Crashed Spaceship (2 levels each: costs 3/6, 4/8, 5/10 RP)
   const handleBuyUpgrade = useCallback((key: 'jetpack' | 'scan' | 'minimap') => {
@@ -1566,6 +1647,24 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     setActiveMiniGame(null);
   }, []);
 
+  // Award Bonus RP for 3-star mini-game performance (once per wreck)
+  const handleAwardBonusRp = useCallback((wreckId: string): boolean => {
+    if (bonusRpWreckIdsRef.current.includes(wreckId)) {
+      return false;
+    }
+    const nextList = [...bonusRpWreckIdsRef.current, wreckId];
+    bonusRpWreckIdsRef.current = nextList;
+    setBonusRpWreckIds(nextList);
+
+    const nextPoints = researchPointsRef.current + 1;
+    researchPointsRef.current = nextPoints;
+    setResearchPoints(nextPoints);
+
+    sound.playSuccess();
+    triggerAutoSave(true);
+    return true;
+  }, [triggerAutoSave]);
+
   // Main 60 FPS Game Loop
   useEffect(() => {
     let animId: number;
@@ -1713,7 +1812,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
                 : biomeType === 'desert'
                 ? 'rgba(217, 119, 6, 0.65)'
                 : biomeType === 'grassland'
-                ? 'rgba(101, 163, 13, 0.55)'
+                ? 'rgba(180, 83, 9, 0.55)'
                 : 'rgba(194, 65, 12, 0.65)';
             const puffAngle = Math.random() * Math.PI * 2;
             const puffSpeed = 10 + Math.random() * 22;
@@ -1752,12 +1851,14 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
           }
 
           // Leave Footprint Decals on terrain
-          if (biomeType !== 'water' && biomeType !== 'grassland') {
+          if (biomeType !== 'water') {
             const fpColor =
               biomeType === 'snow'
                 ? 'rgba(148, 163, 184, 0.45)'
                 : biomeType === 'desert'
                 ? 'rgba(180, 83, 9, 0.35)'
+                : biomeType === 'grassland'
+                ? 'rgba(113, 41, 13, 0.42)'
                 : 'rgba(124, 45, 18, 0.4)';
             footprintsRef.current.push({
               x: player.x,
@@ -1843,29 +1944,41 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
 
           if (tDist > 0.5) {
             // Smooth speed matching player speed
-            const followSpeed = distToPlayer > 45 ? 90 : 75;
+            const followSpeed = distToPlayer > 50 ? 95 : 78;
             const step = Math.min(tDist, followSpeed * dt);
             nova.x += (tdx / tDist) * step;
             nova.y += (tdy / tDist) * step;
 
-            // Facing direction from movement vector
-            if (Math.abs(tdx) > Math.abs(tdy) * 1.2) {
-              nova.facing = tdx > 0 ? 'right' : 'left';
-            } else if (Math.abs(tdy) > Math.abs(tdx) * 1.2) {
-              nova.facing = tdy > 0 ? 'down' : 'up';
+            // Directional hysteresis prevents rapid facing flutter during diagonal movement
+            const absX = Math.abs(tdx);
+            const absY = Math.abs(tdy);
+            const isHoriz = nova.facing === 'left' || nova.facing === 'right';
+
+            if (isHoriz) {
+              if (absY > absX * 1.35 && absY > 1.5) {
+                nova.facing = tdy > 0 ? 'down' : 'up';
+              } else if (absX > 0.5) {
+                nova.facing = tdx > 0 ? 'right' : 'left';
+              }
             } else {
-              nova.facing = target.facing;
+              if (absX > absY * 1.35 && absX > 1.5) {
+                nova.facing = tdx > 0 ? 'right' : 'left';
+              } else if (absY > 0.5) {
+                nova.facing = tdy > 0 ? 'down' : 'up';
+              }
             }
 
             nova.walkFrame += dt * 6.5;
 
-            // Occasional pawprint in sand/snow/regolith
-            if (Math.random() < 0.22 && biomeType !== 'water' && biomeType !== 'grassland') {
+            // Occasional pawprint in sand/snow/regolith/clay
+            if (Math.random() < 0.22 && biomeType !== 'water') {
               const fpColor =
                 biomeType === 'snow'
                   ? 'rgba(148, 163, 184, 0.35)'
                   : biomeType === 'desert'
                   ? 'rgba(180, 83, 9, 0.28)'
+                  : biomeType === 'grassland'
+                  ? 'rgba(113, 41, 13, 0.32)'
                   : 'rgba(124, 45, 18, 0.3)';
               footprintsRef.current.push({
                 x: nova.x,
@@ -1901,7 +2014,13 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
               nova.walkFrame += dt * 6.0;
               nova.x += (tdx / tDist) * Math.min(tDist, 35 * dt);
               nova.y += (tdy / tDist) * Math.min(tDist, 35 * dt);
-              nova.facing = Math.abs(tdx) > Math.abs(tdy) ? (tdx > 0 ? 'right' : 'left') : (tdy > 0 ? 'down' : 'up');
+              const absX = Math.abs(tdx);
+              const absY = Math.abs(tdy);
+              if (absX > absY * 1.3) {
+                nova.facing = tdx > 0 ? 'right' : 'left';
+              } else if (absY > absX * 1.3) {
+                nova.facing = tdy > 0 ? 'down' : 'up';
+              }
             } else {
               novaTrotTargetRef.current = null;
             }
@@ -1971,7 +2090,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
           const biomeMsgs: Record<string, string> = {
             desert: 'Vast dunes detected. Sand might slow our stride.',
             snow: 'Subsurface polar frost detected. Extreme cold ahead!',
-            grassland: 'Terraformed vegetation verified. Liquid water must exist!',
+            grassland: 'Ancient sedimentary clay basin detected. Rich in layered delta deposits!',
             rocky: 'Regolith plains detected. High concentration of minerals.',
           };
           const msg = biomeMsgs[biomeType];
@@ -2102,6 +2221,18 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       }
       setNearbySample(nearestSample);
 
+      // Check proximity to Valles Marineris canyon rim for depth sounder probe
+      const canyon = landmarksListRef.current.find((lm) => lm.id === 'canyon_rim');
+      let nearCanyonProbe = false;
+      if (canyon && !soundedLandmarksRef.current.includes('canyon_rim')) {
+        const distToCanyon = Math.hypot(player.x - canyon.worldX, player.y - (canyon.worldY - 26));
+        if (distToCanyon < 64) {
+          nearCanyonProbe = true;
+        }
+      }
+      setCanProbeCanyon(nearCanyonProbe);
+      canProbeCanyonRef.current = nearCanyonProbe;
+
       // Check [E] / Enter key interaction trigger
       const isInteract = heldKeysRef.current.has('KeyE') || heldKeysRef.current.has('Enter') || touchStateRef.current.interact;
       if (isInteract) {
@@ -2116,6 +2247,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
             triggerShipInteract();
           } else if (nearestSample) {
             triggerSampleCollect(nearestSample);
+          } else if (canProbeCanyonRef.current) {
+            triggerCanyonProbe();
           }
         }
       }
@@ -2130,6 +2263,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
             triggerShipInteract();
           } else if (nearestSample) {
             triggerSampleCollect(nearestSample);
+          } else if (canProbeCanyonRef.current) {
+            triggerCanyonProbe();
           } else {
             triggerSonarScan();
           }
@@ -2670,14 +2805,14 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
           }
           debugSpritesRef.current.novaSprite = spriteKey;
 
-          c.fillStyle = 'rgba(0, 0, 0, 0.3)';
+          c.fillStyle = 'rgba(0, 0, 0, 0.32)';
           c.beginPath();
           c.ellipse(Math.round(nova.x), Math.round(nova.y), 7, 3, 0, 0, Math.PI * 2);
           c.fill();
 
-          const drawX = Math.round(nova.x - 9);
-          const drawY = Math.round(nova.y - 15);
-          atlas.drawSprite(c, spriteKey, drawX, drawY, 18, 16);
+          const drawX = Math.round(nova.x - 13);
+          const drawY = Math.round(nova.y - 24);
+          atlas.drawSprite(c, spriteKey, drawX, drawY, 26, 26);
         },
       });
 
@@ -2817,7 +2952,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
 
           // 2. Cut out NOVA eye spotlight
           const novaScreenX = viewCenterW + (nova.x - camRenderX) * CAMERA_SCALE;
-          const novaScreenY = viewCenterH + (nova.y - 8 - camRenderY) * CAMERA_SCALE;
+          const novaScreenY = viewCenterH + (nova.y - 10 - camRenderY) * CAMERA_SCALE;
           const novaGrad = lCtx.createRadialGradient(novaScreenX, novaScreenY, 4, novaScreenX, novaScreenY, 70);
           novaGrad.addColorStop(0, 'rgba(0, 0, 0, 0.9)');
           novaGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
@@ -3154,7 +3289,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       // Update Nova speech bubble position smoothly
       if (novaBubbleElementRef.current) {
         const nx = viewCenterW + (nova.x - camRenderX) * CAMERA_SCALE;
-        const ny = viewCenterH + (nova.y - 18 - camRenderY) * CAMERA_SCALE;
+        const ny = viewCenterH + (nova.y - 24 - camRenderY) * CAMERA_SCALE;
         novaBubbleElementRef.current.style.transform = `translate3d(${Math.round(nx)}px, ${Math.round(ny)}px, 0)`;
       }
 
@@ -3201,8 +3336,10 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       triggerShipInteract();
     } else if (nearbySample) {
       triggerSampleCollect(nearbySample);
+    } else if (canProbeCanyon) {
+      triggerCanyonProbe();
     }
-  }, [nearbyEquipment, isNearShip, nearbySample, triggerEquipmentInteract, triggerShipInteract, triggerSampleCollect]);
+  }, [nearbyEquipment, isNearShip, nearbySample, canProbeCanyon, triggerEquipmentInteract, triggerShipInteract, triggerSampleCollect, triggerCanyonProbe]);
 
   return (
     <div data-testid="world-scene" className="relative w-full h-full select-none overflow-hidden bg-black flex flex-col items-center justify-center font-sans">
@@ -3417,23 +3554,89 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
 
       {/* MINI-GAMES MODAL CONTAINER */}
       {activeMiniGame?.type === 'sojourner' && (
-        <SojournerRoverPuzzle
+        <SojournerRoverGame
+          wreckId={activeMiniGame.equipId}
           onSuccess={handleMiniGameSuccess}
           onClose={handleMiniGameClose}
+          onAwardBonusRp={() => handleAwardBonusRp(activeMiniGame.equipId)}
+          hasBonusRp={bonusRpWreckIds.includes(activeMiniGame.equipId)}
         />
       )}
 
-      {activeMiniGame?.type === 'opportunity' && (
+      {(activeMiniGame?.type === 'phoenix' || activeMiniGame?.equipId === 'eq_phoenix') && (
+        <PhoenixIceDigGame
+          wreckId={activeMiniGame.equipId}
+          onSuccess={handleMiniGameSuccess}
+          onClose={handleMiniGameClose}
+          onAwardBonusRp={() => handleAwardBonusRp(activeMiniGame.equipId)}
+          hasBonusRp={bonusRpWreckIds.includes(activeMiniGame.equipId)}
+        />
+      )}
+
+      {(activeMiniGame?.type === 'spirit' || activeMiniGame?.equipId === 'eq_spirit') && (
+        <SpiritWheelGame
+          wreckId={activeMiniGame.equipId}
+          onSuccess={handleMiniGameSuccess}
+          onClose={handleMiniGameClose}
+          onAwardBonusRp={() => handleAwardBonusRp(activeMiniGame.equipId)}
+          hasBonusRp={bonusRpWreckIds.includes(activeMiniGame.equipId)}
+        />
+      )}
+
+      {(activeMiniGame?.type === 'deep_space' || activeMiniGame?.equipId === 'eq_deep_space_dish') && (
+        <DeepSpaceDishGame
+          wreckId={activeMiniGame.equipId}
+          onSuccess={handleMiniGameSuccess}
+          onClose={handleMiniGameClose}
+          onAwardBonusRp={() => handleAwardBonusRp(activeMiniGame.equipId)}
+          hasBonusRp={bonusRpWreckIds.includes(activeMiniGame.equipId)}
+        />
+      )}
+
+      {(activeMiniGame?.type === 'lrv_buggy' || activeMiniGame?.equipId === 'eq_lrv_buggy') && (
+        <ApolloLrvGame
+          wreckId={activeMiniGame.equipId}
+          onSuccess={handleMiniGameSuccess}
+          onClose={handleMiniGameClose}
+          onAwardBonusRp={() => handleAwardBonusRp(activeMiniGame.equipId)}
+          hasBonusRp={bonusRpWreckIds.includes(activeMiniGame.equipId)}
+        />
+      )}
+
+      {(activeMiniGame?.type === 'surveyor' || activeMiniGame?.equipId === 'eq_surveyor') && (
+        <SurveyorSalvageGame
+          wreckId={activeMiniGame.equipId}
+          onSuccess={handleMiniGameSuccess}
+          onClose={handleMiniGameClose}
+          onAwardBonusRp={() => handleAwardBonusRp(activeMiniGame.equipId)}
+          hasBonusRp={bonusRpWreckIds.includes(activeMiniGame.equipId)}
+        />
+      )}
+
+      {activeMiniGame?.type === 'opportunity' && activeMiniGame.equipId !== 'eq_phoenix' && (
         <OpportunityWaterPuzzle
           onSuccess={handleMiniGameSuccess}
           onClose={handleMiniGameClose}
         />
       )}
 
-      {activeMiniGame?.type === 'insight' && (
-        <InSightSeismicPuzzle
+      {activeMiniGame?.type === 'marathon' && (
+        <OpportunityBlueberryGame
+          wreckId={activeMiniGame.equipId}
           onSuccess={handleMiniGameSuccess}
           onClose={handleMiniGameClose}
+          onAwardBonusRp={() => handleAwardBonusRp(activeMiniGame.equipId)}
+          hasBonusRp={bonusRpWreckIds.includes(activeMiniGame.equipId)}
+        />
+      )}
+
+      {activeMiniGame?.type === 'insight' && activeMiniGame.equipId !== 'eq_deep_space_dish' && (
+        <InSightSeismicGame
+          wreckId={activeMiniGame.equipId}
+          onSuccess={handleMiniGameSuccess}
+          onClose={handleMiniGameClose}
+          onAwardBonusRp={() => handleAwardBonusRp(activeMiniGame.equipId)}
+          hasBonusRp={bonusRpWreckIds.includes(activeMiniGame.equipId)}
         />
       )}
 
@@ -4010,7 +4213,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       )}
 
       {/* Desktop Proximity Interaction Prompt Banner */}
-      {!isLaunching && !showEnding && (nearbyEquipment || isNearShip || nearbySample) && (
+      {!isLaunching && !showEnding && (nearbyEquipment || isNearShip || nearbySample || canProbeCanyon) && (
         <div
           data-testid="interact-prompt"
           onClick={handleTouchInteract}
@@ -4030,6 +4233,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
                 : 'INSPECT CRASHED SPACECRAFT'
               : nearbySample
               ? `COLLECT ${nearbySample.def.name.toUpperCase()}`
+              : canProbeCanyon
+              ? 'DEPLOY DEPTH SOUNDER PROBE (+3 RP)'
               : 'INTERACT'}
           </span>
         </div>
@@ -4117,7 +4322,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
             </div>
 
             {/* Mobile Touch Interact Button */}
-            {(nearbyEquipment || isNearShip || nearbySample) && (
+            {(nearbyEquipment || isNearShip || nearbySample || canProbeCanyon) && (
               <button
                 data-testid="touch-interact-btn"
                 onClick={handleTouchInteract}
@@ -4132,6 +4337,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
                       : 'bg-amber-400 active:bg-amber-300 text-slate-950 shadow-[0_0_20px_rgba(251,191,36,0.6)]'
                     : nearbySample
                     ? 'bg-emerald-400 active:bg-emerald-300 text-slate-950 shadow-[0_0_20px_rgba(16,185,129,0.6)]'
+                    : canProbeCanyon
+                    ? 'bg-indigo-400 active:bg-indigo-300 text-slate-950 shadow-[0_0_20px_rgba(129,140,248,0.6)]'
                     : 'bg-cyan-400 active:bg-cyan-300 text-slate-950 shadow-[0_0_20px_rgba(6,182,212,0.6)]'
                 }`}
               >
@@ -4146,6 +4353,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
                       : '[E] INSPECT SHIP'
                     : nearbySample
                     ? '[E] SAMPLE'
+                    : canProbeCanyon
+                    ? '[E] PROBE'
                     : '[E] INTERACT'}
                 </span>
               </button>

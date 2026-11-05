@@ -21,7 +21,7 @@ export interface EquipmentDefinition {
   spriteKey: string;
   strippedSpriteKey: string;
   preferredBiomes: BiomeType[];
-  miniGameType: 'sojourner' | 'opportunity' | 'insight' | 'quiz';
+  miniGameType: 'sojourner' | 'opportunity' | 'insight' | 'quiz' | 'marathon' | 'phoenix' | 'spirit' | 'deep_space' | 'lrv_buggy' | 'surveyor';
   miniGameParams?: {
     difficulty?: 'easy' | 'normal' | 'hard';
     quiz?: QuizChallenge;
@@ -111,9 +111,9 @@ export const EQUIPMENT_DEFINITIONS: Record<string, EquipmentDefinition> = {
     spriteKey: 'wreck_opportunity',
     strippedSpriteKey: 'wreck_opportunity_stripped',
     preferredBiomes: ['desert', 'rocky'],
-    miniGameType: 'opportunity',
+    miniGameType: 'marathon',
     rewardPartId: 'part_solar_bus',
-    oneLineHint: 'Opportunity explored Meridiani for 14 years. Analyze its paleowater rock samples to extract the solar power bus!',
+    oneLineHint: 'Opportunity explored Meridiani for 14 years. Abrade its sulfate outcrop and zap the Martian Blueberries to extract the solar power bus!',
     codex: {
       year: '2004 – 2018',
       status: 'Completed',
@@ -145,10 +145,10 @@ export const EQUIPMENT_DEFINITIONS: Record<string, EquipmentDefinition> = {
     spriteKey: 'wreck_spirit',
     strippedSpriteKey: 'wreck_spirit_stripped',
     preferredBiomes: ['rocky', 'desert'],
-    miniGameType: 'sojourner',
+    miniGameType: 'spirit',
     miniGameParams: { difficulty: 'normal' },
     rewardPartId: 'part_suspension_link',
-    oneLineHint: 'Opportunity’s sister rover Spirit is stranded in Gusev dust. Guide its mobility subsystem to unbolt the titanium suspension link!',
+    oneLineHint: 'Spirit dragged a locked wheel backwards across Gusev. Counter-steer the drift to gouge the silica trench and claim the suspension link!',
     codex: {
       year: '2004 – 2010',
       status: 'Completed',
@@ -163,10 +163,10 @@ export const EQUIPMENT_DEFINITIONS: Record<string, EquipmentDefinition> = {
     spriteKey: 'wreck_deep_space_dish',
     strippedSpriteKey: 'wreck_deep_space_dish_stripped',
     preferredBiomes: ['grassland', 'rocky'],
-    miniGameType: 'insight',
+    miniGameType: 'deep_space',
     miniGameParams: { difficulty: 'easy' },
     rewardPartId: 'part_comm_transponder',
-    oneLineHint: 'A massive parabolic communications dish! Align the carrier frequency with Earth to detach the high-gain transponder.',
+    oneLineHint: 'A massive 70-meter parabolic dish! Aim across deep space to lock onto Earth’s carrier beacon and claim the transponder!',
     codex: {
       year: '1963 – Present',
       status: 'Active',
@@ -181,10 +181,10 @@ export const EQUIPMENT_DEFINITIONS: Record<string, EquipmentDefinition> = {
     spriteKey: 'wreck_phoenix',
     strippedSpriteKey: 'wreck_phoenix_stripped',
     preferredBiomes: ['snow', 'rocky'],
-    miniGameType: 'opportunity',
+    miniGameType: 'phoenix',
     miniGameParams: { difficulty: 'easy' },
     rewardPartId: 'part_thermal_core',
-    oneLineHint: 'Phoenix verified subsurface water ice in the northern plains. Confirm the trench samples to release the cryogenic thermal core!',
+    oneLineHint: 'Phoenix verified subsurface water ice in the northern plains. Steer the scoop down to the ice and bag the chunks before they sublimate!',
     codex: {
       year: '2008',
       status: 'Completed',
@@ -199,23 +199,12 @@ export const EQUIPMENT_DEFINITIONS: Record<string, EquipmentDefinition> = {
     spriteKey: 'wreck_lrv_buggy',
     strippedSpriteKey: 'wreck_lrv_buggy_stripped',
     preferredBiomes: ['rocky', 'grassland'],
-    miniGameType: 'quiz',
+    miniGameType: 'lrv_buggy',
     miniGameParams: {
-      quiz: {
-        question: 'Why did the Lunar Rover use woven wire mesh instead of rubber tires?',
-        options: [
-          'Rubber tires burst in vacuum and fail in 250°C thermal swings',
-          'Steel mesh generated static wheel electricity',
-          'Wire mesh was heavier for rover traction',
-          'Rubber melted under direct solar radiation',
-        ],
-        correctIndex: 0,
-        explanation: 'Vacuum and 250°C temperature swings destroy rubber. Woven steel mesh provided durable traction.',
-        hint: 'Think of pressure differences inside an inflated tire in vacuum!',
-      },
+      difficulty: 'normal',
     },
     rewardPartId: 'part_wheel_actuator',
-    oneLineHint: 'An electric rover chassis! Complete its wheel engineering check to release the high-torque actuator.',
+    oneLineHint: 'The Apollo Moon buggy! Drift its wire-mesh wheels over lunar craters to collect historical Apollo sample boxes.',
     codex: {
       year: '1971 – 1972',
       status: 'Decommissioned',
@@ -230,23 +219,12 @@ export const EQUIPMENT_DEFINITIONS: Record<string, EquipmentDefinition> = {
     spriteKey: 'wreck_surveyor',
     strippedSpriteKey: 'wreck_surveyor_stripped',
     preferredBiomes: ['desert', 'rocky'],
-    miniGameType: 'quiz',
+    miniGameType: 'surveyor',
     miniGameParams: {
-      quiz: {
-        question: 'What unique milestone did Apollo 12 astronauts achieve at Surveyor 3?',
-        options: [
-          'Repaired its battery to restart radio transmissions',
-          'Landed beside it and retrieved its camera and scoop for Earth return',
-          'Refueled its descent engines to send it into orbit',
-          'Dismantled its titanium legs for spacecraft shielding',
-        ],
-        correctIndex: 1,
-        explanation: 'Apollo 12 landed 180m away and brought parts home to study long-term space exposure.',
-        hint: 'Astronauts retrieved hardware and brought it back to Earth!',
-      },
+      difficulty: 'normal',
     },
     rewardPartId: 'part_sample_arm',
-    oneLineHint: 'Surveyor 3’s robotic scoop proved foreign soil was firm. Verify its telemetry to release the motorized servo arm.',
+    oneLineHint: 'Surveyor 3’s robotic scoop proved foreign soil was firm. Salvage its motorized pantograph arm for Earth return!',
     codex: {
       year: '1967 – 1969',
       status: 'Completed',

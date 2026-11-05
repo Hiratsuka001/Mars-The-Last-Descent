@@ -11,7 +11,7 @@ An educational open-world sci-fi adventure where you explore the Martian surface
 
 ## 🎮 Key Features
 
-- **Endless Martian Open World**: Infinite, deterministic chunk-based terrain generated via multi-octave 2D Perlin noise. Features 4 rich biomes (Regolith Plains, Sand Dunes, Polar Ice Caps, and Terraformed Grasslands) with dithered biome transitions and dynamic ground debris.
+- **Endless Martian Open World**: Infinite, deterministic chunk-based terrain generated via multi-octave 2D Perlin noise. Features 4 rich biomes (Regolith Plains, Sand Dunes, Polar Ice Caps, and Sedimentary Clay Basins) with dithered biome transitions and dynamic ground debris.
 - **Dynamic Martian Sol Day/Night Cycle & 2D Lighting Engine**: Real-time 180s Sol progression shifting smoothly between daylight, Martian amber twilight, and starry nights. High-performance offscreen 2D lighting engine rendering player directional suit headlight cones, NOVA optic beams, and luminescent rover beacon halos.
 - **Jetpack Sprint & Dynamic Footstep Trails**: Hold thrusters to sprint at 1.65x speed with jetpack audio and spark trails, accompanied by persistent biome-reactive foot treadmarks, paw prints, and atmospheric dust puffs.
 - **NOVA Robotic Companion Mechanics**:

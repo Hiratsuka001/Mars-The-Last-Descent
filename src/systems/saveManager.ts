@@ -27,10 +27,12 @@ export interface WorldSaveData {
   lastSavedAt: number;
   collectedSampleIds?: string[];
   discoveredLandmarkIds?: string[];
+  soundedLandmarkIds?: string[];
   recoveredLogIds?: string[];
   solTime?: number;
   researchPoints?: number;
   upgrades?: PlayerUpgrades;
+  bonusRpWreckIds?: string[];
 }
 
 export interface GameProgress {
@@ -110,6 +112,7 @@ function migrateWorldSave(world: any): WorldSaveData {
       scan: parseUpgradeLevel(world.upgrades?.scan),
       minimap: parseUpgradeLevel(world.upgrades?.minimap),
     },
+    bonusRpWreckIds: Array.isArray(world.bonusRpWreckIds) ? world.bonusRpWreckIds : [],
   };
 }
 
@@ -198,6 +201,7 @@ export const saveWorldProgress = (worldData: Partial<WorldSaveData>, force = fal
     solTime: 0.35,
     researchPoints: 0,
     upgrades: { jetpack: 0, scan: 0, minimap: 0 },
+    bonusRpWreckIds: [],
   };
 
   const updatedWorld: WorldSaveData = {

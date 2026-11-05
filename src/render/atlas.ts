@@ -1,5 +1,6 @@
 import { generateTileCanvas, PROCEDURAL_TILE_DEFS } from './proceduralTiles';
 import charactersSheet from '../assets/characters.png';
+import novaSheet from '../assets/nova_astronaut.png';
 
 /**
  * Sprite Sheet Atlas & Manifest System
@@ -20,6 +21,7 @@ export interface SpriteDefinition {
   tint?: string;          // Optional color tint / overlay
   flipX?: boolean;        // Mirror horizontally
   offsetY?: number;       // Visual vertical offset for props (e.g. tree anchoring)
+  directDraw?: boolean;   // Draw directly without downscaling through tiny intermediate canvas
 }
 
 export const SPRITE_MANIFEST: Record<string, SpriteDefinition> = {
@@ -302,37 +304,38 @@ export const SPRITE_MANIFEST: Record<string, SpriteDefinition> = {
   player_walk_up_3: { sheet: charactersSheet, x: 80, y: 28, w: 20, h: 28, renderW: 20, renderH: 28, license: 'custom' },
 
   // ==========================================
-  // NOVA COMPANION SPRITES (Cat - User-provided spritesheet nova_walk "Ginger & Topey Sprites")
-  // Genuine 4-directional walk cycles (Down, Up, Left, Right)
+  // NOVA COMPANION SPRITES (Astronaut Cat Model)
+  // Genuine 4-directional walk cycles + standing poses (Down, Up, Left, Right)
+  // High-fidelity uniform 180x180 cells with transparent background, paws at Y=165, center at X=90
   // ==========================================
 
   // Front / Down
-  nova_idle_down: { sheet: charactersSheet, x: 105, y: 0, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-  nova_walk_down_0: { sheet: charactersSheet, x: 123, y: 0, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-  nova_walk_down_1: { sheet: charactersSheet, x: 141, y: 0, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-  nova_walk_down_2: { sheet: charactersSheet, x: 159, y: 0, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-  nova_walk_down_3: { sheet: charactersSheet, x: 177, y: 0, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-
-  // Left / West
-  nova_idle_left: { sheet: charactersSheet, x: 105, y: 32, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-  nova_walk_left_0: { sheet: charactersSheet, x: 123, y: 32, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-  nova_walk_left_1: { sheet: charactersSheet, x: 141, y: 32, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-  nova_walk_left_2: { sheet: charactersSheet, x: 159, y: 32, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-  nova_walk_left_3: { sheet: charactersSheet, x: 177, y: 32, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-
-  // Right / East
-  nova_idle_right: { sheet: charactersSheet, x: 105, y: 48, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-  nova_walk_right_0: { sheet: charactersSheet, x: 123, y: 48, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-  nova_walk_right_1: { sheet: charactersSheet, x: 141, y: 48, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-  nova_walk_right_2: { sheet: charactersSheet, x: 159, y: 48, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-  nova_walk_right_3: { sheet: charactersSheet, x: 177, y: 48, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
+  nova_idle_down: { sheet: novaSheet, x: 720, y: 0, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+  nova_walk_down_0: { sheet: novaSheet, x: 0, y: 0, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+  nova_walk_down_1: { sheet: novaSheet, x: 180, y: 0, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+  nova_walk_down_2: { sheet: novaSheet, x: 360, y: 0, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+  nova_walk_down_3: { sheet: novaSheet, x: 540, y: 0, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
 
   // Up / North (Rear)
-  nova_idle_up: { sheet: charactersSheet, x: 105, y: 16, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-  nova_walk_up_0: { sheet: charactersSheet, x: 123, y: 16, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-  nova_walk_up_1: { sheet: charactersSheet, x: 141, y: 16, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-  nova_walk_up_2: { sheet: charactersSheet, x: 159, y: 16, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
-  nova_walk_up_3: { sheet: charactersSheet, x: 177, y: 16, w: 18, h: 16, renderW: 18, renderH: 16, license: 'custom' },
+  nova_idle_up: { sheet: novaSheet, x: 720, y: 180, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+  nova_walk_up_0: { sheet: novaSheet, x: 0, y: 180, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+  nova_walk_up_1: { sheet: novaSheet, x: 180, y: 180, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+  nova_walk_up_2: { sheet: novaSheet, x: 360, y: 180, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+  nova_walk_up_3: { sheet: novaSheet, x: 540, y: 180, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+
+  // Left / West
+  nova_idle_left: { sheet: novaSheet, x: 720, y: 360, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+  nova_walk_left_0: { sheet: novaSheet, x: 0, y: 360, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+  nova_walk_left_1: { sheet: novaSheet, x: 180, y: 360, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+  nova_walk_left_2: { sheet: novaSheet, x: 360, y: 360, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+  nova_walk_left_3: { sheet: novaSheet, x: 540, y: 360, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+
+  // Right / East
+  nova_idle_right: { sheet: novaSheet, x: 720, y: 540, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+  nova_walk_right_0: { sheet: novaSheet, x: 0, y: 540, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+  nova_walk_right_1: { sheet: novaSheet, x: 180, y: 540, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+  nova_walk_right_2: { sheet: novaSheet, x: 360, y: 540, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
+  nova_walk_right_3: { sheet: novaSheet, x: 540, y: 540, w: 180, h: 180, renderW: 26, renderH: 26, directDraw: true, license: 'custom' },
 
   // ==========================================
   // SPACESHIP & MAJOR LANDMARKS (100% CC0 Procedural Pixel Art)
@@ -599,6 +602,22 @@ class ImageAtlasManager {
     if (!img) {
       // Loading placeholder
       this.drawPlaceholder(ctx, spriteKey, dx, dy + offsetY, targetW, targetH, '#0284c7');
+      return;
+    }
+
+    // Direct draw for high-fidelity sprites (like high-res Nova astronaut model)
+    // Avoids crushing through a tiny intermediate canvas, preserving razor-sharp detail
+    if (def.directDraw || def.w > targetW * 2) {
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      if (def.flipX) {
+        ctx.translate(dx + targetW, dy + offsetY);
+        ctx.scale(-1, 1);
+        ctx.drawImage(img, def.x, def.y, def.w, def.h, 0, 0, targetW, targetH);
+      } else {
+        ctx.drawImage(img, def.x, def.y, def.w, def.h, dx, dy + offsetY, targetW, targetH);
+      }
+      ctx.restore();
       return;
     }
 
