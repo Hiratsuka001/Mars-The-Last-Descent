@@ -61,7 +61,7 @@ export const SpiritWheelGame: React.FC<SpiritWheelGameProps> = ({
     <MiniGameShell
       wreckId={wreckId}
       title="The Dragged Wheel"
-      instruction="Spirit drives backwards with a locked wheel! Counter-steer to keep the dragged wheel in the central vein and unearth silica!"
+      instruction="Spirit's wheel is stuck! Steer to stay on the vein!"
       onWin={onSuccess}
       onExit={onClose}
       onRetry={handleRetry}

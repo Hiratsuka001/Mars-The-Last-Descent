@@ -191,6 +191,9 @@ export const getSavedProgress = (): GameProgress => {
  * Save progress with optional throttling and storage error handling
  */
 export const saveProgress = (progress: GameProgress, force = false): boolean => {
+  if (typeof window !== 'undefined' && (window as any).__disableAutoSave) {
+    return false;
+  }
   const now = Date.now();
   if (!force && now - lastSaveTimestamp < SAVE_THROTTLE_MS) {
     return false;

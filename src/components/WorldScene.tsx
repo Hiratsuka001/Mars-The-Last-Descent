@@ -267,7 +267,25 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     mood?: 'idle' | 'happy' | 'curious' | 'warning' | 'scanning' | 'celebrate';
     actionLabel?: string;
     onAction?: () => void;
+  } | null>(() => {
+    const saved = getSavedProgress();
+    if (!saved.worldSave && saved.moonChapter?.completed) {
+      return {
+        text: "I forgot everything. Please stay close, Explorer!",
+        mood: 'curious',
+        actionLabel: 'Explore Mars',
+        onAction: () => setNovaDialogue(null),
+      };
+    }
+    return null;
+  });
+  const novaDialogueRef = useRef<{
+    text: string;
+    mood?: 'idle' | 'happy' | 'curious' | 'warning' | 'scanning' | 'celebrate';
+    actionLabel?: string;
+    onAction?: () => void;
   } | null>(null);
+  novaDialogueRef.current = novaDialogue;
 
   const [activeMiniGame, setActiveMiniGame] = useState<{
     equipId: string;
@@ -475,7 +493,9 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     } else {
       let initialRp = 0;
       if (saved.moonChapter?.completed && !saved.moonChapter?.rpApplied) {
-        initialRp = saved.moonChapter.relicIds?.length ?? 0;
+        const relicCount = saved.moonChapter.relicIds?.length ?? 0;
+        initialRp = Math.min(3, Math.max(0, relicCount));
+
         const updatedSaved: GameProgress = {
           ...saved,
           moonChapter: {
@@ -487,6 +507,16 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       }
       setResearchPoints(initialRp);
       researchPointsRef.current = initialRp;
+
+      if (saved.moonChapter?.completed) {
+        setNovaDialogue({
+          text: "I forgot everything. Please stay close, Explorer!",
+          mood: 'curious',
+          actionLabel: 'Explore Mars',
+          onAction: () => setNovaDialogue(null),
+        });
+      }
+
       playerRef.current.x = safeSpawn.x;
       playerRef.current.y = safeSpawn.y;
       fogRef.current.revealArea(safeSpawn.tileX, safeSpawn.tileY, REVEAL_RADIUS_TILES);
@@ -556,6 +586,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
   }, []);
 
   useEffect(() => {
+    if (!isDebugMode) return;
     (window as any).__teleportPlayer = (targetTileX: number, targetTileY: number) => {
       teleportToEquipment(targetTileX, targetTileY);
     };
@@ -620,6 +651,12 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         cameraRef.current.y = playerRef.current.y;
         fogRef.current.revealArea(target.tileX, target.tileY, 18);
         sound.playHover();
+      }
+    };
+    (window as any).__collectSampleId = (id: string) => {
+      setCollectedSampleIds((prev) => Array.from(new Set([...prev, id])));
+      if (!collectedSamplesRef.current.includes(id)) {
+        collectedSamplesRef.current.push(id);
       }
     };
     (window as any).__teleportToLandmark = (indexOrId: number | string = 0) => {
@@ -904,6 +941,10 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
           if (visited.has(`${sp.tileX},${sp.tileY}`)) return false;
           return !dirs.some(([dx, dy]) => visited.has(`${sp.tileX + dx},${sp.tileY + dy}`));
         });
+        const unreachedLandmarks = landmarks.filter((lm) => {
+          if (visited.has(`${lm.tileX},${lm.tileY}`)) return false;
+          return !dirs.some(([dx, dy]) => visited.has(`${lm.tileX + dx},${lm.tileY + dy}`));
+        });
         const shipReachable = visited.has(`${safeSpawn.tileX},${safeSpawn.tileY}`);
 
         seedResults.push({
@@ -913,12 +954,19 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
           unreachedWrecksCount: unreachedWrecks.length,
           totalSamples: samples.length,
           unreachedSamplesCount: unreachedSamples.length,
-          allReachable: shipReachable && unreachedWrecks.length === 0 && unreachedSamples.length === 0,
+          totalLandmarks: landmarks.length,
+          unreachedLandmarksCount: unreachedLandmarks.length,
+          allReachable: shipReachable && unreachedWrecks.length === 0 && unreachedSamples.length === 0 && unreachedLandmarks.length === 0,
         });
       }
 
       const allSeedsPassed = seedResults.every((sr) => sr.allReachable);
       return { allSeedsPassed, seedResults };
+    };
+    (window as any).__getParticleStats = () => {
+      const liveFootprints = footprintsRef.current.length;
+      const liveDustPuffs = particlesRef.current.filter((p) => p.shape === 'circle').length;
+      return { liveFootprints, liveDustPuffs };
     };
     (window as any).__teleportToBiome = (biomeName: string) => {
       const world = worldRef.current;
@@ -1004,6 +1052,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       delete (window as any).__getBonusRpWreckIds;
       delete (window as any).__teleportToWreck;
       delete (window as any).__teleportToSample;
+      delete (window as any).__collectSampleId;
       delete (window as any).__teleportToLandmark;
       delete (window as any).__teleportNearLandmark;
       delete (window as any).__dismissLandmarkToast;
@@ -1017,6 +1066,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       delete (window as any).__getCameraTransform;
       delete (window as any).__testChasmCollision;
       delete (window as any).__testBFSReachability;
+      delete (window as any).__getParticleStats;
     };
   }, [teleportToEquipment]);
 
@@ -1122,11 +1172,17 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
 
   // Window beforeunload autosave
   useEffect(() => {
+    if (isDebugMode) {
+      (window as any).__saveCurrentWorldState = () => triggerAutoSave(true);
+    }
     const handleBeforeUnload = () => {
       triggerAutoSave(true);
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      delete (window as any).__saveCurrentWorldState;
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
   }, [triggerAutoSave]);
 
   // Debug Helpers for F3 Panel
@@ -1504,6 +1560,18 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         return;
       }
 
+      // Dismiss Nova Dialogue with Space, Enter, KeyE, or Escape
+      if (novaDialogueRef.current && (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyE' || e.code === 'Escape')) {
+        e.preventDefault();
+        const currentDialogue = novaDialogueRef.current;
+        if (currentDialogue.onAction) {
+          currentDialogue.onAction();
+        } else {
+          setNovaDialogue(null);
+        }
+        return;
+      }
+
       // Close Enlarged Map Overlay with Escape
       if (e.code === 'Escape' && isMapOpenRef.current) {
         e.preventDefault();
@@ -1830,28 +1898,32 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
 
           // Ground dust puffs kicked up by thruster downblast (Juice C.2)
           if (Math.random() < 0.65) {
-            const dustColor =
-              biomeType === 'snow'
-                ? 'rgba(226, 232, 240, 0.65)'
-                : biomeType === 'desert'
-                ? 'rgba(217, 119, 6, 0.65)'
-                : biomeType === 'grassland'
-                ? 'rgba(180, 83, 9, 0.55)'
-                : 'rgba(194, 65, 12, 0.65)';
-            const puffAngle = Math.random() * Math.PI * 2;
-            const puffSpeed = 10 + Math.random() * 22;
-            particlesRef.current.push({
-              x: player.x + (Math.random() - 0.5) * 8,
-              y: player.y + 2 + (Math.random() - 0.5) * 4,
-              vx: Math.cos(puffAngle) * puffSpeed,
-              vy: Math.sin(puffAngle) * puffSpeed * 0.4 - 3,
-              alpha: 0.65,
-              size: 2.2 + Math.random() * 1.8,
-              color: dustColor,
-              life: 0,
-              maxLife: 0.35 + Math.random() * 0.25,
-              shape: 'circle',
-            });
+            const isMobile = typeof window !== 'undefined' && (window.innerWidth <= 768 || (!!window.matchMedia && window.matchMedia('(pointer: coarse)').matches));
+            const currentDustPuffs = isMobile ? particlesRef.current.filter((p) => p.shape === 'circle').length : 0;
+            if (!isMobile || currentDustPuffs < 8) {
+              const dustColor =
+                biomeType === 'snow'
+                  ? 'rgba(226, 232, 240, 0.65)'
+                  : biomeType === 'desert'
+                  ? 'rgba(217, 119, 6, 0.65)'
+                  : biomeType === 'grassland'
+                  ? 'rgba(180, 83, 9, 0.55)'
+                  : 'rgba(194, 65, 12, 0.65)';
+              const puffAngle = Math.random() * Math.PI * 2;
+              const puffSpeed = 10 + Math.random() * 22;
+              particlesRef.current.push({
+                x: player.x + (Math.random() - 0.5) * 8,
+                y: player.y + 2 + (Math.random() - 0.5) * 4,
+                vx: Math.cos(puffAngle) * puffSpeed,
+                vy: Math.sin(puffAngle) * puffSpeed * 0.4 - 3,
+                alpha: 0.65,
+                size: 2.2 + Math.random() * 1.8,
+                color: dustColor,
+                life: 0,
+                maxLife: 0.35 + Math.random() * 0.25,
+                shape: 'circle',
+              });
+            }
           }
         }
 
@@ -1901,7 +1973,9 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
               lifetime: 4.0,
               maxLifetime: 4.0,
             });
-            if (footprintsRef.current.length > 200) {
+            const isMobileFp = typeof window !== 'undefined' && (window.innerWidth <= 768 || (!!window.matchMedia && window.matchMedia('(pointer: coarse)').matches));
+            const maxFp = isMobileFp ? 12 : 200;
+            while (footprintsRef.current.length > maxFp) {
               footprintsRef.current.shift();
             }
           }
@@ -2014,7 +2088,9 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
                 lifetime: 4.0,
                 maxLifetime: 4.0,
               });
-              if (footprintsRef.current.length > 200) {
+              const isMobileFp = typeof window !== 'undefined' && (window.innerWidth <= 768 || (!!window.matchMedia && window.matchMedia('(pointer: coarse)').matches));
+              const maxFp = isMobileFp ? 12 : 200;
+              while (footprintsRef.current.length > maxFp) {
                 footprintsRef.current.shift();
               }
             }
@@ -2053,14 +2129,14 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       }
 
       // Decrement bubble and cooldown timers
-      if (novaBubbleTimerRef.current > 0) {
+      if (novaBubbleTimerRef.current > 0 && !novaDialogueRef.current) {
         novaBubbleTimerRef.current -= dt;
         if (novaBubbleTimerRef.current <= 0) {
           setNovaBubble(null);
         }
       }
-      if (sampleBubbleCooldownRef.current > 0) sampleBubbleCooldownRef.current -= dt;
-      if (generalBubbleCooldownRef.current > 0) generalBubbleCooldownRef.current -= dt;
+      if (sampleBubbleCooldownRef.current > 0 && !novaDialogueRef.current) sampleBubbleCooldownRef.current -= dt;
+      if (generalBubbleCooldownRef.current > 0 && !novaDialogueRef.current) generalBubbleCooldownRef.current -= dt;
       if (sampleGlintTimerRef.current > 0) sampleGlintTimerRef.current -= dt;
 
       // B.4: Clear any pending biome-comment bubble when player teleports or changes chunk by > 10 tiles
@@ -2077,7 +2153,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       lastPlayerTileRef.current = { x: curTileX, y: curTileY };
 
       // C.1: If uncollected sample within ~20 tiles (320px), Nova trots a few tiles toward it with chirp/"?"
-      if (sampleBubbleCooldownRef.current <= 0 && !isPaused) {
+      if (sampleBubbleCooldownRef.current <= 0 && !isPaused && !novaDialogueRef.current) {
         const samples = samplesListRef.current;
         let nearSample: PlacedSample | null = null;
         for (let i = 0; i < samples.length; i++) {
@@ -2114,7 +2190,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
           const biomeMsgs: Record<string, string> = {
             desert: 'Vast dunes detected. Sand might slow our stride.',
             snow: 'Subsurface polar frost detected. Extreme cold ahead!',
-            grassland: 'Ancient sedimentary clay basin detected. Rich in layered delta deposits!',
+            grassland: "Grass? Real Mars has none! Our game's a bit pretend.",
             rocky: 'Regolith plains detected. High concentration of minerals.',
           };
           const msg = biomeMsgs[biomeType];
@@ -2330,6 +2406,11 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
           footprintsRef.current.splice(fIdx, 1);
         }
       }
+      const isMobileDevice = typeof window !== 'undefined' && (window.innerWidth <= 768 || (!!window.matchMedia && window.matchMedia('(pointer: coarse)').matches));
+      const maxFpCap = isMobileDevice ? 12 : 200;
+      while (footprintsRef.current.length > maxFpCap) {
+        footprintsRef.current.shift();
+      }
 
       // Update Particles (Dust puffs expand as they dissipate - Juice C.2)
       for (let pIdx = particlesRef.current.length - 1; pIdx >= 0; pIdx--) {
@@ -2343,6 +2424,19 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         p.alpha = Math.max(0, 1 - p.life / p.maxLife);
         if (p.life >= p.maxLife) {
           particlesRef.current.splice(pIdx, 1);
+        }
+      }
+
+      // Cap live dust puffs on mobile/coarse: 8
+      if (isMobileDevice) {
+        let liveDustCount = 0;
+        for (let pIdx = particlesRef.current.length - 1; pIdx >= 0; pIdx--) {
+          if (particlesRef.current[pIdx].shape === 'circle') {
+            liveDustCount++;
+            if (liveDustCount > 8) {
+              particlesRef.current.splice(pIdx, 1);
+            }
+          }
         }
       }
 
@@ -3254,7 +3348,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
             ctx.font = 'bold 9px monospace';
             ctx.fillStyle = '#22d3ee';
             ctx.textAlign = 'center';
-            ctx.fillText(`★ ${s.def.category.toUpperCase()}`, sx, sy - 14);
+            const catLabel = (s.def.category === 'fossil' ? 'Mineral' : s.def.category).toUpperCase();
+            ctx.fillText(`★ ${catLabel}`, sx, sy - 14);
             ctx.restore();
           }
         }
@@ -3550,7 +3645,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       />
 
       {/* NOVA Floating Speech Bubble (Non-Modal, No movement block) */}
-      {novaBubble && (
+      {novaBubble && !novaDialogue && (
         <div
           ref={novaBubbleElementRef}
           data-testid="nova-speech-bubble"
@@ -3844,6 +3939,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
           discoveredLandmarkIds={discoveredLandmarkIds}
           recoveredLogIds={recoveredLogIds}
           researchPoints={researchPoints}
+          moonRelicIds={getSavedProgress().moonChapter?.relicIds || []}
           onClose={() => setShowCodex(false)}
         />
       )}

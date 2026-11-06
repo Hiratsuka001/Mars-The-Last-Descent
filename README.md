@@ -136,24 +136,24 @@ node scripts/qa_runner_final.mjs
 
 ## 🚀 Deployment Guide
 
+The build uses relative asset paths (`base: './'`), enabling it to be hosted at a domain root or under any subpath without extra configuration.
+
 ### 1. GitHub Pages
-1. In `vite.config.ts`, set the base path to match your repository name:
-   ```ts
-   export default defineConfig({
-     base: '/mars-the-last-descent/',
-     // ...
-   });
-   ```
-2. Build and publish:
-   ```bash
-   npm run build
-   npx gh-pages -d dist
-   ```
+1. In your GitHub repository, navigate to **Settings** > **Pages**.
+2. Under **Build and deployment** > **Source**, choose **GitHub Actions**.
+3. Pushes to `main` will automatically trigger `.github/workflows/deploy.yml` to build and deploy the site.
 
 ### 2. Vercel / Netlify
-No base path configuration needed (defaults to `/`).
 - **Build Command**: `npm run build`
 - **Output Directory**: `dist`
+- No extra settings required.
+
+### 📦 Share the Source
+To package the project source cleanly without `node_modules` or `.git`:
+```bash
+git archive --format=zip -o ../Mars-src.zip HEAD
+```
+This creates a clean zip archive containing only the tracked repository files.
 
 ---
 

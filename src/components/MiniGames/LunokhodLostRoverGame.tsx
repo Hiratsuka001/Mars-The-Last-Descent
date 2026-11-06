@@ -12,17 +12,17 @@ interface LunokhodLostRoverGameProps {
 export const GRID_COLS = 7;
 export const GRID_ROWS = 5;
 
-// Deterministic target positions for each attempt (strictly inner squares, never outer ring)
-// Outer ring has x=0, x=6, y=0, y=4. All 8 targets have x in 1..5, y in 1..3.
+// Deterministic target positions for each attempt (strictly inner squares, never outer ring or center)
+// Center (3,2) is NEVER a target. All targets have x in 1..5, y in 1..3.
 export const LUNOKHOD_TARGETS: Array<{ x: number; y: number }> = [
-  { x: 3, y: 2 }, // Attempt 0: center
-  { x: 1, y: 1 }, // Attempt 1: top-left
-  { x: 5, y: 2 }, // Attempt 2: right
-  { x: 2, y: 3 }, // Attempt 3: bottom-left
-  { x: 4, y: 1 }, // Attempt 4: top-right
-  { x: 2, y: 1 }, // Attempt 5: mid-top-left
-  { x: 4, y: 3 }, // Attempt 6: bottom-right
-  { x: 3, y: 1 }, // Attempt 7: top-center
+  { x: 2, y: 3 }, // Attempt 0
+  { x: 4, y: 1 }, // Attempt 1
+  { x: 1, y: 1 }, // Attempt 2
+  { x: 5, y: 2 }, // Attempt 3
+  { x: 2, y: 1 }, // Attempt 4
+  { x: 4, y: 3 }, // Attempt 5
+  { x: 1, y: 3 }, // Attempt 6
+  { x: 5, y: 1 }, // Attempt 7
 ];
 
 export type DistanceBand = 'found' | 'hot' | 'warm' | 'cool' | 'cold';
@@ -137,6 +137,10 @@ export const LunokhodContent: React.FC<LunokhodContentProps> = ({
   const [focusedCell, setFocusedCell] = useState<{ x: number; y: number }>({ x: 3, y: 2 });
   const focusedCellRef = useRef<{ x: number; y: number }>({ x: 3, y: 2 });
   focusedCellRef.current = focusedCell;
+
+  const [showFocusRing, setShowFocusRing] = useState(false);
+  const showFocusRingRef = useRef(false);
+  showFocusRingRef.current = showFocusRing;
 
   const [scansCount, setScansCount] = useState(0);
   const scansCountRef = useRef(0);
@@ -274,6 +278,7 @@ export const LunokhodContent: React.FC<LunokhodContentProps> = ({
 
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
         e.preventDefault();
+        setShowFocusRing(true);
         setFocusedCell((prev) => {
           let nx = prev.x;
           let ny = prev.y;
@@ -456,6 +461,7 @@ export const LunokhodContent: React.FC<LunokhodContentProps> = ({
             stars: starsRef.current,
             attempt: attemptIndex,
             isScanning: isScanningRef.current,
+            showFocusRing: showFocusRingRef.current,
             squareSizeCss: rect ? Math.min(rect.width, rect.height) : 46,
           };
         },
@@ -483,43 +489,43 @@ export const LunokhodContent: React.FC<LunokhodContentProps> = ({
     const w = canvas.width;
     const h = canvas.height;
 
-    // Regolith base gradient
+    // Regolith base gradient (brighter lighter grey)
     const grad = ctx.createLinearGradient(0, 0, w, h);
-    grad.addColorStop(0, '#111827');
-    grad.addColorStop(0.5, '#1e293b');
-    grad.addColorStop(1, '#0f172a');
+    grad.addColorStop(0, '#334155');
+    grad.addColorStop(0.5, '#475569');
+    grad.addColorStop(1, '#334155');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
     // Subtle regolith noise
-    for (let i = 0; i < 600; i++) {
+    for (let i = 0; i < 700; i++) {
       const nx = (i * 97) % w;
       const ny = (i * 131) % h;
-      ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.2)';
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.12)';
       ctx.fillRect(nx, ny, 1.5, 1.5);
     }
 
-    // Seeded Craters
+    // Seeded Craters (less dark so squares remain readable)
     for (const cr of cratersData) {
       ctx.save();
-      // Outer shadow / rim
+      // Outer shadow / rim (soft, readable)
       ctx.beginPath();
       ctx.arc(cr.x, cr.y, cr.r, 0, Math.PI * 2);
-      ctx.fillStyle = cr.dark ? '#090d16' : '#141e2e';
+      ctx.fillStyle = cr.dark ? 'rgba(30, 41, 59, 0.45)' : 'rgba(51, 65, 85, 0.35)';
       ctx.fill();
 
       // Lit rim highlight (top-left)
       ctx.beginPath();
       ctx.arc(cr.x - 1, cr.y - 1, cr.r * 0.95, Math.PI * 0.75, Math.PI * 1.75);
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(226, 232, 240, 0.45)';
+      ctx.lineWidth = 1.5;
       ctx.stroke();
 
       // Shadow rim (bottom-right)
       ctx.beginPath();
       ctx.arc(cr.x + 1, cr.y + 1, cr.r * 0.95, -Math.PI * 0.25, Math.PI * 0.75);
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.35)';
+      ctx.lineWidth = 1.5;
       ctx.stroke();
 
       ctx.restore();
@@ -533,10 +539,10 @@ export const LunokhodContent: React.FC<LunokhodContentProps> = ({
       className="w-full flex-1 flex flex-col items-center justify-between min-h-0 select-none touch-none overscroll-none"
     >
       {/* Top Status Bar: Ping Counter */}
-      <div className="w-full flex items-center justify-between px-3 py-1 shrink-0 max-w-[560px]">
+      <div className="w-full flex items-center justify-center px-3 py-1 shrink-0 max-w-[560px]">
         <div
           data-testid="lost-pings"
-          className="flex items-center gap-2 px-3 py-1 bg-slate-900/90 rounded-full border border-slate-700/80 text-xs font-mono font-bold text-cyan-300 shadow-md"
+          className="flex items-center gap-2 px-3.5 py-1 bg-slate-900/90 rounded-full border border-slate-700/80 text-xs font-mono font-bold text-cyan-300 shadow-md"
         >
           <span>Scans {scansCount}</span>
           <div className="flex gap-1 items-center">
@@ -550,16 +556,11 @@ export const LunokhodContent: React.FC<LunokhodContentProps> = ({
             ))}
           </div>
         </div>
-
-        <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-          <span>Orbiter Telemetry: 7×5 Grid</span>
-        </div>
       </div>
 
       {/* Main Grid & Regolith Viewport */}
       <div className="w-full flex-1 flex items-center justify-center my-0.5 sm:my-1 min-h-0 relative">
-        <div className="relative rounded-2xl overflow-hidden border-2 border-slate-800 shadow-2xl bg-[#090d16] p-1 sm:p-2.5">
+        <div className="relative rounded-2xl overflow-hidden border border-slate-600/80 shadow-2xl bg-slate-800/90 p-1 sm:p-2.5">
           {/* Background Regolith Canvas (>=340px mobile, >=560px desktop) */}
           <canvas
             ref={canvasRef}
@@ -579,7 +580,7 @@ export const LunokhodContent: React.FC<LunokhodContentProps> = ({
                 const cellKey = `${x},${y}`;
                 const scannedData = scannedMap.get(cellKey);
                 const isScanning = scanningCell?.x === x && scanningCell?.y === y;
-                const isFocused = focusedCell.x === x && focusedCell.y === y;
+                const isFocused = showFocusRing && focusedCell.x === x && focusedCell.y === y;
                 const isFound = scannedData?.band === 'found';
 
                 // Determine Cell Style
@@ -588,23 +589,23 @@ export const LunokhodContent: React.FC<LunokhodContentProps> = ({
                 cellClasses += 'w-[46px] h-[46px] sm:w-[70px] sm:h-[70px] min-w-[44px] min-h-[44px] ';
 
                 if (isFound) {
-                  cellClasses += 'bg-emerald-500/35 border-2 border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.7)] ';
+                  cellClasses += 'bg-emerald-500/40 border-2 border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.7)] text-emerald-300 ';
                 } else if (scannedData) {
                   if (scannedData.band === 'hot') {
-                    cellClasses += 'bg-rose-500/30 border-2 border-rose-400/90 shadow-[0_0_12px_rgba(244,63,94,0.4)] ';
+                    cellClasses += 'bg-rose-600/45 border-2 border-rose-400 shadow-[0_0_14px_rgba(244,63,94,0.6)] text-rose-300 ';
                   } else if (scannedData.band === 'warm') {
-                    cellClasses += 'bg-amber-500/25 border-2 border-amber-400/80 shadow-[0_0_8px_rgba(245,158,11,0.3)] ';
+                    cellClasses += 'bg-amber-500/40 border-2 border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.5)] text-amber-300 ';
                   } else if (scannedData.band === 'cool') {
-                    cellClasses += 'bg-sky-500/20 border-2 border-sky-400/70 shadow-[0_0_6px_rgba(56,189,248,0.25)] ';
+                    cellClasses += 'bg-sky-500/35 border-2 border-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.45)] text-sky-200 ';
                   } else {
-                    cellClasses += 'bg-slate-900/80 border border-slate-700/60 ';
+                    cellClasses += 'bg-indigo-950/90 border-2 border-indigo-400/80 shadow-[0_0_8px_rgba(99,102,241,0.35)] text-indigo-300 ';
                   }
                 } else {
-                  // Unscanned square
-                  cellClasses += 'bg-slate-900/40 hover:bg-slate-800/60 active:bg-cyan-950/60 border border-slate-700/60 hover:border-cyan-500/60 ';
+                  // Unscanned square (clear 1px border)
+                  cellClasses += 'bg-slate-900/60 hover:bg-slate-800/80 active:bg-cyan-950/70 border border-slate-600/80 hover:border-cyan-400/90 ';
                 }
 
-                // Keyboard focus highlight
+                // Keyboard focus highlight (hidden until first arrow key)
                 if (isFocused && phase === 'searching') {
                   cellClasses += 'ring-2 ring-cyan-400 ring-offset-1 ring-offset-slate-950 z-20 ';
                 }
@@ -671,25 +672,39 @@ export const LunokhodContent: React.FC<LunokhodContentProps> = ({
  */
 const RingPipsCue: React.FC<{ band: DistanceBand }> = ({ band }) => {
   if (band === 'hot') {
-    // 3 ring pips
+    // 3 ring pips (center dot + 2 concentric rings)
     return (
       <svg
-        className="w-7 h-7 sm:w-10 sm:h-10 text-rose-400 pointer-events-none"
+        className="w-7 h-7 sm:w-10 sm:h-10 text-rose-300 pointer-events-none"
         viewBox="0 0 40 40"
         aria-hidden="true"
       >
         <circle cx="20" cy="20" r="3.5" fill="currentColor" />
-        <circle cx="20" cy="20" r="9" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="3 2" />
+        <circle cx="20" cy="20" r="9" fill="none" stroke="currentColor" strokeWidth="2.2" />
         <circle cx="20" cy="20" r="15" fill="none" stroke="currentColor" strokeWidth="2.2" />
       </svg>
     );
   }
 
   if (band === 'warm') {
-    // 2 ring pips
+    // 2 ring pips (center dot + 1 concentric ring)
     return (
       <svg
-        className="w-7 h-7 sm:w-10 sm:h-10 text-amber-400 pointer-events-none"
+        className="w-7 h-7 sm:w-10 sm:h-10 text-amber-300 pointer-events-none"
+        viewBox="0 0 40 40"
+        aria-hidden="true"
+      >
+        <circle cx="20" cy="20" r="3.5" fill="currentColor" />
+        <circle cx="20" cy="20" r="10" fill="none" stroke="currentColor" strokeWidth="2.2" />
+      </svg>
+    );
+  }
+
+  if (band === 'cool') {
+    // 1 ring pip (center dot + 1 dashed ring)
+    return (
+      <svg
+        className="w-7 h-7 sm:w-10 sm:h-10 text-sky-200 pointer-events-none"
         viewBox="0 0 40 40"
         aria-hidden="true"
       >
@@ -699,27 +714,14 @@ const RingPipsCue: React.FC<{ band: DistanceBand }> = ({ band }) => {
     );
   }
 
-  if (band === 'cool') {
-    // 1 ring pip
-    return (
-      <svg
-        className="w-7 h-7 sm:w-10 sm:h-10 text-sky-400 pointer-events-none"
-        viewBox="0 0 40 40"
-        aria-hidden="true"
-      >
-        <circle cx="20" cy="20" r="5" fill="currentColor" />
-      </svg>
-    );
-  }
-
-  // Cold: 0 ring pips (tiny faint core dot only)
+  // Cold: 0 ring pips (single center dot, zero rings)
   return (
     <svg
-      className="w-5 h-5 sm:w-7 sm:h-7 text-slate-600 pointer-events-none"
+      className="w-5 h-5 sm:w-7 sm:h-7 text-indigo-300 pointer-events-none"
       viewBox="0 0 40 40"
       aria-hidden="true"
     >
-      <circle cx="20" cy="20" r="1.5" fill="currentColor" />
+      <circle cx="20" cy="20" r="2.5" fill="currentColor" />
     </svg>
   );
 };

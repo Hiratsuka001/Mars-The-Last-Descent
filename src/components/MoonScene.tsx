@@ -1105,7 +1105,7 @@ const EarthrisePanel: React.FC<{ onContinue: () => void; reduceMotion: boolean }
       {/* Footer & Continue Button */}
       <div className="relative z-10 flex flex-col items-center gap-4">
         <p className="text-xs sm:text-sm text-slate-400 font-mono text-center max-w-md">
-          Lunar telemetry compiled. Trajectory vector locked for interplanetary transit.
+          Three relics logged! Next stop: Mars.
         </p>
 
         <button

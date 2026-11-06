@@ -107,7 +107,7 @@ export const SurveyorSalvageGame: React.FC<SurveyorSalvageGameProps> = ({
     <MiniGameShell
       wreckId={wreckId}
       title="The 1/6g Regolith Fling"
-      instruction="Surveyor 3's robotic scoop is flinging lunar specimens in floaty 1/6th gravity! Steer the Apollo Sifter Hopper to catch arcing moon rocks before they crash!"
+      instruction="Steer the hopper to catch the floating samples!"
       onWin={onSuccess}
       onExit={onClose}
       onRetry={handleRetry}

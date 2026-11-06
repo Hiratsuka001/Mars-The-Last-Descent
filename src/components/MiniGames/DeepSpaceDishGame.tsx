@@ -77,7 +77,7 @@ export const DeepSpaceDishGame: React.FC<DeepSpaceDishGameProps> = ({
     <MiniGameShell
       wreckId={wreckId}
       title="Microwave Beam Reflector"
-      instruction="Drag or tap anywhere to move the suspended mirror! Bounce 5 blue microwave beams into the central feed horn. Dodge red solar flares!"
+      instruction="Move the mirror! Bounce 5 beams into the horn!"
       onWin={onSuccess}
       onExit={onClose}
       onRetry={handleRetry}

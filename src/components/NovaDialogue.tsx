@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { NovaAvatar, NovaMood } from './NovaAvatar';
 import { sound } from '../systems/audio';
+import { isReduceMotionEnabled } from '../systems/saveManager';
 
 interface NovaDialogueProps {
   speakerName?: string;
@@ -25,28 +26,46 @@ export const NovaDialogue: React.FC<NovaDialogueProps> = ({
 }) => {
   const [displayedText, setDisplayedText] = useState('');
   const [isTyping, setIsTyping] = useState(true);
+  const intervalRef = useRef<any>(null);
 
   useEffect(() => {
     sound.playNovaChirp();
+    if (isReduceMotionEnabled()) {
+      setDisplayedText(text);
+      setIsTyping(false);
+      return;
+    }
     setDisplayedText('');
     setIsTyping(true);
 
     let currentIndex = 0;
-    const interval = setInterval(() => {
+    intervalRef.current = setInterval(() => {
       if (currentIndex < text.length) {
         setDisplayedText(text.slice(0, currentIndex + 1));
         currentIndex++;
       } else {
         setIsTyping(false);
-        clearInterval(interval);
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
       }
     }, 18);
 
-    return () => clearInterval(interval);
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
   }, [text]);
 
   const handleSkipTyping = () => {
     if (isTyping) {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
       setDisplayedText(text);
       setIsTyping(false);
     }

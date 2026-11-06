@@ -204,7 +204,10 @@ export const MiniGameShell: React.FC<MiniGameShellProps> = ({
 
         {/* Instruction Line (Max 12-15 words) */}
         <div className="px-4 py-1.5 sm:py-2 bg-cyan-950/30 border-b border-cyan-900/30 text-center shrink-0">
-          <p className="text-xs sm:text-sm text-cyan-200/90 font-medium tracking-wide">
+          <p
+            data-testid="minigame-instruction"
+            className="text-xs sm:text-sm text-cyan-200/90 font-medium tracking-wide"
+          >
             {instruction}
           </p>
         </div>
@@ -264,7 +267,7 @@ export const MiniGameShell: React.FC<MiniGameShellProps> = ({
                 </div>
               )}
 
-              {/* Try Again For 3 Stars Button (Min 48px height, available until claimed) */}
+              {/* Try Again / Play Again Button (Min 48px height, available until claimed) */}
               <button
                 data-testid="minigame-retry"
                 type="button"
@@ -272,7 +275,7 @@ export const MiniGameShell: React.FC<MiniGameShellProps> = ({
                 className="w-full min-h-[48px] px-4 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 active:bg-slate-600 text-slate-200 border border-slate-700/80 font-mono text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors"
               >
                 <RotateCcw size={16} />
-                Try again for 3 stars
+                {stars >= 3 ? 'Play again' : 'Try again for 3 stars'}
               </button>
 
               {/* Tap to Reveal "Did You Know?" Fact */}

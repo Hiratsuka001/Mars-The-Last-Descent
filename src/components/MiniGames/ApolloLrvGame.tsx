@@ -81,7 +81,7 @@ export const ApolloLrvGame: React.FC<ApolloLrvGameProps> = ({
     <MiniGameShell
       wreckId={wreckId}
       title="Wire-Mesh Moon Drift"
-      instruction="Steer the Apollo Moon Buggy! Drift across lunar regolith, hit crater jumps for 1/6g air-time, and recover 4 Apollo sample crates!"
+      instruction="Steer the buggy, jump craters, grab the parts!"
       onWin={onSuccess}
       onExit={onClose}
       onRetry={handleRetry}

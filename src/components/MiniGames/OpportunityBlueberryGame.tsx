@@ -79,7 +79,7 @@ export const OpportunityBlueberryGame: React.FC<OpportunityBlueberryGameProps> =
     <MiniGameShell
       wreckId={wreckId}
       title="The Blueberry Lab"
-      instruction="Hold rock to drill the core, then tap popping blueberries before dust covers them!"
+      instruction="Hold to drill, then tap the blueberries!"
       winTitle="SAMPLES SECURED!"
       onWin={onSuccess}
       onExit={onClose}

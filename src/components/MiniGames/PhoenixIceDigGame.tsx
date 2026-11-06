@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MiniGameShell } from './MiniGameShell';
 import { sound } from '../../systems/audio';
 import { isReduceMotionEnabled } from '../../systems/saveManager';
+import { isDebugMode } from '../../systems/debug';
 import { Snowflake, Clock, AlertTriangle, ShieldCheck, Flame, Sparkles, ArrowDown, ChevronRight } from 'lucide-react';
 
 interface PhoenixIceDigGameProps {
@@ -53,19 +54,19 @@ export const PhoenixIceDigGame: React.FC<PhoenixIceDigGameProps> = ({
 }) => {
   const [retryNonce, setRetryNonce] = useState(0);
   const [reactionText, setReactionText] = useState(
-    'Arctic permafrost detected! Drag anywhere to steer the scoop downward. Dodge boulders!'
+    'Arctic permafrost detected. Subsurface sensors active.'
   );
 
   const handleRetry = useCallback(() => {
     setRetryNonce((n) => n + 1);
-    setReactionText('Fresh arctic site selected! Drag scoop down to the ice sheet and bag the chunks!');
+    setReactionText('Fresh arctic drill site selected.');
   }, []);
 
   return (
     <MiniGameShell
       wreckId={wreckId}
       title="Dig for Ice"
-      instruction="Drag anywhere down through 3 soil layers. Dodge rocks, then bag the ice before it sublimates!"
+      instruction="Dig down to the ice, then bag it fast!"
       onWin={onSuccess}
       onExit={onClose}
       onRetry={handleRetry}
@@ -200,7 +201,7 @@ export const PhoenixContent: React.FC<PhoenixContentProps> = ({
 
     if (!reduceMotion) shakeRef.current = 12;
     sound.playDiscovery();
-    onReactionChange('SUB-SURFACE ICE REACHED! Quick! Drag or tap the steaming ice chunks into the Cryo Chute!');
+    onReactionChange('Sub-surface ice reached! Pure water ice exposed.');
     spawnParticles(320, 208, 40, '#bae6fd');
     spawnParticles(320, 208, 25, '#ffffff', true);
   }, [onReactionChange, reduceMotion, spawnParticles, totalSublimationTime]);
@@ -410,23 +411,24 @@ export const PhoenixContent: React.FC<PhoenixContentProps> = ({
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Layer Name Watermarks
+      // Short Layer Names in the Left Gutter only (never under chunks or scoop)
       ctx.font = 'bold 9px monospace';
-      ctx.fillStyle = 'rgba(255, 200, 180, 0.5)';
-      ctx.fillText('LAYER 1: RED REGOLITH DUST (Loose Soil)', trenchLeft + 10, 42);
-      ctx.fillStyle = 'rgba(200, 220, 255, 0.5)';
-      ctx.fillText('LAYER 2: FROZEN PERMAFROST (Hard Ground)', trenchLeft + 10, 112);
-      ctx.fillStyle = 'rgba(224, 242, 254, 0.8)';
-      ctx.fillText('LAYER 3: PURE WATER ICE SHEET (Target)', trenchLeft + 10, 192);
+      ctx.textAlign = 'left';
+      ctx.fillStyle = 'rgba(255, 200, 180, 0.9)';
+      ctx.fillText('Dust', 8, 60);
+      ctx.fillStyle = 'rgba(200, 220, 255, 0.9)';
+      ctx.fillText('Frozen soil', 8, 135);
+      ctx.fillStyle = 'rgba(224, 242, 254, 0.95)';
+      ctx.fillText('ICE', 8, 220);
 
       // Depth tick marks on left margin
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '10px monospace';
+      ctx.fillStyle = '#64748b';
+      ctx.font = '8px monospace';
       ctx.textAlign = 'right';
-      ctx.fillText('0 cm', trenchLeft - 8, 35);
-      ctx.fillText('5 cm', trenchLeft - 8, 95);
-      ctx.fillText('10 cm', trenchLeft - 8, 175);
-      ctx.fillText('15 cm', trenchLeft - 8, 235);
+      ctx.fillText('0cm', trenchLeft - 4, 35);
+      ctx.fillText('5cm', trenchLeft - 4, 95);
+      ctx.fillText('10cm', trenchLeft - 4, 175);
+      ctx.fillText('15cm', trenchLeft - 4, 235);
       ctx.textAlign = 'left';
 
       // -------------------------------------------------------------
@@ -524,46 +526,6 @@ export const PhoenixContent: React.FC<PhoenixContentProps> = ({
           }
         }
 
-        // Draw In-Canvas Sublimation Timer Bar (Huge, clear, unmistakable!)
-        const barWidth = 260;
-        const barHeight = 16;
-        const barX = (CANVAS_WIDTH - barWidth) / 2;
-        const barY = 32;
-        const timeRatio = remaining / totalSublimationTime;
-
-        ctx.save();
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-        ctx.strokeStyle = timeRatio < 0.35 ? '#ef4444' : '#38bdf8';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.roundRect(barX, barY, barWidth, barHeight, 8);
-        ctx.fill();
-        ctx.stroke();
-
-        const fillWidth = Math.max(0, (barWidth - 4) * timeRatio);
-        const barFillGrad = ctx.createLinearGradient(barX, 0, barX + fillWidth, 0);
-        if (timeRatio < 0.35) {
-          barFillGrad.addColorStop(0, '#f97316');
-          barFillGrad.addColorStop(1, '#ef4444');
-        } else {
-          barFillGrad.addColorStop(0, '#0284c7');
-          barFillGrad.addColorStop(1, '#38bdf8');
-        }
-        ctx.fillStyle = barFillGrad;
-        ctx.beginPath();
-        ctx.roundRect(barX + 2, barY + 2, fillWidth, barHeight - 4, 6);
-        ctx.fill();
-
-        ctx.font = 'bold 9px monospace';
-        ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'center';
-        ctx.fillText(
-          `SUBLIMATING: ${remaining.toFixed(1)}s (TAP / DRAG ICE TO CHUTE ↗)`,
-          CANVAS_WIDTH / 2,
-          barY + 11
-        );
-        ctx.restore();
-
         // Check if time expired
         if (remaining <= 0) {
           let allBagged = true;
@@ -577,7 +539,7 @@ export const PhoenixContent: React.FC<PhoenixContentProps> = ({
             phaseRef.current = 'failed';
             setPhase('failed');
             sound.playMistake();
-            onReactionChange('The ice chunks completely sublimated into gas! Tap retry to dig fresh permafrost.');
+            onReactionChange('The ice chunks sublimated into gas!');
             onFailTrigger();
           }
         }
@@ -608,16 +570,16 @@ export const PhoenixContent: React.FC<PhoenixContentProps> = ({
       // Cooler Label & LED Counter
       ctx.fillStyle = '#38bdf8';
       ctx.font = 'bold 10px monospace';
-      ctx.fillText('❄ CRYO CHUTE', COOLER_X + 10, COOLER_Y + 18);
+      ctx.fillText('❄ CRYO CHUTE', COOLER_X + 12, COOLER_Y + 18);
 
       ctx.fillStyle = baggedCount === 3 ? '#4ade80' : '#ffffff';
-      ctx.font = 'bold 12px monospace';
-      ctx.fillText(`[ 🧊 ${baggedCount} / 3 BAGGED ]`, COOLER_X + 10, COOLER_Y + 36);
+      ctx.font = 'bold 13px monospace';
+      ctx.fillText(`🧊 ${baggedCount}/3`, COOLER_X + 12, COOLER_Y + 36);
 
       if (isChuteActive) {
         ctx.fillStyle = '#38bdf8';
         ctx.font = 'bold 8px monospace';
-        ctx.fillText('MAGNETIC PULL ACTIVE!', COOLER_X + 10, COOLER_Y + 46);
+        ctx.fillText('MAGNETIC PULL', COOLER_X + 12, COOLER_Y + 46);
       }
       ctx.restore();
 
@@ -695,9 +657,12 @@ export const PhoenixContent: React.FC<PhoenixContentProps> = ({
           ctx.fillText('ICE', chunk.x, chunk.y + 3);
 
           if (!chunk.isAutoFlying && draggedChunkIdRef.current !== chunk.id) {
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 8px monospace';
-            ctx.fillText('TAP/DRAG', chunk.x, chunk.y - r - 6);
+            const pulse = (Math.sin(Date.now() / 250) + 1) / 2;
+            ctx.beginPath();
+            ctx.arc(chunk.x, chunk.y, r + 4 + pulse * 3, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(56, 189, 248, ${0.4 + pulse * 0.4})`;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
           }
           ctx.restore();
         }
@@ -1001,7 +966,7 @@ export const PhoenixContent: React.FC<PhoenixContentProps> = ({
 
   // Autoplay hook for test automation
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && isDebugMode) {
       const runAutoplay = () => {
         rockHitsRef.current = 0;
         setRockHitCount(0);
@@ -1017,23 +982,25 @@ export const PhoenixContent: React.FC<PhoenixContentProps> = ({
       };
 
       (window as any).__phoenixAutoplay = runAutoplay;
+      (window as any).__phoenixTriggerStage2 = triggerSublimationPhase;
       return () => {
         delete (window as any).__phoenixAutoplay;
+        delete (window as any).__phoenixTriggerStage2;
       };
     }
-  }, [onWinTrigger]);
+  }, [onWinTrigger, triggerSublimationPhase]);
 
   return (
     <div
       className="w-full h-full flex flex-col items-center justify-between select-none p-1 sm:p-2 max-w-[760px] mx-auto min-h-0"
       data-testid="phoenix-ice-game"
     >
-      {/* 1. Header Telemetry HUD */}
+      {/* 1. Header Telemetry HUD (Stage Bar) */}
       <div className="w-full flex items-center justify-between px-3 py-1.5 bg-slate-900/80 border border-cyan-900/40 rounded-xl shrink-0 text-xs font-mono">
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
           <span className="text-cyan-300 font-bold uppercase tracking-wider">
-            {phase === 'digging' ? 'STAGE 1: DIG DOWN TO THE ICE!' : 'STAGE 2: BAG THE ICE BEFORE IT SUBLIMATES!'}
+            {phase === 'digging' ? 'Dig!' : 'Bag it!'}
           </span>
         </div>
 
@@ -1044,23 +1011,21 @@ export const PhoenixContent: React.FC<PhoenixContentProps> = ({
             className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40 animate-pulse"
           >
             <Clock size={12} className="text-amber-400" />
-            <span className="font-bold text-[10px]">MARS TIME-LAPSE: SOL 20 → SOL 24</span>
+            <span className="font-bold text-[10px]">SOL 20 → 24</span>
           </div>
         )}
 
-        {/* Chunks Bagged HUD Container */}
-        <div
-          data-testid="cooler-chute"
-          className="flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-950 border border-cyan-500/50 shadow-md shadow-cyan-950/40"
-        >
-          <Snowflake size={14} className="text-cyan-400 animate-spin" />
-          <div className="flex flex-col text-right">
-            <span className="text-[9px] text-slate-400 uppercase font-semibold">Cryo Chute</span>
-            <span className="text-xs font-bold text-cyan-300 font-mono">
-              {baggedCount} / 3
-            </span>
+        {/* Sublimating Timer Bar inside Stage Bar */}
+        {phase === 'sublimating' && (
+          <div className="flex-1 max-w-[140px] sm:max-w-[200px] mx-2 h-2.5 rounded-full bg-slate-800 border border-cyan-500/40 overflow-hidden">
+            <div
+              className={`h-full transition-all duration-75 ${
+                sublimationTimeLeft < 1.5 ? 'bg-red-500' : 'bg-cyan-400'
+              }`}
+              style={{ width: `${Math.max(0, (sublimationTimeLeft / totalSublimationTime) * 100)}%` }}
+            />
           </div>
-        </div>
+        )}
       </div>
 
       {/* 2. Interactive Trench Soil Canvas */}
@@ -1076,6 +1041,19 @@ export const PhoenixContent: React.FC<PhoenixContentProps> = ({
           onPointerCancel={handlePointerUp}
           className="bg-[#120705] rounded-2xl block border-2 border-cyan-950 shadow-2xl cursor-grab active:cursor-grabbing w-full h-full max-h-[220px] sm:max-h-[260px] touch-none select-none aspect-video shrink-0"
           data-testid="crater-canvas"
+        />
+
+        {/* In-canvas Cryo Chute target overlay */}
+        <div
+          data-testid="cooler-chute"
+          className="absolute pointer-events-none"
+          style={{
+            left: `${(COOLER_X / CANVAS_WIDTH) * 100}%`,
+            top: `${(COOLER_Y / CANVAS_HEIGHT) * 100}%`,
+            width: `${(COOLER_W / CANVAS_WIDTH) * 100}%`,
+            height: `${(COOLER_H / CANVAS_HEIGHT) * 100}%`,
+          }}
+          aria-label="Cryo Chute"
         />
 
         {/* Accessibility overlay for touch targeting the scoop */}
@@ -1094,40 +1072,23 @@ export const PhoenixContent: React.FC<PhoenixContentProps> = ({
         )}
       </div>
 
-      {/* 3. Guidance & Sublimation Countdown Banner */}
+      {/* 3. Footer Bar: Depth Readout (Stage 1) or Time Left (Stage 2) */}
       <div className="w-full flex items-center justify-between px-3 py-1.5 bg-cyan-950/20 border border-cyan-900/30 rounded-xl shrink-0 text-xs font-mono text-slate-300">
         <span className="flex items-center gap-1.5">
           {phase === 'digging' ? (
-            <>
-              <Flame size={14} className="text-amber-400" />
-              <span>
-                <strong>Drag down</strong> or use <strong>Arrow Keys / S</strong>. Dodge boulders!
-              </span>
-            </>
+            <span className="text-cyan-400 font-bold">
+              Depth: {depthPercent}% ({Math.round(depthPercent * 0.15)} cm)
+            </span>
           ) : (
-            <>
-              <Sparkles size={14} className="text-cyan-400" />
-              <span>
-                <strong>Tap or drag white ice</strong> to the Cryo Chute ↗ before it vaporizes!
-              </span>
-            </>
+            <span
+              className={`font-bold flex items-center gap-1.5 ${
+                sublimationTimeLeft < 1.5 ? 'text-red-400 animate-pulse' : 'text-amber-400'
+              }`}
+            >
+              <Clock size={13} /> Time left: {sublimationTimeLeft.toFixed(1)}s
+            </span>
           )}
         </span>
-
-        {/* Phase Telemetry / Timer */}
-        {phase === 'digging' ? (
-          <span className="text-cyan-400 font-bold">
-            Depth: {depthPercent}% ({Math.round(depthPercent * 0.15)} cm)
-          </span>
-        ) : phase === 'sublimating' ? (
-          <span
-            className={`font-bold flex items-center gap-1 ${
-              sublimationTimeLeft < 1.5 ? 'text-red-400 animate-pulse' : 'text-amber-400'
-            }`}
-          >
-            <Clock size={13} /> {sublimationTimeLeft.toFixed(1)}s remaining
-          </span>
-        ) : null}
       </div>
     </div>
   );

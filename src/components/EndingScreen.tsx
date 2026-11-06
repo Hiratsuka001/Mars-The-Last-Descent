@@ -112,41 +112,48 @@ export const EndingScreen: React.FC<EndingScreenProps> = ({
         </div>
 
         {/* Story Logs: Memory Fragments List */}
-        {unlockedLogs.length > 0 && !isLogsSkipped && (
+        {unlockedLogs.length > 0 && (
           <div data-testid="ending-logs-section" className="w-full text-left space-y-3 pt-3 border-t border-slate-800 animate-in fade-in duration-300">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono font-bold text-cyan-300 uppercase tracking-wider">
-                  Recovered Memory Logs ({unlockedLogs.length}/8)
-                </span>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase">
-                  FICTION
-                </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono font-bold text-cyan-300 uppercase tracking-wider">
+                    Recovered Memory Logs ({unlockedLogs.length}/8)
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase">
+                    FICTION
+                  </span>
+                </div>
+                <p className="text-[11px] font-mono text-slate-400 mt-0.5">
+                  Nova wrote these notes on old probes while you recovered from the crash.
+                </p>
               </div>
               <button
-                data-testid="skip-logs-btn"
+                data-testid={isLogsSkipped ? "ending-logs-toggle" : "skip-logs-btn"}
                 onClick={() => {
                   sound.playClick();
-                  setIsLogsSkipped(true);
+                  setIsLogsSkipped((prev) => !prev);
                 }}
                 className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-mono text-slate-300 hover:text-white cursor-pointer transition-colors"
               >
-                Skip Logs →
+                {isLogsSkipped ? 'Show Logs →' : 'Skip Logs →'}
               </button>
             </div>
 
-            <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-              {unlockedLogs.map((log) => (
-                <div key={log.id} data-testid="ending-log-item" className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs">
-                  <div className="text-[10px] font-mono text-cyan-400 font-semibold mb-0.5">
-                    Log #{log.order}: {log.probeName}
+            {!isLogsSkipped && (
+              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                {unlockedLogs.map((log) => (
+                  <div key={log.id} data-testid="ending-log-item" className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs">
+                    <div className="text-[10px] font-mono text-cyan-400 font-semibold mb-0.5">
+                      Log #{log.order}: {log.probeName}
+                    </div>
+                    <div className="text-slate-200 italic font-mono text-[11px] leading-relaxed">
+                      "{log.text}"
+                    </div>
                   </div>
-                  <div className="text-slate-200 italic font-mono text-[11px] leading-relaxed">
-                    "{log.text}"
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

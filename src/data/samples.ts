@@ -73,12 +73,12 @@ export const SCIENCE_SAMPLES: Record<string, ScienceSampleDefinition> = {
   },
   sample_stromatolite_fossil: {
     id: 'sample_stromatolite_fossil',
-    name: 'Siliceous Micro-Laminate Slab',
+    name: 'Layered Silica Slab',
     category: 'fossil',
     spriteKey: 'sample_stromatolite_fossil',
     preferredBiomes: ['grassland'],
-    description: 'Delicately layered mineral sediment resembling prebiotic hydrothermal mats and fossilized stromatolites.',
-    scienceFact: 'NASA\'s Perseverance rover currently gathers samples in Jezero Crater delta deposits to search for microscopic biosignatures in similar layered structures.',
+    description: 'Thin layers of silica. On Earth, hot springs leave deposits like this.',
+    scienceFact: "Spirit's stuck wheel dug up soil that was over 90% silica. Hot springs or steam vents probably made it, so tiny microbes could once have lived there. Nobody knows if they did.",
     rarity: 'exotic',
   },
 };

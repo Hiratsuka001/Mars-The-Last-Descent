@@ -1,6 +1,6 @@
 /**
  * Story Logs Data: "Memory Fragments"
- * Pre-arrival telemetry notes left by Nova across the 8 historical wrecks.
+ * Nova wrote these notes on old probes while you recovered from the crash.
  * Fiction is strictly demarcated from real NASA mission history.
  */
 
@@ -120,21 +120,21 @@ export function deriveLogIdsFromParts(partIds: string[] = [], wreckIds: string[]
   const result: string[] = [];
   const normalizedParts = new Set<string>();
   for (const p of partIds) {
-    if (typeof p === 'string' && p.length > 0) {
+    if (typeof p === 'string' && p.trim().length > 0) {
       normalizedParts.add(LEGACY_PART_MAP[p] || p);
     }
   }
 
   const normalizedWrecks = new Set<string>();
   for (const w of wreckIds) {
-    if (typeof w === 'string' && w.length > 0) {
+    if (typeof w === 'string' && w.trim().length > 0) {
       normalizedWrecks.add(LEGACY_WRECK_MAP[w] || w);
     }
   }
 
   for (const log of ORDERED_LOGS) {
-    const hasPart = normalizedParts.has(log.partId);
-    const hasWreck = normalizedWrecks.has(log.wreckId);
+    const hasPart = normalizedParts.has(log.partId) || normalizedParts.has(log.wreckId);
+    const hasWreck = normalizedWrecks.has(log.wreckId) || normalizedWrecks.has(log.partId);
     if (hasPart || hasWreck) {
       if (!result.includes(log.id)) {
         result.push(log.id);

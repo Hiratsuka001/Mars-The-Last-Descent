@@ -1,6 +1,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { sound } from './systems/audio';
 import { getSavedProgress, saveProgress, resetProgress, hasSavedWorldRun, GameProgress } from './systems/saveManager';
+import { isDebugMode } from './systems/debug';
 import { MISSIONS_DATA, MissionDiscovery } from './data/missions';
 import { MainMenu } from './components/MainMenu';
 import { GameCanvas, InteractiveEntity } from './components/GameCanvas';
@@ -23,6 +24,7 @@ const SojournerRoverPuzzle = React.lazy(() => import('./components/MiniGames/Soj
 const OpportunityWaterPuzzle = React.lazy(() => import('./components/MiniGames/OpportunityWaterPuzzle').then(m => ({ default: m.OpportunityWaterPuzzle })));
 const InSightSeismicPuzzle = React.lazy(() => import('./components/MiniGames/InSightSeismicPuzzle').then(m => ({ default: m.InSightSeismicPuzzle })));
 const MoonScene = React.lazy(() => import('./components/MoonScene').then(m => ({ default: m.MoonScene })));
+const CrashInterlude = React.lazy(() => import('./components/CrashInterlude').then(m => ({ default: m.CrashInterlude })));
 
 // Overhaul feature flag: Mars top-down open world
 export const USE_TOPDOWN_WORLD = true;
@@ -50,6 +52,7 @@ export default function App() {
   const [showArchive, setShowArchive] = useState<boolean>(false);
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [showCredits, setShowCredits] = useState<boolean>(false);
+  const [showCrashInterlude, setShowCrashInterlude] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(sound.getMuted());
 
   // In-game dialogue overlay state
@@ -83,7 +86,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && isDebugMode) {
       (window as any).__getSavedProgress = getSavedProgress;
     }
     return () => {
@@ -348,8 +351,18 @@ export default function App() {
           <MarsCrashScene onDiagnosticComplete={() => goToChapter(4)} />
         )}
 
+        {/* CRASH INTERLUDE (STORY HANDOFF: MOON -> MARS) */}
+        {showCrashInterlude && (
+          <CrashInterlude
+            onComplete={() => {
+              setShowCrashInterlude(false);
+              goToChapter(4);
+            }}
+          />
+        )}
+
         {/* CHAPTER 4: MARS OPEN-WORLD EXPEDITION */}
-        {progress.currentChapter === 4 && (
+        {progress.currentChapter === 4 && !showCrashInterlude && (
           <WorldScene
             key={String(worldSeed)}
             config={{ seed: worldSeed }}
@@ -411,6 +424,7 @@ export default function App() {
               };
               saveProgress(next, true);
               setProgress(next);
+              setShowCrashInterlude(true);
             }}
             onSkip={() => {
               const latest = getSavedProgress();
@@ -425,6 +439,7 @@ export default function App() {
               };
               saveProgress(next, true);
               setProgress(next);
+              setShowCrashInterlude(true);
             }}
             isMuted={isMuted}
             onToggleSound={toggleSound}
@@ -484,6 +499,7 @@ export default function App() {
             collectedSampleIds={progress.worldSave?.collectedSampleIds || []}
             discoveredLandmarkIds={progress.worldSave?.discoveredLandmarkIds || []}
             researchPoints={progress.worldSave?.researchPoints || 0}
+            moonRelicIds={progress.moonChapter?.relicIds || []}
             onClose={() => setShowArchive(false)}
           />
         )}

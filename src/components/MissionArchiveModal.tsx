@@ -4,7 +4,10 @@ import { SCIENCE_SAMPLES, getSampleResearchPoints } from '../data/samples';
 import { ORDERED_LOGS, LogEntry } from '../data/logs';
 import { atlas } from '../render/atlas';
 import { sound } from '../systems/audio';
-import { X, Award, ExternalLink, Cpu, Compass, Sparkles, CheckCircle2, ChevronDown, ChevronUp, Lock, Microscope, Radio } from 'lucide-react';
+import { X, Award, ExternalLink, Cpu, Compass, Sparkles, CheckCircle2, ChevronDown, ChevronUp, Lock, Microscope, Radio, Moon } from 'lucide-react';
+import { MOON_RELICS } from '../data/moonMap';
+import { DID_YOU_KNOW } from '../data/didYouKnow';
+import { getSavedProgress } from '../systems/saveManager';
 import { NovaAvatar } from './NovaAvatar';
 
 export interface CodexEntry {
@@ -122,6 +125,7 @@ interface MissionArchiveModalProps {
   discoveredLandmarkIds?: string[];
   recoveredLogIds?: string[];
   researchPoints?: number;
+  moonRelicIds?: string[];
   onClose: () => void;
   onSelectDiscovery?: (discovery: MissionDiscovery) => void;
 }
@@ -133,9 +137,10 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
   discoveredLandmarkIds = [],
   recoveredLogIds = [],
   researchPoints = 0,
+  moonRelicIds: propMoonRelicIds,
   onClose,
 }) => {
-  const [activeTab, setActiveTab] = useState<'mars' | 'samples' | 'logs' | 'legacy'>('mars');
+  const [activeTab, setActiveTab] = useState<'mars' | 'samples' | 'logs' | 'moon' | 'legacy'>('mars');
   const [selectedMarsId, setSelectedMarsId] = useState<string>(
     completedEquipmentIds[0] || MARS_CODEX_ENTRIES[0].id
   );
@@ -145,6 +150,9 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
   const toggleCardExpanded = (id: string) => {
     setExpandedCards((prev) => ({ ...prev, [id]: !prev[id] }));
   };
+
+  const effectiveMoonRelicIds = propMoonRelicIds ?? getSavedProgress().moonChapter?.relicIds ?? [];
+  const unlockedMoonCount = effectiveMoonRelicIds.length;
 
   // Legacy tab state
   const allLegacyMissions = Object.values(MISSIONS_DATA);
@@ -257,6 +265,21 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
           >
             <Radio className="w-3.5 h-3.5 text-cyan-400" />
             <span>Logs ({unlockedLogsCount}/8)</span>
+          </button>
+          <button
+            onClick={() => {
+              sound.playClick();
+              setActiveTab('moon');
+            }}
+            data-testid="moon-relics-tab-btn"
+            className={`px-4 py-2 rounded-t-xl text-xs font-mono font-bold transition-all cursor-pointer border-t border-x flex items-center gap-1.5 ${
+              activeTab === 'moon'
+                ? 'bg-slate-900 text-cyan-300 border-cyan-500/40 shadow-sm'
+                : 'bg-transparent text-slate-400 border-transparent hover:text-slate-200'
+            }`}
+          >
+            <Moon className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Moon Relics ({unlockedMoonCount}/3)</span>
           </button>
           <button
             onClick={() => {
@@ -468,7 +491,7 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
                           </div>
                           <div>
                             <div className="text-[10px] font-mono text-cyan-400 uppercase tracking-widest font-semibold">
-                              {sample.category}
+                              {sample.category === 'fossil' ? 'Mineral' : sample.category}
                             </div>
                             <h5
                               data-testid={`specimen-name-${sample.id}`}
@@ -557,7 +580,7 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Pre-arrival memory fragments left by Nova on historical probes across Mars.
+                  Nova wrote these notes on old probes while you recovered from the crash.
                 </p>
               </div>
               <div className="text-xs font-mono text-cyan-300 bg-cyan-950/40 border border-cyan-500/30 px-3 py-1 rounded-xl">
@@ -627,6 +650,132 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
                         </div>
                       </div>
                     )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Historical Moon Mission Relics */}
+        {activeTab === 'moon' && (
+          <div data-testid="codex-moon-tab-content" className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
+              <div>
+                <div className="text-xs font-mono text-cyan-400 font-semibold uppercase tracking-wider flex items-center gap-2">
+                  <Moon className="w-4 h-4 text-cyan-400" />
+                  <span>Historical Moon Mission Relics</span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Survey records of 20th-century lunar landing sites logged prior to Mars transit.
+                </p>
+              </div>
+              <div className="text-xs font-mono text-cyan-300 bg-cyan-950/40 border border-cyan-500/30 px-3 py-1 rounded-xl">
+                Logged: {unlockedMoonCount} / 3
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+              {MOON_RELICS.map((relic) => {
+                const isFound = effectiveMoonRelicIds.includes(relic.id);
+                const fact = DID_YOU_KNOW[relic.id] || '';
+
+                return (
+                  <div
+                    key={relic.id}
+                    data-testid={`moon-relic-card-${relic.id}`}
+                    className={`p-4 rounded-xl border transition-all flex flex-col justify-between ${
+                      isFound
+                        ? 'border-slate-800 bg-slate-900/40 shadow-sm'
+                        : 'border-slate-800/40 bg-slate-950/40 opacity-75'
+                    }`}
+                  >
+                    <div className="space-y-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            data-testid={isFound ? `moon-relic-sprite-${relic.id}` : `moon-relic-silhouette-${relic.id}`}
+                            className={`w-9 h-9 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 ${
+                              !isFound ? 'brightness-0 opacity-25 contrast-200' : ''
+                            }`}
+                          >
+                            <canvas
+                              ref={(node) => {
+                                if (node) {
+                                  const c = node.getContext('2d');
+                                  if (c) {
+                                    c.clearRect(0, 0, 32, 32);
+                                    c.imageSmoothingEnabled = false;
+                                    atlas.drawSprite(c, relic.placeholderSprite, 0, 0, 32, 32);
+                                  }
+                                }
+                              }}
+                              width={32}
+                              height={32}
+                              className="w-8 h-8"
+                            />
+                          </div>
+                          <div>
+                            <div
+                              data-testid={`moon-relic-year-${relic.id}`}
+                              className="text-[10px] font-mono text-cyan-400 uppercase tracking-widest font-semibold"
+                            >
+                              {isFound ? `Year ${relic.historicYear}` : '???'}
+                            </div>
+                            <h5
+                              data-testid={`moon-relic-name-${relic.id}`}
+                              className={`text-xs font-bold leading-tight ${isFound ? 'text-white' : 'text-slate-500'}`}
+                            >
+                              {isFound ? relic.name : '???'}
+                            </h5>
+                          </div>
+                        </div>
+
+                        {isFound ? (
+                          <span
+                            data-testid={`moon-relic-status-${relic.id}`}
+                            className="px-2 py-0.5 rounded text-[9px] font-mono uppercase tracking-wider font-bold border border-emerald-500/50 bg-emerald-950/30 text-emerald-300"
+                          >
+                            FOUND
+                          </span>
+                        ) : (
+                          <span
+                            data-testid={`moon-relic-status-${relic.id}`}
+                            className="px-2 py-0.5 rounded text-[9px] font-mono uppercase tracking-wider font-bold border border-slate-700 bg-slate-900/60 text-slate-500"
+                          >
+                            LOCKED
+                          </span>
+                        )}
+                      </div>
+
+                      {isFound ? (
+                        <div className="space-y-2">
+                          <p
+                            data-testid={`moon-relic-fact-${relic.id}`}
+                            className="text-[11px] text-slate-300 leading-relaxed font-mono"
+                          >
+                            {fact}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="py-4 text-center space-y-1.5">
+                          <Lock className="w-5 h-5 text-slate-600 mx-auto" />
+                          <p
+                            data-testid={`moon-relic-fact-${relic.id}`}
+                            className="text-[11px] text-slate-500 font-mono"
+                          >
+                            Uncharted Lunar Instrument. Survey Moon surface to recover telemetry.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-3 pt-2.5 border-t border-slate-800/60 flex items-center justify-between text-[10px] font-mono">
+                      <span className="text-slate-500">Target: {relic.id.replace('moon_', '').toUpperCase()}</span>
+                      <span className={isFound ? 'text-emerald-400 font-bold' : 'text-slate-600'}>
+                        {isFound ? 'LOGGED' : 'SILHOUETTE'}
+                      </span>
+                    </div>
                   </div>
                 );
               })}
