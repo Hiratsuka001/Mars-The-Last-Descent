@@ -418,6 +418,8 @@ export default function App() {
                 currentChapter: 4,
                 moonChapter: {
                   relicIds: latest.moonChapter?.relicIds || [],
+                  secretIds: latest.moonChapter?.secretIds || [],
+                  iceScannedIds: latest.moonChapter?.iceScannedIds || [],
                   completed: true,
                   rpApplied: false,
                 },
@@ -433,6 +435,8 @@ export default function App() {
                 currentChapter: 4,
                 moonChapter: {
                   relicIds: latest.moonChapter?.relicIds || [],
+                  secretIds: latest.moonChapter?.secretIds || [],
+                  iceScannedIds: latest.moonChapter?.iceScannedIds || [],
                   completed: true,
                   rpApplied: false,
                 },

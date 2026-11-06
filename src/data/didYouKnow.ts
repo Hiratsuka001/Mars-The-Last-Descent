@@ -10,4 +10,8 @@ export const DID_YOU_KNOW: Record<string, string> = {
   moon_luna9: "Luna 9 touched down on 3 Feb 1966 and sent home the first photos ever taken from the Moon's surface. Airbags cushioned its landing!",
   moon_apollo11: "Astronauts left a panel of 100 mirrors on the Moon on 21 July 1969. Scientists still bounce lasers off it, and the timing shows the Moon drifts away about 3.8 cm every year!",
   moon_lunokhod1: "Lunokhod 1 drove on the Moon in 1970, then was lost for almost 40 years. In 2010 a NASA orbiter spotted it, and scientists bounced a laser off its mirror on the very first try!",
+  secret_golf_ball: "Alan Shepard attached a 6-iron head to a contingency sample tool on Apollo 14. In 1/6th gravity, his golf ball flew 'miles and miles' across the lunar surface!",
+  secret_apollo_flag: "The nylon American flags planted on the Moon have been bleached entirely white by 50+ years of unfiltered solar UV radiation and micrometeorites.",
+  secret_orange_glass: "Apollo 17 astronaut Harrison Schmitt discovered brilliant orange soil at Shorty Crater—formed by ancient 3.8-billion-year-old explosive volcanic fire fountains!",
+  moon_ice_psr: "Permanently Shadowed Regions inside lunar polar craters never see direct sunlight and stay colder than -240°C (33 Kelvin). Billions of tons of ancient water-ice are trapped there!",
 };

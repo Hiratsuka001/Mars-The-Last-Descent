@@ -37,6 +37,8 @@ export interface WorldSaveData {
 
 export interface MoonChapterData {
   relicIds: string[];
+  secretIds?: string[];
+  iceScannedIds?: string[];
   completed: boolean;
   rpApplied: boolean;
 }
@@ -73,6 +75,8 @@ const defaultProgress: GameProgress = {
   isMuted: false,
   moonChapter: {
     relicIds: [],
+    secretIds: [],
+    iceScannedIds: [],
     completed: false,
     rpApplied: false,
   },
@@ -131,12 +135,14 @@ function migrateWorldSave(world: any): WorldSaveData {
 function parseMoonChapter(moonChapter: any, hasWorldSave: boolean): MoonChapterData {
   if (!moonChapter) {
     if (hasWorldSave) {
-      return { relicIds: [], completed: true, rpApplied: true };
+      return { relicIds: [], secretIds: [], iceScannedIds: [], completed: true, rpApplied: true };
     }
-    return { relicIds: [], completed: false, rpApplied: false };
+    return { relicIds: [], secretIds: [], iceScannedIds: [], completed: false, rpApplied: false };
   }
   return {
     relicIds: Array.isArray(moonChapter.relicIds) ? moonChapter.relicIds : [],
+    secretIds: Array.isArray(moonChapter.secretIds) ? moonChapter.secretIds : [],
+    iceScannedIds: Array.isArray(moonChapter.iceScannedIds) ? moonChapter.iceScannedIds : [],
     completed: Boolean(moonChapter.completed),
     rpApplied: Boolean(moonChapter.rpApplied),
   };

@@ -408,6 +408,62 @@ class SoundSystem {
     } catch {}
   }
 
+  /**
+   * NASA Apollo Quindar Tone
+   * The iconic communications beep used by NASA during Apollo lunar transmissions.
+   * Intro tone (PTT On): 2,525 Hz sine tone for ~220ms
+   * Outro tone (PTT Off): 2,475 Hz sine tone for ~220ms
+   * Includes a subtle soft radio noise gate burst.
+   */
+  public playQuindarTone(isOutro = false) {
+    if (this.isMuted || this.sfxVolume <= 0) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const freq = isOutro ? 2475 : 2525;
+      const duration = 0.22;
+
+      // Pure sine wave tone
+      const osc = this.ctx.createOscillator();
+      const toneGain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now);
+
+      // Smooth attack/release to prevent digital speaker pop
+      toneGain.gain.setValueAtTime(0, now);
+      toneGain.gain.linearRampToValueAtTime(0.08 * this.sfxVolume, now + 0.012);
+      toneGain.gain.setValueAtTime(0.08 * this.sfxVolume, now + duration - 0.015);
+      toneGain.gain.linearRampToValueAtTime(0, now + duration);
+
+      osc.connect(toneGain);
+      toneGain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + duration + 0.01);
+
+      // Subtle radio gate squelch burst (bandpass-filtered noise)
+      const noise = this.getNoiseBuffer();
+      if (noise) {
+        const noiseSrc = this.ctx.createBufferSource();
+        noiseSrc.buffer = noise;
+        const noiseFilter = this.ctx.createBiquadFilter();
+        noiseFilter.type = 'bandpass';
+        noiseFilter.frequency.setValueAtTime(1800, now);
+        noiseFilter.Q.setValueAtTime(1.5, now);
+
+        const noiseGain = this.ctx.createGain();
+        noiseGain.gain.setValueAtTime(0.018 * this.sfxVolume, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.04);
+
+        noiseSrc.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(this.ctx.destination);
+        noiseSrc.start(now);
+        noiseSrc.stop(now + 0.045);
+      }
+    } catch {}
+  }
+
   public playScanner() {
     if (this.isMuted || this.sfxVolume <= 0) return;
     try {
@@ -858,6 +914,41 @@ class SoundSystem {
   // DRONE AMBIENCE
   // ==========================================================================
 
+  public playEarthriseChime() {
+    if (this.isMuted || this.musicVolume <= 0) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // Celestial Fmaj9 space chord: F3, C4, E4, G4, A4, C5
+      const freqs = [174.61, 261.63, 329.63, 392.00, 440.00, 523.25];
+      freqs.forEach((freq, idx) => {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now);
+        osc.detune.setValueAtTime(idx % 2 === 0 ? 3.5 : -3.5, now);
+
+        const noteDelay = idx * 0.07;
+        const noteStart = now + noteDelay;
+        const noteVol = 0.05 * this.musicVolume;
+
+        gain.gain.setValueAtTime(0.0001, noteStart);
+        gain.gain.linearRampToValueAtTime(noteVol, noteStart + 0.8);
+        gain.gain.exponentialRampToValueAtTime(0.0001, noteStart + 4.2);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(noteStart);
+        osc.stop(noteStart + 4.5);
+      });
+    } catch {}
+  }
+
   public startAmbience(type: 'space' | 'moon' | 'mars') {
     if (this.isMuted || this.musicVolume <= 0) return;
     try {
@@ -877,8 +968,9 @@ class SoundSystem {
         this.ambientOsc1.frequency.setValueAtTime(110, now);
         this.ambientOsc2.frequency.setValueAtTime(164.81, now);
       } else if (type === 'moon') {
-        this.ambientOsc1.frequency.setValueAtTime(98, now);
-        this.ambientOsc2.frequency.setValueAtTime(146.83, now);
+        // Deep Apollo suit life-support circulator hum & vacuum tone
+        this.ambientOsc1.frequency.setValueAtTime(55, now);
+        this.ambientOsc2.frequency.setValueAtTime(110, now);
       } else {
         this.ambientOsc1.frequency.setValueAtTime(73.42, now);
         this.ambientOsc2.frequency.setValueAtTime(110, now);

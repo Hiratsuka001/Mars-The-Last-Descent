@@ -494,7 +494,9 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       let initialRp = 0;
       if (saved.moonChapter?.completed && !saved.moonChapter?.rpApplied) {
         const relicCount = saved.moonChapter.relicIds?.length ?? 0;
-        initialRp = Math.min(3, Math.max(0, relicCount));
+        const hasOrangeGlass = saved.moonChapter.secretIds?.includes('secret_orange_glass');
+        const bonusSecretRp = hasOrangeGlass ? 1 : 0;
+        initialRp = Math.min(4, Math.max(0, relicCount + bonusSecretRp));
 
         const updatedSaved: GameProgress = {
           ...saved,

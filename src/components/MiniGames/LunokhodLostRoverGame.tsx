@@ -639,12 +639,16 @@ export const LunokhodContent: React.FC<LunokhodContentProps> = ({
                       </div>
                     )}
 
-                    {/* Found Lunokhod Procedural Sprite */}
+                    {/* Found Lunokhod Procedural Sprite & Laser Retroreflector Beam */}
                     {isFound && (
                       <div className="relative flex items-center justify-center w-full h-full">
                         {/* Ping flash glow */}
                         {!reduceMotion && (
-                          <span className="absolute inset-0 rounded-xl bg-emerald-400/40 animate-ping pointer-events-none" />
+                          <>
+                            <span className="absolute inset-0 rounded-xl bg-emerald-400/30 animate-ping pointer-events-none" />
+                            {/* Earth-Moon Laser Pulse Ray */}
+                            <div className="absolute -top-10 right-1/4 w-0.5 h-14 bg-gradient-to-b from-rose-500 via-emerald-400 to-white shadow-[0_0_10px_rgba(52,211,153,1)] animate-pulse pointer-events-none" />
+                          </>
                         )}
                         <LunokhodSprite />
                       </div>
@@ -778,6 +782,9 @@ const LunokhodSprite: React.FC = () => {
 
       {/* Laser Corner Retroreflector Prism on front-right */}
       <rect x="41" y="32" width="6" height="6" rx="1" fill="#10b981" stroke="#a7f3d0" strokeWidth="1" />
+      <circle cx="44" cy="35" r="1.5" fill="#ffffff" />
+      <line x1="41" y1="35" x2="47" y2="35" stroke="#ffffff" strokeWidth="0.8" />
+      <line x1="44" y1="32" x2="44" y2="38" stroke="#ffffff" strokeWidth="0.8" />
 
       {/* Helical High-Gain Antenna on front-left */}
       <line x1="19" y1="24" x2="13" y2="12" stroke="#e2e8f0" strokeWidth="1.5" />

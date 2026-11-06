@@ -77,7 +77,155 @@ export interface MoonMapData {
   tiles: string[][];
   startTile: { x: number; y: number };
   relics: RelicDef[];
+  secrets: SecretDef[];
+  psrAreas: PSRArea[];
+  iceDeposits: IceDepositDef[];
 }
+
+export interface PSRArea {
+  id: string;
+  name: string;
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  description: string;
+}
+
+export interface IceDepositDef {
+  id: string;
+  name: string;
+  tileX: number;
+  tileY: number;
+  description: string;
+}
+
+export const MOON_PSR_AREAS: PSRArea[] = [
+  {
+    id: 'psr_south_zone1',
+    name: 'Cabeus Shadow Basin',
+    minX: 4,
+    maxX: 18,
+    minY: 28,
+    maxY: 34,
+    description: 'Permanently shadowed cold trap. Cryogenic temperatures preserve pristine volatiles.',
+  },
+  {
+    id: 'psr_south_zone2',
+    name: 'Shorty Shadow Depths',
+    minX: 28,
+    maxX: 41,
+    minY: 27,
+    maxY: 34,
+    description: 'Deep southern crater depression enveloped in eternal darkness.',
+  },
+  {
+    id: 'psr_south_zone3',
+    name: 'Shoemaker Polar Basin',
+    minX: 46,
+    maxX: 60,
+    minY: 28,
+    maxY: 34,
+    description: 'Ancient cryogenic basin untouched by sunlight for billions of years.',
+  },
+];
+
+export const MOON_ICE_DEPOSITS: IceDepositDef[] = [
+  {
+    id: 'ice_1',
+    name: 'Cabeus Subsurface Ice Vein',
+    tileX: 8,
+    tileY: 31,
+    description: 'Subsurface crystalline water-ice trapped in cryogenic regolith.',
+  },
+  {
+    id: 'ice_2',
+    name: 'Cabeus Glacial Pocket',
+    tileX: 14,
+    tileY: 31,
+    description: 'Pristine volatile frost shielded from solar sublimation.',
+  },
+  {
+    id: 'ice_3',
+    name: 'Shorty Permafrost Glint',
+    tileX: 33,
+    tileY: 32,
+    description: 'Water-ice grains cemented into pyroclastic volcanic soil.',
+  },
+  {
+    id: 'ice_4',
+    name: 'Shorty Cold-Trap Frost',
+    tileX: 38,
+    tileY: 30,
+    description: 'Dense crystal clusters reflecting deep-space starlight.',
+  },
+  {
+    id: 'ice_5',
+    name: 'Shoemaker Polar Ice Shard',
+    tileX: 50,
+    tileY: 31,
+    description: 'Ancient cometary volatiles locked at 40 Kelvin.',
+  },
+  {
+    id: 'ice_6',
+    name: 'Shoemaker Glacial Matrix',
+    tileX: 56,
+    tileY: 31,
+    description: 'High-purity lunar ice: potential feedstock for hydrogen rocket propellant.',
+  },
+];
+
+export interface SecretDef {
+  id: string;
+  name: string;
+  historicYear: number;
+  tileX: number;
+  tileY: number;
+  type: 'golf_ball' | 'orange_glass' | 'apollo_flag';
+  oneLineHint: string;
+  interactionPrompt: string;
+  discoveredLine: string;
+  badge: string;
+}
+
+export const MOON_SECRETS: SecretDef[] = [
+  {
+    id: 'secret_golf_ball',
+    name: "Alan Shepard's Golf Ball (Apollo 14)",
+    historicYear: 1971,
+    tileX: 10,
+    tileY: 8,
+    type: 'golf_ball',
+    oneLineHint: 'Look closely at the regolith... is that a golf ball resting by the crater?!',
+    interactionPrompt: '[E] WHACK GOLF BALL',
+    discoveredLine: '"Miles and miles and miles!" The golf ball arcs cleanly into low-lunar orbit!',
+    badge: 'Lunar Golfer',
+  },
+  {
+    id: 'secret_apollo_flag',
+    name: 'Bleached Apollo 11 Flag',
+    historicYear: 1969,
+    tileX: 35,
+    tileY: 8,
+    type: 'apollo_flag',
+    oneLineHint: 'An American flag standing on the ridge... but something looks different.',
+    interactionPrompt: '[E] INSPECT FLAG',
+    discoveredLine: 'The nylon flag has been bleached pure white by 50+ years of unfiltered solar UV radiation.',
+    badge: 'Solar UV Scout',
+  },
+  {
+    id: 'secret_orange_glass',
+    name: 'Shorty Crater Orange Soil',
+    historicYear: 1972,
+    tileX: 35,
+    tileY: 31,
+    type: 'orange_glass',
+    oneLineHint: 'Gleaming orange regolith! Pyroclastic volcanic glass from ancient lunar fire fountains!',
+    interactionPrompt: '[E] SAMPLE ORANGE SOIL',
+    discoveredLine: 'Orange volcanic glass beads sampled! +1 Bonus Research Point for Mars transit!',
+    badge: 'Fire Fountain Geologist',
+  },
+];
 
 export const MOON_RELICS: RelicDef[] = [
   {
@@ -139,5 +287,8 @@ export function getMoonMapData(): MoonMapData {
     tiles,
     startTile,
     relics: MOON_RELICS,
+    secrets: MOON_SECRETS,
+    psrAreas: MOON_PSR_AREAS,
+    iceDeposits: MOON_ICE_DEPOSITS,
   };
 }

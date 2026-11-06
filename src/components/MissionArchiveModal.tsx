@@ -5,7 +5,7 @@ import { ORDERED_LOGS, LogEntry } from '../data/logs';
 import { atlas } from '../render/atlas';
 import { sound } from '../systems/audio';
 import { X, Award, ExternalLink, Cpu, Compass, Sparkles, CheckCircle2, ChevronDown, ChevronUp, Lock, Microscope, Radio, Moon } from 'lucide-react';
-import { MOON_RELICS } from '../data/moonMap';
+import { MOON_RELICS, MOON_SECRETS } from '../data/moonMap';
 import { DID_YOU_KNOW } from '../data/didYouKnow';
 import { getSavedProgress } from '../systems/saveManager';
 import { NovaAvatar } from './NovaAvatar';
@@ -153,6 +153,8 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
 
   const effectiveMoonRelicIds = propMoonRelicIds ?? getSavedProgress().moonChapter?.relicIds ?? [];
   const unlockedMoonCount = effectiveMoonRelicIds.length;
+  const effectiveMoonSecretIds = getSavedProgress().moonChapter?.secretIds ?? [];
+  const effectiveMoonIceIds = getSavedProgress().moonChapter?.iceScannedIds ?? [];
 
   // Legacy tab state
   const allLegacyMissions = Object.values(MISSIONS_DATA);
@@ -779,6 +781,96 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
                   </div>
                 );
               })}
+            </div>
+
+            {/* Section: Lunar Secrets & Anomalies */}
+            <div className="pt-4 border-t border-slate-800/80">
+              <div className="flex items-center justify-between pb-3">
+                <div>
+                  <h4 className="text-xs font-mono text-amber-400 font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Apollo Anomalies & Hidden Relics</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Secret historical artifacts and geological formations discovered across the lunar terrain.
+                  </p>
+                </div>
+                <div className="text-[11px] font-mono text-amber-300 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-lg">
+                  Secrets: {effectiveMoonSecretIds.length} / {MOON_SECRETS.length}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                {MOON_SECRETS.map((sec) => {
+                  const isFound = effectiveMoonSecretIds.includes(sec.id);
+                  const fact = DID_YOU_KNOW[sec.id] || '';
+
+                  return (
+                    <div
+                      key={sec.id}
+                      data-testid={`moon-secret-card-${sec.id}`}
+                      className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
+                        isFound
+                          ? 'border-amber-900/40 bg-amber-950/20 shadow-sm'
+                          : 'border-slate-800/40 bg-slate-950/40 opacity-70'
+                      }`}
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="text-[10px] font-mono text-amber-400 uppercase tracking-widest font-semibold">
+                              {isFound ? `Apollo Era · ${sec.historicYear}` : '???'}
+                            </div>
+                            <h5 className={`text-xs font-bold leading-tight ${isFound ? 'text-amber-200' : 'text-slate-500'}`}>
+                              {isFound ? sec.name : 'Unknown Lunar Anomaly'}
+                            </h5>
+                          </div>
+                          {isFound ? (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase font-bold border border-amber-500/50 bg-amber-950/40 text-amber-300">
+                              {sec.badge}
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase font-bold border border-slate-700 bg-slate-900/60 text-slate-500">
+                              UNDISCOVERED
+                            </span>
+                          )}
+                        </div>
+
+                        {isFound ? (
+                          <p className="text-[11px] text-slate-300 leading-relaxed font-mono">
+                            {fact}
+                          </p>
+                        ) : (
+                          <div className="py-2 text-center text-[11px] text-slate-500 font-mono">
+                            <Lock className="w-4 h-4 text-slate-600 mx-auto mb-1" />
+                            Explore off the beaten path to discover.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Permanently Shadowed Regions (PSR) & Subsurface Water Ice */}
+              <div className="p-3.5 rounded-xl border border-sky-900/40 bg-sky-950/20 shadow-sm space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-sky-400" />
+                    <h5 className="text-xs font-bold text-sky-200">
+                      Permanently Shadowed Regions (PSR) & Lunar Water Ice
+                    </h5>
+                  </div>
+                  <span className="text-[10px] font-mono text-sky-400 uppercase font-semibold">
+                    {effectiveMoonIceIds.length > 0 ? `${effectiveMoonIceIds.length}/6 Ice Deposits Scanned` : 'Uncharted'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 font-mono leading-relaxed">
+                  {effectiveMoonIceIds.length > 0
+                    ? DID_YOU_KNOW.moon_ice_psr
+                    : 'Deep crater basins at the lunar south pole remain in eternal darkness at 30–40 Kelvin. Use your EVA helmet floodlight to illuminate the shadows and discover ancient volatile ice deposits.'}
+                </p>
+              </div>
             </div>
           </div>
         )}
