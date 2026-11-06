@@ -14,4 +14,13 @@ export const DID_YOU_KNOW: Record<string, string> = {
   secret_apollo_flag: "The nylon American flags planted on the Moon have been bleached entirely white by 50+ years of unfiltered solar UV radiation and micrometeorites.",
   secret_orange_glass: "Apollo 17 astronaut Harrison Schmitt discovered brilliant orange soil at Shorty Crater—formed by ancient 3.8-billion-year-old explosive volcanic fire fountains!",
   moon_ice_psr: "Permanently Shadowed Regions inside lunar polar craters never see direct sunlight and stay colder than -240°C (33 Kelvin). Billions of tons of ancient water-ice are trapped there!",
+  moon_cosmic_horizon: "Apollo 17 astronauts sketched glowing rays along the lunar sunrise. NASA's LADEE spacecraft proved solar UV charges tiny dust grains, causing them to levitate kilometers high in the vacuum.",
+  moon_micrometeorite: "Without an atmosphere to vaporize space debris, tiny micrometeorites slam directly into the Moon at over 30 km/s, producing silent kinetic flashes and continuous regolith erosion.",
+  moon_lrv_buggy: "The Apollo Lunar Roving Vehicle reached a top speed of 18.0 km/h (11.2 mph) during Apollo 17, kicking up dramatic vacuum 'rooster tails' with its wire-mesh wheels!",
+  monument_fallen_astronaut: "Apollo 15 commander David Scott placed a tiny 8.5-centimeter aluminum statuette and memorial plaque in the Hadley Rille regolith, honoring 14 American astronauts and Soviet cosmonauts who died in the pursuit of space exploration.",
+  monument_surveyor3: "Apollo 12 landed within walking distance of Surveyor 3 in 1969. When its camera was brought back to Earth, scientists found living Streptococcus bacteria that had survived 2.5 years frozen in the lunar vacuum!",
+  rock_genesis: "The 'Genesis Rock' collected by Apollo 15 is a 4.5-billion-year-old anorthosite. Composed of 98% calcic plagioclase, it definitively proved the Moon was once entirely covered by a global magma ocean!",
+  rock_basalt: "Apollo 11 mare basalts contain Tranquillityite, an iron-titanium-zirconium silicate mineral formed in ancient 3.7-billion-year-old lunar lava flows, named after Mare Tranquillitatis.",
+  rock_breccia: "Descartes impact melt breccia was created 3.9 billion years ago during the Late Heavy Bombardment. Massive asteroid impacts melted target rock into glass, cementing shattered highland fragments together.",
+  seismic_thumper: "The Apollo Active Seismic Experiment used a handheld 'thumper' device and geophone line. Firing acoustic charges revealed that the lunar megaregolith is 4–5 meters deep, overlying fractured basalt and ancient hollow lava tubes.",
 };

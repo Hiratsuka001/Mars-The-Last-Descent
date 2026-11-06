@@ -4,8 +4,8 @@ import { SCIENCE_SAMPLES, getSampleResearchPoints } from '../data/samples';
 import { ORDERED_LOGS, LogEntry } from '../data/logs';
 import { atlas } from '../render/atlas';
 import { sound } from '../systems/audio';
-import { X, Award, ExternalLink, Cpu, Compass, Sparkles, CheckCircle2, ChevronDown, ChevronUp, Lock, Microscope, Radio, Moon } from 'lucide-react';
-import { MOON_RELICS, MOON_SECRETS } from '../data/moonMap';
+import { X, Award, ExternalLink, Cpu, Compass, Sparkles, CheckCircle2, ChevronDown, ChevronUp, Lock, Microscope, Radio, Moon, Heart, Gauge } from 'lucide-react';
+import { MOON_RELICS, MOON_SECRETS, MOON_MONUMENTS, MOON_ROCKS, MOON_SEISMIC_THUMPER } from '../data/moonMap';
 import { DID_YOU_KNOW } from '../data/didYouKnow';
 import { getSavedProgress } from '../systems/saveManager';
 import { NovaAvatar } from './NovaAvatar';
@@ -155,6 +155,15 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
   const unlockedMoonCount = effectiveMoonRelicIds.length;
   const effectiveMoonSecretIds = getSavedProgress().moonChapter?.secretIds ?? [];
   const effectiveMoonIceIds = getSavedProgress().moonChapter?.iceScannedIds ?? [];
+  const effectiveMoonMonumentIds = getSavedProgress().moonChapter?.monumentIds ?? [];
+  const effectiveMoonRockIds = getSavedProgress().moonChapter?.lunarRockIds ?? [];
+  const isThumperFired = getSavedProgress().moonChapter?.thumperFired ?? false;
+  const hasCosmicCompanion = (getSavedProgress().badges ?? []).includes('Cosmic Companion');
+  const hasLunarGrandPrix = (getSavedProgress().badges ?? []).includes('Lunar Grand Prix');
+  const hasCosmicVanguard = (getSavedProgress().badges ?? []).includes('Cosmic Vanguard');
+  const hasSilentSurveyor = (getSavedProgress().badges ?? []).includes('Silent Surveyor');
+  const hasSeismicSounder = (getSavedProgress().badges ?? []).includes('Seismic Sounder');
+  const hasLunarPetrologist = (getSavedProgress().badges ?? []).includes('Lunar Petrologist');
 
   // Legacy tab state
   const allLegacyMissions = Object.values(MISSIONS_DATA);
@@ -870,6 +879,288 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
                     ? DID_YOU_KNOW.moon_ice_psr
                     : 'Deep crater basins at the lunar south pole remain in eternal darkness at 30–40 Kelvin. Use your EVA helmet floodlight to illuminate the shadows and discover ancient volatile ice deposits.'}
                 </p>
+              </div>
+
+              {/* Nova Feline EVA Companion & Microgravity Play */}
+              <div
+                data-testid="moon-companion-card"
+                className={`p-3.5 rounded-xl border transition-all space-y-2 ${
+                  hasCosmicCompanion
+                    ? 'border-rose-900/40 bg-rose-950/20 shadow-sm'
+                    : 'border-slate-800/40 bg-slate-950/40 opacity-70'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Heart className={`w-4 h-4 ${hasCosmicCompanion ? 'text-rose-400 fill-rose-400/30' : 'text-slate-500'}`} />
+                    <h5 className={`text-xs font-bold ${hasCosmicCompanion ? 'text-rose-200' : 'text-slate-400'}`}>
+                      Nova · Feline EVA Companion & Low-G Play
+                    </h5>
+                  </div>
+                  {hasCosmicCompanion ? (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase font-bold border border-rose-500/50 bg-rose-950/40 text-rose-300">
+                      Cosmic Companion
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase font-bold border border-slate-700 bg-slate-900/60 text-slate-500">
+                      Undiscovered
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-300 font-mono leading-relaxed">
+                  {hasCosmicCompanion
+                    ? "Nova's custom feline EVA suit allows her to explore the lunar regolith safely. In 1/6th gravity, petting Nova triggers zero-G belly rolls and resonant purring, while her predatory instincts track helmet floodlight reflections and stray golf balls."
+                    : "Approach Nova on the lunar surface while stationary to pet her in 1/6th gravity, or watch her predatory instincts react to helmet floodlight dots and struck golf balls."}
+                </p>
+              </div>
+
+              {/* LADEE Electrostatic Horizon Shimmer & Cosmic Sky */}
+              <div
+                data-testid="moon-horizon-card"
+                className="p-3.5 rounded-xl border border-cyan-900/40 bg-cyan-950/20 shadow-sm space-y-2"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Radio className="w-4 h-4 text-cyan-400" />
+                    <h5 className="text-xs font-bold text-cyan-200">
+                      LADEE Horizon Shimmer & Silent Micrometeorites
+                    </h5>
+                  </div>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase font-bold border border-cyan-500/50 bg-cyan-950/40 text-cyan-300">
+                    Cosmic Dynamic
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 font-mono leading-relaxed">
+                  {DID_YOU_KNOW.moon_cosmic_horizon} {DID_YOU_KNOW.moon_micrometeorite}
+                </p>
+              </div>
+
+              {/* Apollo Lunar Roving Vehicle (LRV) Moon Buggy */}
+              <div
+                data-testid="moon-rover-card"
+                className={`p-3.5 rounded-xl border transition-all space-y-2 ${
+                  hasLunarGrandPrix
+                    ? 'border-amber-900/40 bg-amber-950/20 shadow-sm'
+                    : 'border-slate-800/40 bg-slate-950/40 opacity-70'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Gauge className={`w-4 h-4 ${hasLunarGrandPrix ? 'text-amber-400' : 'text-slate-500'}`} />
+                    <h5 className={`text-xs font-bold ${hasLunarGrandPrix ? 'text-amber-200' : 'text-slate-400'}`}>
+                      Apollo Lunar Roving Vehicle (LRV "Moon Buggy")
+                    </h5>
+                  </div>
+                  {hasLunarGrandPrix ? (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase font-bold border border-amber-500/50 bg-amber-950/40 text-amber-300">
+                      Lunar Grand Prix
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase font-bold border border-slate-700 bg-slate-900/60 text-slate-500">
+                      Undiscovered
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-300 font-mono leading-relaxed">
+                  {hasLunarGrandPrix
+                    ? DID_YOU_KNOW.moon_lrv_buggy
+                    : "Find the parked Apollo Lunar Roving Vehicle near the landing zone to take it for a spin across the lunar regolith with 4-wheel electric motors and low-gravity suspension."}
+                </p>
+              </div>
+
+              {/* Historical Lunar Monuments & Pioneers */}
+              <div className="pt-4 border-t border-slate-800/80">
+                <div className="flex items-center justify-between pb-3">
+                  <div>
+                    <h4 className="text-xs font-mono text-amber-300 font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                      <Award className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Historical Lunar Monuments & Pioneers</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Historic human memorials and pioneering robotic probes preserved in the pristine lunar vacuum.
+                    </p>
+                  </div>
+                  <div className="text-[11px] font-mono text-amber-300 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-lg">
+                    Monuments: {effectiveMoonMonumentIds.length} / {MOON_MONUMENTS.length}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {MOON_MONUMENTS.map((monument) => {
+                    const isFound =
+                      effectiveMoonMonumentIds.includes(monument.id) ||
+                      (monument.type === 'fallen_astronaut' && hasCosmicVanguard) ||
+                      (monument.type === 'surveyor3' && hasSilentSurveyor);
+                    const fact = DID_YOU_KNOW[monument.id] || '';
+
+                    return (
+                      <div
+                        key={monument.id}
+                        data-testid={`moon-monument-${monument.type.replace('_', '-')}`}
+                        className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
+                          isFound
+                            ? 'border-amber-900/40 bg-amber-950/20 shadow-sm'
+                            : 'border-slate-800/40 bg-slate-950/40 opacity-70'
+                        }`}
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="text-[10px] font-mono text-amber-400 uppercase tracking-widest font-semibold">
+                                {isFound ? `Apollo Era · ${monument.historicYear}` : '???'}
+                              </div>
+                              <h5 className={`text-xs font-bold leading-tight ${isFound ? 'text-amber-200' : 'text-slate-500'}`}>
+                                {isFound ? monument.name : 'Unexplored Lunar Landmark'}
+                              </h5>
+                            </div>
+                            {isFound ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase font-bold border border-amber-500/50 bg-amber-950/40 text-amber-300">
+                                {monument.badge}
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase font-bold border border-slate-700 bg-slate-900/60 text-slate-500">
+                                UNDISCOVERED
+                              </span>
+                            )}
+                          </div>
+
+                          {isFound ? (
+                            <p className="text-[11px] text-slate-300 leading-relaxed font-mono">
+                              {fact}
+                            </p>
+                          ) : (
+                            <div className="py-2 text-center text-[11px] text-slate-500 font-mono">
+                              <Lock className="w-4 h-4 text-slate-600 mx-auto mb-1" />
+                              Explore the lunar surface to uncover this historical milestone.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Section: Apollo Active Seismic Sounding */}
+              <div className="pt-4 border-t border-slate-800/80">
+                <div
+                  data-testid="moon-seismic-thumper-card"
+                  className={`p-3.5 rounded-xl border transition-all space-y-2 ${
+                    isThumperFired || hasSeismicSounder
+                      ? 'border-yellow-900/40 bg-yellow-950/20 shadow-sm'
+                      : 'border-slate-800/40 bg-slate-950/40 opacity-70'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Radio className={`w-4 h-4 ${isThumperFired || hasSeismicSounder ? 'text-yellow-400' : 'text-slate-500'}`} />
+                      <div>
+                        <div className="text-[10px] font-mono text-yellow-400 uppercase tracking-widest font-semibold">
+                          Apollo 14 / 16 · Active Seismic Experiment
+                        </div>
+                        <h5 className={`text-xs font-bold ${isThumperFired || hasSeismicSounder ? 'text-yellow-200' : 'text-slate-400'}`}>
+                          ALSEP Seismic Thumper & Deep Crust Sounding
+                        </h5>
+                      </div>
+                    </div>
+                    {isThumperFired || hasSeismicSounder ? (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase font-bold border border-yellow-500/50 bg-yellow-950/40 text-yellow-300">
+                        Seismic Sounder
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase font-bold border border-slate-700 bg-slate-900/60 text-slate-500">
+                        Undetonated
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-300 font-mono leading-relaxed">
+                    {isThumperFired || hasSeismicSounder
+                      ? DID_YOU_KNOW.seismic_thumper
+                      : "Locate the ALSEP seismic thumper station in Zone 2 to detonate acoustic geophone pulses, mapping the lunar megaregolith, basalt thickness, and subterranean lava tube caverns."}
+                  </p>
+                </div>
+              </div>
+
+              {/* Section: Lunar Geological Return Kit (Petrological Prospecting) */}
+              <div className="pt-4 border-t border-slate-800/80">
+                <div className="flex items-center justify-between pb-3">
+                  <div>
+                    <h4 className="text-xs font-mono text-emerald-400 font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                      <Microscope className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Lunar Geological Return Kit</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Pristine mineral specimens sampled across Apollo exploration zones (+1 RP each for Mars transit).
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {hasLunarPetrologist && (
+                      <span className="px-2 py-0.5 rounded text-[9px] font-mono uppercase font-bold border border-emerald-500/50 bg-emerald-950/40 text-emerald-300">
+                        Lunar Petrologist
+                      </span>
+                    )}
+                    <div className="text-[11px] font-mono text-emerald-300 bg-emerald-950/40 border border-emerald-500/30 px-2.5 py-0.5 rounded-lg">
+                      Samples: {effectiveMoonRockIds.length} / {MOON_ROCKS.length}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                  {MOON_ROCKS.map((rock) => {
+                    const isFound = effectiveMoonRockIds.includes(rock.id);
+                    const fact = DID_YOU_KNOW[rock.id] || '';
+
+                    return (
+                      <div
+                        key={rock.id}
+                        data-testid={`moon-rock-card-${rock.id}`}
+                        className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
+                          isFound
+                            ? 'border-emerald-900/40 bg-emerald-950/20 shadow-sm'
+                            : 'border-slate-800/40 bg-slate-950/40 opacity-70'
+                        }`}
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest font-semibold">
+                                {isFound ? `${rock.historicMission} · ${rock.mineralAge}` : '???'}
+                              </div>
+                              <h5 className={`text-xs font-bold leading-tight ${isFound ? 'text-emerald-200' : 'text-slate-500'}`}>
+                                {isFound ? rock.name : 'Uncataloged Rock'}
+                              </h5>
+                            </div>
+                            {isFound ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase font-bold border border-emerald-500/50 bg-emerald-950/40 text-emerald-300">
+                                {rock.badge}
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase font-bold border border-slate-700 bg-slate-900/60 text-slate-500">
+                                UNSAMPLED
+                              </span>
+                            )}
+                          </div>
+
+                          {isFound ? (
+                            <div className="space-y-1.5">
+                              <div className="text-[10px] font-mono text-emerald-300/80 bg-slate-950/60 px-2 py-1 rounded border border-emerald-900/50">
+                                {rock.chemicalFormula}
+                              </div>
+                              <p className="text-[11px] text-slate-300 leading-relaxed font-mono">
+                                {fact}
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="py-2 text-center text-[11px] text-slate-500 font-mono">
+                              <Lock className="w-4 h-4 text-slate-600 mx-auto mb-1" />
+                              Collect this rock specimen on the lunar surface.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>

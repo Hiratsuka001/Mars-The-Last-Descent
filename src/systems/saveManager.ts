@@ -39,6 +39,9 @@ export interface MoonChapterData {
   relicIds: string[];
   secretIds?: string[];
   iceScannedIds?: string[];
+  monumentIds?: string[];
+  lunarRockIds?: string[];
+  thumperFired?: boolean;
   completed: boolean;
   rpApplied: boolean;
 }
@@ -77,6 +80,9 @@ const defaultProgress: GameProgress = {
     relicIds: [],
     secretIds: [],
     iceScannedIds: [],
+    monumentIds: [],
+    lunarRockIds: [],
+    thumperFired: false,
     completed: false,
     rpApplied: false,
   },
@@ -135,14 +141,17 @@ function migrateWorldSave(world: any): WorldSaveData {
 function parseMoonChapter(moonChapter: any, hasWorldSave: boolean): MoonChapterData {
   if (!moonChapter) {
     if (hasWorldSave) {
-      return { relicIds: [], secretIds: [], iceScannedIds: [], completed: true, rpApplied: true };
+      return { relicIds: [], secretIds: [], iceScannedIds: [], monumentIds: [], lunarRockIds: [], thumperFired: true, completed: true, rpApplied: true };
     }
-    return { relicIds: [], secretIds: [], iceScannedIds: [], completed: false, rpApplied: false };
+    return { relicIds: [], secretIds: [], iceScannedIds: [], monumentIds: [], lunarRockIds: [], thumperFired: false, completed: false, rpApplied: false };
   }
   return {
     relicIds: Array.isArray(moonChapter.relicIds) ? moonChapter.relicIds : [],
     secretIds: Array.isArray(moonChapter.secretIds) ? moonChapter.secretIds : [],
     iceScannedIds: Array.isArray(moonChapter.iceScannedIds) ? moonChapter.iceScannedIds : [],
+    monumentIds: Array.isArray(moonChapter.monumentIds) ? moonChapter.monumentIds : [],
+    lunarRockIds: Array.isArray(moonChapter.lunarRockIds) ? moonChapter.lunarRockIds : [],
+    thumperFired: Boolean(moonChapter.thumperFired),
     completed: Boolean(moonChapter.completed),
     rpApplied: Boolean(moonChapter.rpApplied),
   };

@@ -78,9 +78,144 @@ export interface MoonMapData {
   startTile: { x: number; y: number };
   relics: RelicDef[];
   secrets: SecretDef[];
+  monuments: MonumentDef[];
+  rocks: LunarRockDef[];
+  seismicThumper: SeismicThumperDef;
   psrAreas: PSRArea[];
   iceDeposits: IceDepositDef[];
 }
+
+export interface MonumentDef {
+  id: string;
+  name: string;
+  historicYear: number;
+  tileX: number;
+  tileY: number;
+  type: 'fallen_astronaut' | 'surveyor3';
+  oneLineHint: string;
+  interactionPrompt: string;
+  discoveredLine: string;
+  badge: string;
+}
+
+export const MOON_MONUMENTS: MonumentDef[] = [
+  {
+    id: 'monument_surveyor3',
+    name: 'Surveyor 3 Robotic Lander (1967)',
+    historicYear: 1967,
+    tileX: 31,
+    tileY: 14,
+    type: 'surveyor3',
+    oneLineHint: 'A robotic lander resting in the Ocean of Storms... Surveyor 3!',
+    interactionPrompt: '[E] INSPECT SURVEYOR 3',
+    discoveredLine: 'Surveyor 3 inspected! Dormant Streptococcus microbes survived 2.5 years in deep vacuum.',
+    badge: 'Silent Surveyor',
+  },
+  {
+    id: 'monument_fallen_astronaut',
+    name: 'The "Fallen Astronaut" Memorial (1971)',
+    historicYear: 1971,
+    tileX: 52,
+    tileY: 8,
+    type: 'fallen_astronaut',
+    oneLineHint: 'A tiny aluminum statuette and plaque resting quietly near the mountain ridge...',
+    interactionPrompt: '[E] PAY RESPECTS',
+    discoveredLine: 'A solemn moment of radio silence for the 14 space pioneers who gave their lives reaching for the stars.',
+    badge: 'Cosmic Vanguard',
+  },
+];
+
+export interface LunarRockDef {
+  id: string;
+  name: string;
+  type: 'anorthosite' | 'basalt' | 'breccia';
+  historicMission: string;
+  historicYear: number;
+  tileX: number;
+  tileY: number;
+  mineralAge: string;
+  chemicalFormula: string;
+  color: string;
+  oneLineHint: string;
+  interactionPrompt: string;
+  discoveredLine: string;
+  badge: string;
+}
+
+export const MOON_ROCKS: LunarRockDef[] = [
+  {
+    id: 'rock_breccia',
+    name: 'Descartes Impact Melt Breccia',
+    type: 'breccia',
+    historicMission: 'Apollo 16',
+    historicYear: 1972,
+    tileX: 20,
+    tileY: 12,
+    mineralAge: '3.9 Billion Years',
+    chemicalFormula: 'Shock-Melted Glass + Plagioclase Clasts',
+    color: '#94a3b8',
+    oneLineHint: 'An angular shock-fused rock resting on the regolith... Impact Melt Breccia!',
+    interactionPrompt: '[E] SAMPLE BRECCIA',
+    discoveredLine: 'Impact Melt Breccia sampled! Shock-melted glass from ancient asteroid cataclysms. +1 RP for Mars transit!',
+    badge: 'Impact Geologist',
+  },
+  {
+    id: 'rock_basalt',
+    name: 'Mare Tranquillitatis Basalt (Tranquillityite)',
+    type: 'basalt',
+    historicMission: 'Apollo 11',
+    historicYear: 1969,
+    tileX: 38,
+    tileY: 15,
+    mineralAge: '3.7 Billion Years',
+    chemicalFormula: 'Fe8Ti3Zr2Si3O24 (Tranquillityite)',
+    color: '#f59e0b',
+    oneLineHint: 'Dark volcanic rock with iridescent titanium crystals... Mare Basalt!',
+    interactionPrompt: '[E] SAMPLE BASALT',
+    discoveredLine: 'Titanium-rich Mare Basalt sampled! Contains Tranquillityite, an ancient mineral once thought unique to the Moon. +1 RP for Mars transit!',
+    badge: 'Mare Vulcanologist',
+  },
+  {
+    id: 'rock_genesis',
+    name: 'Anorthosite ("The Genesis Rock")',
+    type: 'anorthosite',
+    historicMission: 'Apollo 15',
+    historicYear: 1971,
+    tileX: 57,
+    tileY: 16,
+    mineralAge: '4.5 Billion Years',
+    chemicalFormula: 'CaAl2Si2O8 (98% Calcic Anorthite)',
+    color: '#38bdf8',
+    oneLineHint: 'A brilliant, pure white crystalline rock gleaming on the plains... The Genesis Rock!',
+    interactionPrompt: '[E] SAMPLE GENESIS ROCK',
+    discoveredLine: 'The Genesis Rock sampled! 4.5-billion-year-old primordial crust that definitively proved the Lunar Magma Ocean hypothesis. +1 RP for Mars transit!',
+    badge: 'Genesis Prospector',
+  },
+];
+
+export interface SeismicThumperDef {
+  id: string;
+  name: string;
+  historicMission: string;
+  historicYear: number;
+  tileX: number;
+  tileY: number;
+  interactionPrompt: string;
+  discoveredLine: string;
+  badge: string;
+}
+
+export const MOON_SEISMIC_THUMPER: SeismicThumperDef = {
+  id: 'seismic_thumper_station',
+  name: 'Apollo Active Seismic Experiment (ALSEP Thumper)',
+  historicMission: 'Apollo 14 / 16',
+  historicYear: 1971,
+  tileX: 33,
+  tileY: 23,
+  interactionPrompt: '[E] FIRE SEISMIC THUMPER',
+  discoveredLine: 'Seismic shockwave profiled! Bedrock echoes confirm a 40 km crust with an ancient hollow volcanic lava tube 45 meters beneath Mare Tranquillitatis.',
+  badge: 'Seismic Sounder',
+};
 
 export interface PSRArea {
   id: string;
@@ -288,6 +423,9 @@ export function getMoonMapData(): MoonMapData {
     startTile,
     relics: MOON_RELICS,
     secrets: MOON_SECRETS,
+    monuments: MOON_MONUMENTS,
+    rocks: MOON_ROCKS,
+    seismicThumper: MOON_SEISMIC_THUMPER,
     psrAreas: MOON_PSR_AREAS,
     iceDeposits: MOON_ICE_DEPOSITS,
   };

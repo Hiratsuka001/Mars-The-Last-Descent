@@ -486,6 +486,241 @@ class SoundSystem {
     } catch {}
   }
 
+  /**
+   * Deep-space cosmic static — solar wind radiation & background RF noise
+   */
+  public playCosmicStatic() {
+    if (this.isMuted || this.sfxVolume <= 0) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const noise = this.getNoiseBuffer();
+      if (!noise) return;
+
+      const noiseSrc = this.ctx.createBufferSource();
+      noiseSrc.buffer = noise;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(1400, now);
+      filter.frequency.linearRampToValueAtTime(2200, now + 0.5);
+      filter.Q.setValueAtTime(3.2, now);
+
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.02 * this.sfxVolume, now + 0.2);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.9);
+
+      noiseSrc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.ctx.destination);
+      noiseSrc.start(now);
+      noiseSrc.stop(now + 0.95);
+    } catch {}
+  }
+
+  /**
+   * Subsurface lunar seismic thud — low-frequency kinetic shockwave conducted through bedrock
+   */
+  public playLunarSeismicThud() {
+    if (this.isMuted || this.sfxVolume <= 0) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // Ultra-low frequency thump conducted through EVA suit boots
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(55, now);
+      osc.frequency.exponentialRampToValueAtTime(22, now + 0.25);
+
+      gain.gain.setValueAtTime(0.12 * this.sfxVolume, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.3);
+    } catch {}
+  }
+
+  /**
+   * Apollo Lunar Roving Vehicle (LRV) DC electric motor whir
+   */
+  public playRoverMotor(speedRatio = 0.5) {
+    if (this.isMuted || this.sfxVolume <= 0) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'triangle';
+      const baseFreq = 140 + Math.min(1, Math.max(0, speedRatio)) * 160;
+      osc.frequency.setValueAtTime(baseFreq, now);
+      osc.frequency.linearRampToValueAtTime(baseFreq + 25, now + 0.14);
+
+      gain.gain.setValueAtTime(0.04 * this.sfxVolume, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.18);
+    } catch {}
+  }
+
+  /**
+   * Solemn Chime for Fallen Astronaut Memorial
+   * Reverent minor chord (D3, F3, A3, D4) with slow pure sine decay
+   */
+  public playSolemnChime() {
+    if (this.isMuted || this.sfxVolume <= 0) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const freqs = [146.83, 174.61, 220.00, 293.66];
+      freqs.forEach((freq, idx) => {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now);
+        osc.detune.setValueAtTime(idx % 2 === 0 ? 2 : -2, now);
+
+        const noteStart = now + idx * 0.08;
+        gain.gain.setValueAtTime(0.0001, noteStart);
+        gain.gain.linearRampToValueAtTime(0.08 * this.sfxVolume, noteStart + 0.3);
+        gain.gain.exponentialRampToValueAtTime(0.0001, noteStart + 2.6);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(noteStart);
+        osc.stop(noteStart + 2.8);
+      });
+    } catch {}
+  }
+
+  /**
+   * Vintage 1967 NASA telemetry sweep for Surveyor 3
+   */
+  public playSurveyorPing() {
+    if (this.isMuted || this.sfxVolume <= 0) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // Primary carrier sweep
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(740, now);
+      osc.frequency.linearRampToValueAtTime(1180, now + 0.18);
+      osc.frequency.setValueAtTime(880, now + 0.22);
+      osc.frequency.linearRampToValueAtTime(1320, now + 0.4);
+
+      gain.gain.setValueAtTime(0.09 * this.sfxVolume, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.48);
+    } catch {}
+  }
+
+  /**
+   * Apollo geological rock hammer strike for mineral sampling
+   */
+  public playGeologicalHammer() {
+    if (this.isMuted || this.sfxVolume <= 0) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // High crystalline strike
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(1480, now);
+      osc.frequency.exponentialRampToValueAtTime(740, now + 0.12);
+
+      gain.gain.setValueAtTime(0.12 * this.sfxVolume, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.2);
+
+      // Sub-metallic clink ring
+      const osc2 = this.ctx.createOscillator();
+      const gain2 = this.ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(2240, now);
+      osc2.frequency.exponentialRampToValueAtTime(1120, now + 0.25);
+      gain2.gain.setValueAtTime(0.08 * this.sfxVolume, now);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+      osc2.connect(gain2);
+      gain2.connect(this.ctx.destination);
+      osc2.start(now);
+      osc2.stop(now + 0.3);
+    } catch {}
+  }
+
+  /**
+   * Active Seismic Experiment (ASE) Thumper Detonation
+   * Deep bedrock shockwave with low-frequency reverberation
+   */
+  public playSeismicThumper() {
+    if (this.isMuted || this.sfxVolume <= 0) return;
+    try {
+      this.initCtx();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+
+      // Heavy acoustic hammer impact
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(95, now);
+      osc.frequency.exponentialRampToValueAtTime(32, now + 0.6);
+
+      gain.gain.setValueAtTime(0.28 * this.sfxVolume, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.85);
+
+      // Noise burst for surface plate snap
+      const nBuffer = this.getNoiseBuffer();
+      if (nBuffer) {
+        const nSource = this.ctx.createBufferSource();
+        nSource.buffer = nBuffer;
+        const nFilter = this.ctx.createBiquadFilter();
+        nFilter.type = 'lowpass';
+        nFilter.frequency.setValueAtTime(280, now);
+        const nGain = this.ctx.createGain();
+        nGain.gain.setValueAtTime(0.22 * this.sfxVolume, now);
+        nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+
+        nSource.connect(nFilter);
+        nFilter.connect(nGain);
+        nGain.connect(this.ctx.destination);
+        nSource.start(now, Math.random() * 2, 0.3);
+      }
+    } catch {}
+  }
+
   public playSonarPing() {
     if (this.isMuted || this.sfxVolume <= 0) return;
     try {
