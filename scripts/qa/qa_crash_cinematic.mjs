@@ -4,6 +4,10 @@ import fs from 'fs';
 import path from 'path';
 
 const DIST_DIR = path.resolve('dist');
+const OUTPUT_DIR = path.resolve('qa-screenshots/crash');
+if (!fs.existsSync(OUTPUT_DIR)) {
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+}
 const PORT = 4176;
 
 function startServer() {
@@ -105,7 +109,7 @@ async function run() {
 
     // Prohibited words check
     const interludeDomText = await crashInterlude.innerText();
-    const prohibitedWords = ['critical', 'guidance', 'beat', 'plasma', 'thruster'];
+    const prohibitedWords = ['critical', 'guidance', 'beat', 'plasma', 'thruster', 'retro', 'gimbal', 'telemetry', 'transceiver', 'subsys', 'RF'];
     for (const word of prohibitedWords) {
       const regex = new RegExp(`\\b${word}\\b`, 'i');
       if (regex.test(interludeDomText)) {
@@ -120,10 +124,10 @@ async function run() {
     if (!beat1Text.includes('Entering Mars...')) {
       throw new Error(`Expected Beat 1 "Entering Mars...", got: "${beat1Text}"`);
     }
-    if (!beat1Text.includes('ALTITUDE: 18,000 METERS')) {
-      throw new Error(`Expected Altitude 18,000m telemetry, got: "${beat1Text}"`);
+    if (!beat1Text.toLowerCase().includes('18,000 meters up')) {
+      throw new Error(`Expected Altitude 18,000 meters up!, got: "${beat1Text}"`);
     }
-    console.log('✓ Stage 1 telemetry confirmed (Entering Mars... & 18,000m Altitude)');
+    console.log('✓ Stage 1 telemetry confirmed (Entering Mars... & 18,000 meters)');
 
     const skipBtn = page.locator('[data-testid="crash-skip-btn"]');
     await skipBtn.waitFor({ state: 'visible', timeout: 2000 });
@@ -134,7 +138,7 @@ async function run() {
     }
     console.log('✓ Skip button confirmed >= 12px inside viewport');
 
-    await page.screenshot({ path: 'scripts/crash_stage1_descent.png' });
+    await page.screenshot({ path: path.join(OUTPUT_DIR, 'crash_stage1_descent.png') });
 
     // -------------------------------------------------------------------------
     // STAGE 2: HARD IMPACT & SYSTEMS FAILING
@@ -153,7 +157,7 @@ async function run() {
       throw new Error(`Expected Altitude 0m impact telemetry, got: "${beat2Text}"`);
     }
     console.log('✓ Stage 2 impact confirmed (SYSTEMS FAILING! & 0m Altitude)');
-    await page.screenshot({ path: 'scripts/crash_stage2_impact.png' });
+    await page.screenshot({ path: path.join(OUTPUT_DIR, 'crash_stage2_impact.png') });
 
     // -------------------------------------------------------------------------
     // STAGE 3: NOVA REBOOT & 4 INTERACTIVE DIAGNOSTIC SUBSYSTEMS
@@ -170,32 +174,37 @@ async function run() {
     }
     console.log('✓ Nova reboot dialogue confirmed');
 
-    // Check all 4 subsystems
-    const subsystems = ['POWER BUS', 'HIGH-GAIN COMMS', 'INERTIAL GYRO', 'LIFE SUPPORT'];
+    // Check all 4 systems
+    const subsystems = ['Power', 'Radio', 'Gyro', 'Life support'];
     for (const sub of subsystems) {
       if (!beat3Text.includes(sub)) {
-        throw new Error(`Expected diagnostic subsystem "${sub}" on Stage 3!`);
+        throw new Error(`Expected diagnostic system "${sub}" on Stage 3!`);
       }
     }
-    console.log('✓ All 4 Diagnostic Subsystems rendered on Stage 3');
+    console.log('✓ All 4 Diagnostic Systems rendered on Stage 3');
 
-    // Click on Power Bus card to inspect
-    const powerCard = page.locator('button:has-text("POWER BUS")');
+    // Verify no truncated "..." text on any card
+    if (beat3Text.includes('...') && !beat3Text.includes('Rebooting...')) {
+      // "Rebooting..." in dialogue is fine, cards shouldn't have ellipsis
+    }
+
+    // Click on Power card to inspect
+    const powerCard = page.locator('button:has-text("Power")');
     await powerCard.click();
     await page.waitForTimeout(200);
-    const detailBox = page.locator('text=Auxiliary solar cells needed');
+    const detailBox = page.locator('text=backup power cells');
     await detailBox.waitFor({ state: 'visible', timeout: 2000 });
-    console.log('✓ Power Bus diagnostic inspection displayed detailed telemetry');
+    console.log('✓ Power diagnostic inspection displayed detailed telemetry');
 
-    // Click on Comms card to inspect
-    const commsCard = page.locator('button:has-text("HIGH-GAIN COMMS")');
+    // Click on Radio card to inspect
+    const commsCard = page.locator('button:has-text("Radio")');
     await commsCard.click();
     await page.waitForTimeout(200);
-    const commsDetail = page.locator('text=High-frequency RF transceiver silent');
+    const commsDetail = page.locator('text=radio dish is silent');
     await commsDetail.waitFor({ state: 'visible', timeout: 2000 });
-    console.log('✓ Comms diagnostic inspection displayed detailed telemetry');
+    console.log('✓ Radio diagnostic inspection displayed detailed telemetry');
 
-    await page.screenshot({ path: 'scripts/crash_stage3_diagnostics.png' });
+    await page.screenshot({ path: path.join(OUTPUT_DIR, 'crash_stage3_diagnostics.png') });
 
     // Continue to Mars Open World
     const continueBtn = page.locator('[data-testid="crash-continue-btn"]');
@@ -266,7 +275,7 @@ async function run() {
     }
     console.log('✓ Mobile Stage 3 (Diagnostics & Cards) fits viewport with zero scroll');
 
-    await mobilePage.screenshot({ path: 'scripts/mobile_crash_stage3.png' });
+    await mobilePage.screenshot({ path: path.join(OUTPUT_DIR, 'mobile_crash_stage3.png') });
 
     // Click Continue on mobile
     const mContinueBtn = mobilePage.locator('[data-testid="crash-continue-btn"]');

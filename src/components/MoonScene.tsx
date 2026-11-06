@@ -865,8 +865,8 @@ export const MoonScene: React.FC<MoonSceneProps> = ({
 
     setToast(
       allThreeCollected
-        ? `GEOLOGY KIT COMPLETE: ${rock.name.toUpperCase()} (+1 RP)`
-        : `SPECIMEN COLLECTED: ${rock.name.toUpperCase()} (+1 RP)`
+        ? `GEOLOGY KIT COMPLETE: ${rock.name.toUpperCase()}`
+        : `SPECIMEN COLLECTED: ${rock.name.toUpperCase()}`
     );
     setTimeout(() => setToast(null), 3500);
 
@@ -3923,117 +3923,150 @@ export const MoonScene: React.FC<MoonSceneProps> = ({
           </div>
         </div>
 
-        {/* Action Buttons: Touch HOP Button (>= 48px) & Interact */}
-        <div className="flex flex-col items-end gap-2 pointer-events-auto">
-          {isDrivingRover && (
-            <button
-              data-testid="touch-dismount-rover-btn"
-              onClick={dismountRover}
-              className="px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-amber-500 active:bg-amber-400 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.6)] cursor-pointer"
-            >
-              [E] DISMOUNT ROVER
-            </button>
-          )}
+        {/* Action Buttons: Touch HOP Button (>= 48px) & Context Buttons (Max 2 in range) */}
+        <div className="flex flex-col items-end gap-2.5 pointer-events-auto">
+          {(() => {
+            const contextBtns: React.ReactNode[] = [];
 
-          {nearbyRover && !isDrivingRover && !nearbyRelic && !nearbyMonument && !nearbyRock && !nearbyThumper && !nearbySecret && !nearbyIce && (
-            <button
-              data-testid="touch-board-rover-btn"
-              onClick={boardRover}
-              className="px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-amber-400 active:bg-amber-300 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.6)] cursor-pointer"
-            >
-              [E] BOARD ROVER
-            </button>
-          )}
+            if (isDrivingRover) {
+              contextBtns.push(
+                <button
+                  key="dismount-rover"
+                  data-testid="touch-dismount-rover-btn"
+                  onClick={dismountRover}
+                  className="min-h-[48px] min-w-[48px] px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-amber-500 active:bg-amber-400 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.6)] cursor-pointer flex items-center justify-center text-center"
+                >
+                  [E] DISMOUNT ROVER
+                </button>
+              );
+            } else {
+              if (nearbyRelic) {
+                contextBtns.push(
+                  <button
+                    key="relic"
+                    data-testid="touch-interact-btn"
+                    onClick={() => {
+                      if (isDrivingRoverRef.current) {
+                        dismountRover();
+                      }
+                      triggerRelicInteract(nearbyRelic);
+                    }}
+                    className="min-h-[48px] min-w-[48px] px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-cyan-400 active:bg-cyan-300 text-slate-950 shadow-[0_0_20px_rgba(6,182,212,0.6)] cursor-pointer flex items-center justify-center text-center"
+                  >
+                    [E] LOG RELIC
+                  </button>
+                );
+              }
 
-          {nearbyRelic && (
-            <button
-              data-testid="touch-interact-btn"
-              onClick={() => {
-                if (isDrivingRoverRef.current) {
-                  dismountRover();
-                }
-                triggerRelicInteract(nearbyRelic);
-              }}
-              className="px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-cyan-400 active:bg-cyan-300 text-slate-950 shadow-[0_0_20px_rgba(6,182,212,0.6)] cursor-pointer"
-            >
-              [E] LOG RELIC
-            </button>
-          )}
+              if (nearbyRover) {
+                contextBtns.push(
+                  <button
+                    key="board-rover"
+                    data-testid="touch-board-rover-btn"
+                    onClick={boardRover}
+                    className="min-h-[48px] min-w-[48px] px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-amber-400 active:bg-amber-300 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.6)] cursor-pointer flex items-center justify-center text-center"
+                  >
+                    [E] BOARD ROVER
+                  </button>
+                );
+              }
 
-          {nearbyMonument && !nearbyRelic && (
-            <button
-              data-testid="touch-monument-btn"
-              onClick={() => {
-                if (isDrivingRoverRef.current) {
-                  dismountRover();
-                }
-                triggerMonumentInteract(nearbyMonument);
-              }}
-              className="px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-amber-400 active:bg-amber-300 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.6)] cursor-pointer"
-            >
-              {nearbyMonument.interactionPrompt}
-            </button>
-          )}
+              if (nearbyMonument) {
+                contextBtns.push(
+                  <button
+                    key="monument"
+                    data-testid="touch-monument-btn"
+                    onClick={() => {
+                      if (isDrivingRoverRef.current) {
+                        dismountRover();
+                      }
+                      triggerMonumentInteract(nearbyMonument);
+                    }}
+                    className="min-h-[48px] min-w-[48px] px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-amber-400 active:bg-amber-300 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.6)] cursor-pointer flex items-center justify-center text-center"
+                  >
+                    {nearbyMonument.interactionPrompt}
+                  </button>
+                );
+              }
 
-          {nearbyRock && !nearbyRelic && !nearbyMonument && (
-            <button
-              data-testid="touch-rock-btn"
-              onClick={() => {
-                if (isDrivingRoverRef.current) {
-                  dismountRover();
-                }
-                triggerRockSample(nearbyRock);
-              }}
-              className="px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-emerald-400 active:bg-emerald-300 text-slate-950 shadow-[0_0_20px_rgba(52,211,153,0.6)] cursor-pointer"
-            >
-              [E] SAMPLE ROCK
-            </button>
-          )}
+              if (nearbyRock) {
+                contextBtns.push(
+                  <button
+                    key="rock"
+                    data-testid="touch-rock-btn"
+                    onClick={() => {
+                      if (isDrivingRoverRef.current) {
+                        dismountRover();
+                      }
+                      triggerRockSample(nearbyRock);
+                    }}
+                    className="min-h-[48px] min-w-[48px] px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-emerald-400 active:bg-emerald-300 text-slate-950 shadow-[0_0_20px_rgba(52,211,153,0.6)] cursor-pointer flex items-center justify-center text-center"
+                  >
+                    [E] SAMPLE ROCK
+                  </button>
+                );
+              }
 
-          {nearbyThumper && !nearbyRelic && !nearbyMonument && !nearbyRock && (
-            <button
-              data-testid="touch-thumper-btn"
-              onClick={() => {
-                if (isDrivingRoverRef.current) {
-                  dismountRover();
-                }
-                triggerSeismicThumper();
-              }}
-              className="px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-amber-400 active:bg-amber-300 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.6)] cursor-pointer"
-            >
-              [E] FIRE THUMPER
-            </button>
-          )}
+              if (nearbyThumper) {
+                contextBtns.push(
+                  <button
+                    key="thumper"
+                    data-testid="touch-thumper-btn"
+                    onClick={() => {
+                      if (isDrivingRoverRef.current) {
+                        dismountRover();
+                      }
+                      triggerSeismicThumper();
+                    }}
+                    className="min-h-[48px] min-w-[48px] px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-amber-400 active:bg-amber-300 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.6)] cursor-pointer flex items-center justify-center text-center"
+                  >
+                    [E] FIRE THUMPER
+                  </button>
+                );
+              }
 
-          {nearbySecret && !nearbyRelic && !nearbyMonument && !nearbyRock && !nearbyThumper && (
-            <button
-              data-testid="touch-secret-btn"
-              onClick={() => triggerSecretInteract(nearbySecret)}
-              className="px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-amber-400 active:bg-amber-300 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.6)] cursor-pointer"
-            >
-              [E] {nearbySecret.id === 'secret_golf_ball' ? 'SWING 6-IRON' : nearbySecret.id === 'secret_orange_glass' ? 'SAMPLE SOIL' : 'INSPECT FLAG'}
-            </button>
-          )}
+              if (nearbySecret) {
+                contextBtns.push(
+                  <button
+                    key="secret"
+                    data-testid="touch-secret-btn"
+                    onClick={() => triggerSecretInteract(nearbySecret)}
+                    className="min-h-[48px] min-w-[48px] px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-amber-400 active:bg-amber-300 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.6)] cursor-pointer flex items-center justify-center text-center"
+                  >
+                    [E] {nearbySecret.id === 'secret_golf_ball' ? 'SWING 6-IRON' : nearbySecret.id === 'secret_orange_glass' ? 'SAMPLE SOIL' : 'INSPECT FLAG'}
+                  </button>
+                );
+              }
 
-          {nearbyIce && !nearbyRelic && !nearbyMonument && !nearbyRock && !nearbyThumper && !nearbySecret && (
-            <button
-              data-testid="touch-ice-btn"
-              onClick={() => triggerIceScan(nearbyIce)}
-              className="px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-sky-400 active:bg-sky-300 text-slate-950 shadow-[0_0_20px_rgba(56,189,248,0.6)] cursor-pointer"
-            >
-              [E] SCAN WATER ICE
-            </button>
-          )}
+              if (nearbyIce) {
+                contextBtns.push(
+                  <button
+                    key="ice"
+                    data-testid="touch-ice-btn"
+                    onClick={() => triggerIceScan(nearbyIce)}
+                    className="min-h-[48px] min-w-[48px] px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-sky-400 active:bg-sky-300 text-slate-950 shadow-[0_0_20px_rgba(56,189,248,0.6)] cursor-pointer flex items-center justify-center text-center"
+                  >
+                    [E] SCAN WATER ICE
+                  </button>
+                );
+              }
 
-          {canPetNova && !nearbyRelic && !nearbyMonument && !nearbyRock && !nearbyThumper && !nearbySecret && !nearbyIce && !isDrivingRover && (
-            <button
-              data-testid="touch-pet-btn"
-              onClick={triggerPetNova}
-              className="px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-rose-500 active:bg-rose-400 text-slate-950 shadow-[0_0_20px_rgba(244,63,94,0.6)] cursor-pointer"
-            >
-              🐾 [E] PET NOVA
-            </button>
-          )}
+              if (canPetNova) {
+                contextBtns.push(
+                  <button
+                    key="pet"
+                    data-testid="touch-pet-btn"
+                    onClick={triggerPetNova}
+                    className="min-h-[48px] min-w-[48px] px-5 py-3 rounded-2xl font-bold font-mono text-xs bg-rose-500 active:bg-rose-400 text-slate-950 shadow-[0_0_20px_rgba(244,63,94,0.6)] cursor-pointer flex items-center justify-center text-center"
+                  >
+                    🐾 [E] PET NOVA
+                  </button>
+                );
+              }
+            }
+
+            return contextBtns.slice(0, 2);
+          })()}
 
           <button
             data-testid="moon-hop-btn"

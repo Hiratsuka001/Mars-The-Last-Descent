@@ -1090,7 +1090,7 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
                       <span>Lunar Geological Return Kit</span>
                     </h4>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      Pristine mineral specimens sampled across Apollo exploration zones (+1 RP each for Mars transit).
+                      Pristine mineral specimens sampled across Apollo exploration zones.
                     </p>
                   </div>
                   <div className="flex items-center gap-2">

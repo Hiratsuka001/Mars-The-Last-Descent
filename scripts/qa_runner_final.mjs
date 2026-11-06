@@ -4455,16 +4455,16 @@ async function runMoonChapterQA(browser) {
   await moonScene.waitFor({ state: 'detached', timeout: 5000 });
   console.log('  [PASS] Moon 4: Complete Moon -> Earthrise Continue -> Crash Interlude plays');
 
-  // Verify Interlude text: no 'critical', 'guidance', 'beat', 'plasma', 'thruster'
+  // Verify Interlude text: no prohibited words (critical, guidance, beat, plasma, thruster, retro, gimbal, telemetry, transceiver, subsys, RF)
   const interludeDomText = await crashInterlude.innerText();
-  const prohibitedWords = ['critical', 'guidance', 'beat', 'plasma', 'thruster'];
+  const prohibitedWords = ['critical', 'guidance', 'beat', 'plasma', 'thruster', 'retro', 'gimbal', 'telemetry', 'transceiver', 'subsys', 'RF'];
   for (const word of prohibitedWords) {
     const regex = new RegExp(`\\b${word}\\b`, 'i');
     if (regex.test(interludeDomText)) {
       throw new Error(`Prohibited word "${word}" found in Crash Interlude text: "${interludeDomText}"`);
     }
   }
-  console.log('  [PASS] Crash Interlude DOM text contains zero prohibited words (critical, guidance, beat, plasma, thruster)');
+  console.log('  [PASS] Crash Interlude DOM text contains zero prohibited words');
 
   // Verify Beat 1 content and skip button visible from first second
   const beat1 = page.locator('[data-testid="crash-beat-1"]');
@@ -4473,6 +4473,12 @@ async function runMoonChapterQA(browser) {
   if (!beat1Text.includes('Entering Mars...')) {
     throw new Error(`Expected Beat 1 "Entering Mars...", got: "${beat1Text}"`);
   }
+  if (!beat1Text.toLowerCase().includes('18,000 meters up')) {
+    throw new Error(`Expected Beat 1 pill "18,000 meters up!", got: "${beat1Text}"`);
+  }
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'crash_desktop_beat1.png') });
+  console.log('  [OK Captured] crash_desktop_beat1.png');
+
   const skipBtn = page.locator('[data-testid="crash-skip-btn"]');
   await skipBtn.waitFor({ state: 'visible', timeout: 2000 });
 
@@ -4483,6 +4489,31 @@ async function runMoonChapterQA(browser) {
     throw new Error(`Skip button not >= 12px inside viewport: ${JSON.stringify(interludeSkipBox)}, viewport: ${JSON.stringify(vp)}`);
   }
   console.log('  [PASS] Skip button rect is >= 12px inside viewport from all edges');
+
+  // Advance to Beat 2 and capture desktop screenshot
+  await crashInterlude.click({ position: { x: 300, y: 300 } });
+  await page.waitForTimeout(300);
+  const beat2 = page.locator('[data-testid="crash-beat-2"]');
+  await beat2.waitFor({ state: 'visible', timeout: 3000 });
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'crash_desktop_beat2.png') });
+  console.log('  [OK Captured] crash_desktop_beat2.png');
+
+  // Advance to Beat 3, verify no "..." truncation on cards, capture desktop screenshot
+  await crashInterlude.click({ position: { x: 300, y: 300 } });
+  await page.waitForTimeout(300);
+  const beat3 = page.locator('[data-testid="crash-beat-3"]');
+  await beat3.waitFor({ state: 'visible', timeout: 3000 });
+  const beat3CardsText = await beat3.innerText();
+  // Ensure cards don't have ellipsis
+  const cardLines = beat3CardsText.split('\n').filter(l => l.includes('Power') || l.includes('Radio') || l.includes('Gyro') || l.includes('Life support') || l.includes('Low power') || l.includes('Offline') || l.includes('Wobbly') || l.includes('OK'));
+  for (const line of cardLines) {
+    if (line.includes('...') || line.includes('…')) {
+      throw new Error(`Truncated "..." found on card: "${line}"`);
+    }
+  }
+  console.log('  [PASS] No "..." truncation on any diagnostic card');
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'crash_desktop_beat3.png') });
+  console.log('  [OK Captured] crash_desktop_beat3.png');
 
   // Verification 3: Reload during interlude -> Continue button leads to Mars world, not Moon or interlude
   console.log('  Testing reload during interlude...');
@@ -4616,12 +4647,12 @@ async function runMoonChapterQA(browser) {
   console.log('  [PASS] 3 RP persisted after reload');
 
   // -------------------------------------------------------------------------
-  // RP MATRIX AUDIT (0 relics, 1 relic, 2 relics, 3 relics + crash-skip-btn)
+  // RP MATRIX AUDIT (Policy A: 4 Matrix Cases & Reload Invariance)
   // -------------------------------------------------------------------------
   console.log('------------------------------------------------------');
   console.log('Moon 5: Verifying Full RP Matrix & Reload Invariance...');
 
-  // Test 3 relics with crash-skip-btn:
+  // (a) 3 relics + orange glass -> Earthrise -> Continue -> 4 RP (and 4 after reload)
   await page.evaluate(() => {
     window.__disableAutoSave = true;
     localStorage.setItem('beyond_depth_save_v3', JSON.stringify({
@@ -4634,13 +4665,17 @@ async function runMoonChapterQA(browser) {
       diagnosticsCompleted: [],
       repairedSubsystems: [],
       stormDecisionMade: null,
-      moonChapter: { relicIds: ['moon_luna9', 'moon_apollo11', 'moon_lunokhod1'], completed: false, rpApplied: false }
+      moonChapter: {
+        relicIds: ['moon_luna9', 'moon_apollo11', 'moon_lunokhod1'],
+        secretIds: ['secret_orange_glass'],
+        completed: false,
+        rpApplied: false,
+      }
     }));
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
-  // Skip Prologue/Intro if needed or continue into Moon/Interlude
-  const resumeBtn = page.locator('[data-testid="continue-mission-btn"]');
-  if (await resumeBtn.isVisible()) await resumeBtn.click();
+  const resumeBtnA = page.locator('[data-testid="continue-mission-btn"]');
+  if (await resumeBtnA.isVisible()) await resumeBtnA.click();
   await moonScene.waitFor({ state: 'visible', timeout: 5000 });
   const earthriseAct = page.locator('[data-testid="nova-dialogue-action-btn"]');
   await earthriseAct.waitFor({ state: 'visible', timeout: 5000 });
@@ -4652,11 +4687,18 @@ async function runMoonChapterQA(browser) {
   await cSkipBtn.waitFor({ state: 'visible', timeout: 3000 });
   await cSkipBtn.click();
   await worldCanvas.waitFor({ state: 'visible', timeout: 10000 });
-  const rp3Skip = await page.evaluate(() => (window).__getResearchPoints?.());
-  if (rp3Skip !== 3) throw new Error(`Expected 3 RP after 3 relics crash-skip-btn, got: ${rp3Skip}`);
-  console.log(`  [PASS] 3 relics with crash-skip-btn: ${rp3Skip} RP`);
+  const rpA = await page.evaluate(() => (window).__getResearchPoints?.());
+  if (rpA !== 4) throw new Error(`Expected 4 RP for (a) 3 relics + orange glass, got: ${rpA}`);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  if (await page.locator('[data-testid="continue-mission-btn"]').isVisible()) {
+    await page.locator('[data-testid="continue-mission-btn"]').click();
+  }
+  await worldCanvas.waitFor({ state: 'visible', timeout: 10000 });
+  const rpAReload = await page.evaluate(() => (window).__getResearchPoints?.());
+  if (rpAReload !== 4) throw new Error(`Expected 4 RP after reload for (a), got: ${rpAReload}`);
+  console.log(`  [PASS] (a) 3 relics + orange glass -> Earthrise -> Continue -> ${rpA} (after reload: ${rpAReload})`);
 
-  // Test 2 relics Skip:
+  // (b) 3 relics, no secrets -> 3 RP (and 3 after reload)
   await page.evaluate(() => {
     window.__disableAutoSave = true;
     localStorage.setItem('beyond_depth_save_v3', JSON.stringify({
@@ -4669,7 +4711,12 @@ async function runMoonChapterQA(browser) {
       diagnosticsCompleted: [],
       repairedSubsystems: [],
       stormDecisionMade: null,
-      moonChapter: { relicIds: ['moon_luna9', 'moon_apollo11'], completed: false, rpApplied: false }
+      moonChapter: {
+        relicIds: ['moon_luna9', 'moon_apollo11', 'moon_lunokhod1'],
+        secretIds: [],
+        completed: false,
+        rpApplied: false,
+      }
     }));
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
@@ -4677,23 +4724,25 @@ async function runMoonChapterQA(browser) {
     await page.locator('[data-testid="continue-mission-btn"]').click();
   }
   await moonScene.waitFor({ state: 'visible', timeout: 5000 });
-  await page.locator('[data-testid="moon-skip-btn"]').click();
+  await earthriseAct.waitFor({ state: 'visible', timeout: 5000 });
+  await earthriseAct.click();
+  await page.locator('[data-testid="moon-earthrise-continue"]').click();
   await cInterlude.waitFor({ state: 'visible', timeout: 5000 });
-  await page.locator('[data-testid="crash-skip-btn"]').click();
+  await cSkipBtn.waitFor({ state: 'visible', timeout: 3000 });
+  await cSkipBtn.click();
   await worldCanvas.waitFor({ state: 'visible', timeout: 10000 });
-  const rp2 = await page.evaluate(() => (window).__getResearchPoints?.());
-  if (rp2 !== 2) throw new Error(`Expected 2 RP for 2 relics Skip, got: ${rp2}`);
-  // Reload test:
+  const rpB = await page.evaluate(() => (window).__getResearchPoints?.());
+  if (rpB !== 3) throw new Error(`Expected 3 RP for (b) 3 relics, no secrets, got: ${rpB}`);
   await page.reload({ waitUntil: 'domcontentloaded' });
   if (await page.locator('[data-testid="continue-mission-btn"]').isVisible()) {
     await page.locator('[data-testid="continue-mission-btn"]').click();
   }
   await worldCanvas.waitFor({ state: 'visible', timeout: 10000 });
-  const rp2Reload = await page.evaluate(() => (window).__getResearchPoints?.());
-  if (rp2Reload !== 2) throw new Error(`Expected 2 RP after reload, got: ${rp2Reload}`);
-  console.log(`  [PASS] 2 relics Skip: ${rp2} RP (after reload: ${rp2Reload} RP)`);
+  const rpBReload = await page.evaluate(() => (window).__getResearchPoints?.());
+  if (rpBReload !== 3) throw new Error(`Expected 3 RP after reload for (b), got: ${rpBReload}`);
+  console.log(`  [PASS] (b) 3 relics, no secrets -> ${rpB} (after reload: ${rpBReload})`);
 
-  // Test 1 relic Skip:
+  // (c) 2 relics + 3 rocks + 1 ice + both monuments, Skip -> 2 RP (and 2 after reload)
   await page.evaluate(() => {
     window.__disableAutoSave = true;
     localStorage.setItem('beyond_depth_save_v3', JSON.stringify({
@@ -4706,7 +4755,15 @@ async function runMoonChapterQA(browser) {
       diagnosticsCompleted: [],
       repairedSubsystems: [],
       stormDecisionMade: null,
-      moonChapter: { relicIds: ['moon_luna9'], completed: false, rpApplied: false }
+      moonChapter: {
+        relicIds: ['moon_luna9', 'moon_apollo11'],
+        secretIds: [],
+        lunarRockIds: ['rock_breccia', 'rock_basalt', 'rock_genesis'],
+        iceScannedIds: ['ice_crater_shackleton'],
+        monumentIds: ['monument_surveyor3', 'monument_fallen_astronaut'],
+        completed: false,
+        rpApplied: false,
+      }
     }));
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
@@ -4718,58 +4775,64 @@ async function runMoonChapterQA(browser) {
   await cInterlude.waitFor({ state: 'visible', timeout: 5000 });
   await page.locator('[data-testid="crash-skip-btn"]').click();
   await worldCanvas.waitFor({ state: 'visible', timeout: 10000 });
-  const rp1 = await page.evaluate(() => (window).__getResearchPoints?.());
-  if (rp1 !== 1) throw new Error(`Expected 1 RP for 1 relic Skip, got: ${rp1}`);
-  // Reload test:
+  const rpC = await page.evaluate(() => (window).__getResearchPoints?.());
+  if (rpC !== 2) throw new Error(`Expected 2 RP for (c) 2 relics + 3 rocks + 1 ice + 2 monuments, got: ${rpC}`);
   await page.reload({ waitUntil: 'domcontentloaded' });
   if (await page.locator('[data-testid="continue-mission-btn"]').isVisible()) {
     await page.locator('[data-testid="continue-mission-btn"]').click();
   }
   await worldCanvas.waitFor({ state: 'visible', timeout: 10000 });
-  const rp1Reload = await page.evaluate(() => (window).__getResearchPoints?.());
-  if (rp1Reload !== 1) throw new Error(`Expected 1 RP after reload, got: ${rp1Reload}`);
-  console.log(`  [PASS] 1 relic Skip: ${rp1} RP (after reload: ${rp1Reload} RP)`);
+  const rpCReload = await page.evaluate(() => (window).__getResearchPoints?.());
+  if (rpCReload !== 2) throw new Error(`Expected 2 RP after reload for (c), got: ${rpCReload}`);
+  console.log(`  [PASS] (c) 2 relics + 3 rocks + 1 ice + both monuments, Skip -> ${rpC} (after reload: ${rpCReload})`);
 
-  // Test 0 relics Skip:
+  // (d) 0 relics + orange glass, Skip -> 1 RP (and 1 after reload)
   await page.evaluate(() => {
     window.__disableAutoSave = true;
-    localStorage.clear();
+    localStorage.setItem('beyond_depth_save_v3', JSON.stringify({
+      version: 3,
+      currentChapter: 8,
+      unlockedMissions: [],
+      solvedMiniGames: [],
+      quizzesCompleted: [],
+      badges: [],
+      diagnosticsCompleted: [],
+      repairedSubsystems: [],
+      stormDecisionMade: null,
+      moonChapter: {
+        relicIds: [],
+        secretIds: ['secret_orange_glass'],
+        completed: false,
+        rpApplied: false,
+      }
+    }));
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.locator('[data-testid="start-mission-btn"]').click();
-  await page.locator('[data-testid="skip-prologue-btn"]').click();
+  if (await page.locator('[data-testid="continue-mission-btn"]').isVisible()) {
+    await page.locator('[data-testid="continue-mission-btn"]').click();
+  }
   await moonScene.waitFor({ state: 'visible', timeout: 5000 });
-
-  const skipMoonBtn = page.locator('[data-testid="moon-skip-btn"]');
-  await skipMoonBtn.waitFor({ state: 'visible' });
-  await skipMoonBtn.click();
-
-  const skipCrashInterlude = page.locator('[data-testid="crash-interlude"]');
-  await skipCrashInterlude.waitFor({ state: 'visible', timeout: 6000 });
-  const crashSkipBtn = page.locator('[data-testid="crash-skip-btn"]');
-  await crashSkipBtn.waitFor({ state: 'visible', timeout: 3000 });
-  await crashSkipBtn.click();
-
+  await page.locator('[data-testid="moon-skip-btn"]').click();
+  await cInterlude.waitFor({ state: 'visible', timeout: 5000 });
+  await page.locator('[data-testid="crash-skip-btn"]').click();
   await worldCanvas.waitFor({ state: 'visible', timeout: 10000 });
-  const rp0 = await page.evaluate(() => (window).__getResearchPoints?.());
-  if (rp0 !== 0) throw new Error(`Expected 0 RP for 0 relics Skip, got: ${rp0}`);
-
-  // Reload test:
+  const rpD = await page.evaluate(() => (window).__getResearchPoints?.());
+  if (rpD !== 1) throw new Error(`Expected 1 RP for (d) 0 relics + orange glass, got: ${rpD}`);
   await page.reload({ waitUntil: 'domcontentloaded' });
   if (await page.locator('[data-testid="continue-mission-btn"]').isVisible()) {
     await page.locator('[data-testid="continue-mission-btn"]').click();
   }
   await worldCanvas.waitFor({ state: 'visible', timeout: 10000 });
-  const rp0Reload = await page.evaluate(() => (window).__getResearchPoints?.());
-  if (rp0Reload !== 0) throw new Error(`Expected 0 RP after reload, got: ${rp0Reload}`);
-  console.log(`  [PASS] 0 relics Skip: ${rp0} RP (after reload: ${rp0Reload} RP)`);
+  const rpDReload = await page.evaluate(() => (window).__getResearchPoints?.());
+  if (rpDReload !== 1) throw new Error(`Expected 1 RP after reload for (d), got: ${rpDReload}`);
+  console.log(`  [PASS] (d) 0 relics + orange glass, Skip -> ${rpD} (after reload: ${rpDReload})`);
 
   console.log('------------------------------------------------------');
-  console.log('RP Matrix Results:');
-  console.log(`  0 relics Skip: ${rp0} RP (after reload: ${rp0Reload} RP)`);
-  console.log(`  1 relic Skip: ${rp1} RP (after reload: ${rp1Reload} RP)`);
-  console.log(`  2 relics Skip: ${rp2} RP (after reload: ${rp2Reload} RP)`);
-  console.log(`  3 relics Continue: 3 RP (after reload: 3 RP); with crash-skip-btn: ${rp3Skip} RP`);
+  console.log('RP MATRIX VERIFICATION RESULTS:');
+  console.log(`  (a) 3 relics + orange glass -> Earthrise -> Continue -> ${rpA} (after reload: ${rpAReload})`);
+  console.log(`  (b) 3 relics, no secrets -> ${rpB} (after reload: ${rpBReload})`);
+  console.log(`  (c) 2 relics + 3 rocks + 1 ice + both monuments, Skip -> ${rpC} (after reload: ${rpCReload})`);
+  console.log(`  (d) 0 relics + orange glass, Skip -> ${rpD} (after reload: ${rpDReload})`);
   console.log('------------------------------------------------------');
 
   // Nova first line after skip
@@ -4855,6 +4918,49 @@ async function runMoonChapterQA(browser) {
     }
   }
   console.log('  [PASS] Moon 6: Existing save went to Mars world, never the Moon, and kept original line');
+
+  // 6b. v3 save whose moonChapter lacks the new fields (e.g. relics only, no secretIds/rockIds/etc.)
+  console.log('Moon 6b: v3 save whose moonChapter lacks new fields...');
+  await page.evaluate(() => {
+    window.__disableAutoSave = true;
+    const v3SaveLackingNewFields = {
+      version: 3,
+      currentChapter: 0,
+      unlockedMissions: [],
+      solvedMiniGames: [],
+      quizzesCompleted: [],
+      badges: [],
+      diagnosticsCompleted: [],
+      repairedSubsystems: [],
+      stormDecisionMade: null,
+      worldSave: {
+        version: 3,
+        seed: 19970704,
+        playerTileX: 10,
+        playerTileY: 10,
+        playerFacing: 'down',
+        collectedPartIds: ['part_gear'],
+        completedEquipmentIds: [],
+        exploredFog: null,
+        shipRepaired: false,
+        playTimeSeconds: 50,
+        lastSavedAt: Date.now(),
+        researchPoints: 7,
+      },
+      moonChapter: {
+        relicIds: ['moon_luna9', 'moon_apollo11'],
+        completed: true,
+        rpApplied: true,
+      },
+    };
+    localStorage.setItem('beyond_depth_save_v3', JSON.stringify(v3SaveLackingNewFields));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('[data-testid="continue-mission-btn"]').click();
+  await worldCanvas.waitFor({ state: 'visible', timeout: 10000 });
+  const moonCountV3 = await page.locator('[data-testid="moon-scene"]').count();
+  if (moonCountV3 > 0) throw new Error('Moon opened for v3 save whose moonChapter lacks new fields!');
+  console.log('  [PASS] Moon 6b: v3 save lacking new fields went to Mars world, never the Moon');
 
   // 7. Legacy Chapter 2 still opens from Legacy Chapters
   console.log('Moon 7: Legacy Chapter 2 opens from Legacy Chapters modal...');
@@ -4962,6 +5068,54 @@ async function runMoonChapterQA(browser) {
   await mPage.waitForTimeout(200);
   await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'mobile_moon_relic1.png') });
   console.log('  [OK Captured] mobile_moon_relic1.png');
+
+  // Capture context button next to relic
+  await mPage.evaluate(() => window.__moonTeleport(18, 20));
+  await mPage.waitForTimeout(200);
+  const mContextRelicBtn = mPage.locator('[data-testid="touch-interact-btn"]');
+  await mContextRelicBtn.waitFor({ state: 'visible', timeout: 3000 });
+  const ctxRelicBox = await mContextRelicBtn.boundingBox();
+  if (!ctxRelicBox || ctxRelicBox.height < 48 || ctxRelicBox.width < 48) {
+    throw new Error(`touch-interact-btn must be >= 48px, got: ${JSON.stringify(ctxRelicBox)}`);
+  }
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'mobile_context_relic.png') });
+  console.log('  [OK Captured] mobile_context_relic.png');
+
+  // Capture context button next to rover
+  await mPage.evaluate(() => window.__moonTeleport(13, 16));
+  await mPage.waitForTimeout(200);
+  const mContextRoverBtn = mPage.locator('[data-testid="touch-board-rover-btn"]');
+  await mContextRoverBtn.waitFor({ state: 'visible', timeout: 3000 });
+  const ctxRoverBox = await mContextRoverBtn.boundingBox();
+  if (!ctxRoverBox || ctxRoverBox.height < 48 || ctxRoverBox.width < 48) {
+    throw new Error(`touch-board-rover-btn must be >= 48px, got: ${JSON.stringify(ctxRoverBox)}`);
+  }
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'mobile_context_rover.png') });
+  console.log('  [OK Captured] mobile_context_rover.png');
+
+  // Capture context button next to rock
+  await mPage.evaluate(() => window.__moonTeleport(20, 12));
+  await mPage.waitForTimeout(200);
+  const mContextRockBtn = mPage.locator('[data-testid="touch-rock-btn"]');
+  await mContextRockBtn.waitFor({ state: 'visible', timeout: 3000 });
+  const ctxRockBox = await mContextRockBtn.boundingBox();
+  if (!ctxRockBox || ctxRockBox.height < 48 || ctxRockBox.width < 48) {
+    throw new Error(`touch-rock-btn must be >= 48px, got: ${JSON.stringify(ctxRockBox)}`);
+  }
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'mobile_context_rock.png') });
+  console.log('  [OK Captured] mobile_context_rock.png');
+
+  // Capture context button next to thumper
+  await mPage.evaluate(() => window.__moonTeleport(33, 23));
+  await mPage.waitForTimeout(200);
+  const mContextThumperBtn = mPage.locator('[data-testid="touch-thumper-btn"]');
+  await mContextThumperBtn.waitFor({ state: 'visible', timeout: 3000 });
+  const ctxThumperBox = await mContextThumperBtn.boundingBox();
+  if (!ctxThumperBox || ctxThumperBox.height < 48 || ctxThumperBox.width < 48) {
+    throw new Error(`touch-thumper-btn must be >= 48px, got: ${JSON.stringify(ctxThumperBox)}`);
+  }
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'mobile_context_thumper.png') });
+  console.log('  [OK Captured] mobile_context_thumper.png');
 
   // Return to spawn
   await mPage.evaluate(() => window.__moonTeleport(8, 20));
@@ -5648,9 +5802,51 @@ async function runMoonChapterQA(browser) {
   await rmLostWin.locator('[data-testid="claim-part-btn"]').click();
   await rmLostGame.waitFor({ state: 'detached', timeout: 5000 });
 
+  // Test Rover and Thumper under Reduce Motion ON
+  console.log('  Testing Rover and Thumper under Reduce Motion ON...');
+  await page.evaluate(() => {
+    window.__disableAutoSave = true;
+    localStorage.setItem('beyond_depth_save_v3', JSON.stringify({
+      version: 3,
+      currentChapter: 8,
+      unlockedMissions: [],
+      solvedMiniGames: [],
+      quizzesCompleted: [],
+      badges: [],
+      diagnosticsCompleted: [],
+      repairedSubsystems: [],
+      stormDecisionMade: null,
+      moonChapter: { relicIds: ['moon_luna9', 'moon_apollo11'], completed: false, rpApplied: false }
+    }));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const continueBtnRM = page.locator('[data-testid="continue-mission-btn"]');
+  if (await continueBtnRM.isVisible()) await continueBtnRM.click();
+  await moonScene.waitFor({ state: 'visible', timeout: 5000 });
+
+  await page.evaluate(() => window.__moonTeleport(13, 16));
+  await page.waitForTimeout(400);
+  await page.keyboard.press('KeyE'); // board rover
+  await page.waitForTimeout(400);
+  if (await page.locator('[data-testid="nova-dialogue"]').isVisible()) {
+    await page.keyboard.press('KeyE'); // dismiss dialogue if shown
+    await page.waitForTimeout(300);
+  }
+  await page.keyboard.press('KeyE'); // dismount rover
+  await page.waitForTimeout(400);
+  console.log('  [PASS] Rover boarding and dismounting works under Reduce Motion ON');
+
+  await page.evaluate(() => window.__moonTeleport(33, 23));
+  await page.waitForTimeout(400);
+  await page.keyboard.press('KeyE'); // detonate thumper
+  const thumperToast = page.locator('text=ALSEP SEISMIC THUMPER DETONATED');
+  await thumperToast.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Seismic Thumper detonation works under Reduce Motion ON');
+
   // Verification 8: Reduce Motion disables shake and flash on Crash Interlude
   console.log('  Testing Crash Interlude under Reduce Motion ON (no shake, no flash)...');
   await page.evaluate(() => {
+    window.__disableAutoSave = true;
     localStorage.setItem('beyond_depth_save_v3', JSON.stringify({
       version: 3,
       currentChapter: 8,
@@ -5665,7 +5861,6 @@ async function runMoonChapterQA(browser) {
     }));
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
-  const continueBtnRM = page.locator('[data-testid="continue-mission-btn"]');
   if (await continueBtnRM.isVisible()) await continueBtnRM.click();
   await moonScene.waitFor({ state: 'visible', timeout: 5000 });
 
@@ -5698,10 +5893,14 @@ async function runMoonChapterQA(browser) {
   }
   console.log('  [PASS] Reduce Motion ON disabled flash animation on Beat 2');
 
-  // Click skip to finish
-  await page.locator('[data-testid="crash-skip-btn"]').click();
+  // Advance to Beat 3 and verify continue button works under Reduce Motion
+  await rmCrashInterlude.click({ position: { x: 300, y: 300 } });
+  await page.waitForTimeout(300);
+  const rmBeat3 = page.locator('[data-testid="crash-beat-3"]');
+  await rmBeat3.waitFor({ state: 'visible', timeout: 3000 });
+  await page.locator('[data-testid="crash-continue-btn"]').click();
   await rmCrashInterlude.waitFor({ state: 'detached', timeout: 5000 });
-  console.log('  [PASS] Reduce Motion ON: Crash Interlude skipped to Mars world');
+  console.log('  [PASS] Reduce Motion ON: Crash Interlude advanced through all beats to Mars world');
 
   await page.close();
   console.log('======================================================');

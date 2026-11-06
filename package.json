@@ -10,6 +10,8 @@
     "preview": "vite preview",
     "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
     "lint": "tsc --noEmit",
+    "qa": "node scripts/qa_runner_final.mjs",
+    "qa:extras": "node scripts/qa/qa_crash_cinematic.mjs && node scripts/qa/qa_pet_nova_cleanup.mjs && node scripts/qa/qa_phase8_rover.mjs && node scripts/qa/qa_phase9_monuments.mjs && node scripts/qa/qa_phase10_geology.mjs",
     "qa:subpath": "node scripts/qa_subpath.mjs"
   },
   "dependencies": {

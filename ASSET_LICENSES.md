@@ -71,3 +71,41 @@ During Phase 7 (Release Pass), all prototype stock, watermarked, and restricted-
   - Mars Exploration Program: NASA/JPL-Caltech
   - InSight Mars Lander: NASA / CNES / IPGP / JPL-Caltech
 
+---
+
+## 5. Unverified / Pending Confirmation Assets
+
+The following files in `src/assets/` and `public/` are pending source verification and licensing confirmation:
+
+| Asset Path | Description / Role | Source / License |
+| :--- | :--- | :--- |
+| `src/assets/images/earth_deep_borehole_1791205870198.jpg` | Educational Borehole Illustration | UNKNOWN: owner must confirm before public release |
+| `src/assets/images/mars_spacecraft_crash_1791205842480.jpg` | Crash Interlude Cinematic Backdrop | UNKNOWN: owner must confirm before public release |
+| `src/assets/images/nasa_mars_missions_1791205882072.jpg` | Educational NASA Missions Photo | UNKNOWN: owner must confirm before public release |
+| `src/assets/images/nova_robotic_cat_1791205855725.jpg` | Nova Companion Illustration | UNKNOWN: owner must confirm before public release |
+| `src/assets/nova_astronaut.png` | Nova Sprite Fallback | UNKNOWN: owner must confirm before public release |
+| `src/assets/characters.png` | Sliced Character Atlas | UNKNOWN: owner must confirm before public release |
+| `public/favicon.svg` | Site Favicon Vector | UNKNOWN: owner must confirm before public release |
+| `public/assets/characters.png` | Sliced Character Atlas (Public Asset) | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/8-bit_tiles_platformer.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/colorful-illustrated-set-cracked-rocks-260nw-2812761893.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/game-ui-elements-set-retro-260nw-2631633133.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/Grassland-Top-Down-Tileset-Pixel-Art2-720x480.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/nova_walk.png` | Nova Walk Source Sheet | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/pixel keyboard.png` | Keycap Source Sheet | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/player_sheet_user.jpg` | Player Sheet Source Photo | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/player_walk.png` | Player Walk Source Frame | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/player_walk2.png` | Player Walk Source Frame | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/player_walk4.png` | Player Walk Source Frame | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/pngtree-sci-fi-pixel-art-sprite-sheet-top-down-base-walls-machines-png-image_19052232.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/pngtree-sci-fi-pixel-art-top-down-base-walls-machines-buildings-sprite-png-image_19052242.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/rover.png` | Rover Source Art | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/scifi depot.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/scifi icon 2.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/scifi icon.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/space themed.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/stock-vector-satellite-rocket-pixel-art-set-spaceship-spacecraft-collection-bit-sprite-game-development-2172857931.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/tiles.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
+| `src/assets/new assets/kenny nl assets/` | Kenney Tiny Factory Tileset | CC0 1.0 Universal (Kenney - www.kenney.nl) |
+
+

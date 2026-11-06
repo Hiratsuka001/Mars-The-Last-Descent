@@ -20,59 +20,54 @@ interface CrashInterludeProps {
   onComplete: () => void;
 }
 
-interface DiagnosticSubsystem {
+interface DiagnosticSystem {
   id: string;
   name: string;
-  sub: string;
   status: string;
   statusColor: string;
   icon: React.ComponentType<{ className?: string }>;
   detail: string;
 }
 
-const SUBSYSTEMS: DiagnosticSubsystem[] = [
+const SYSTEM_ITEMS: DiagnosticSystem[] = [
   {
     id: 'power',
-    name: 'POWER BUS',
-    sub: 'SUBSYS 01',
-    status: 'PARTIAL FAILURE (42%)',
+    name: 'Power',
+    status: 'Low power',
     statusColor: 'text-amber-400',
     icon: BatteryCharging,
-    detail: 'Solar arrays cracked on impact. Aux batteries holding at 42%. Auxiliary solar cells needed.',
+    detail: 'Solar cells cracked on impact. We need backup power cells.',
   },
   {
     id: 'comms',
-    name: 'HIGH-GAIN COMMS',
-    sub: 'SUBSYS 02',
-    status: 'OFFLINE // RF SILENT',
+    name: 'Radio',
+    status: 'Offline',
     statusColor: 'text-rose-400',
     icon: Radio,
-    detail: 'Deep space dish misaligned. High-frequency RF transceiver silent. Orbit link lost.',
+    detail: "Our radio dish is silent. We can't call home.",
   },
   {
     id: 'gyro',
-    name: 'INERTIAL GYRO',
-    sub: 'SUBSYS 03',
-    status: 'DAMAGED // DRIFTING',
+    name: 'Gyro',
+    status: 'Wobbly',
     statusColor: 'text-amber-400',
     icon: Compass,
-    detail: 'Inertial measurement unit suffered high G-shock. Gyro recalibration required before return ascent.',
+    detail: 'Steering sensors were shaken. We need to reset the gyro.',
   },
   {
     id: 'life',
-    name: 'LIFE SUPPORT',
-    sub: 'SUBSYS 04',
-    status: 'STABLE (O2 NOMINAL)',
+    name: 'Life support',
+    status: 'OK',
     statusColor: 'text-emerald-400',
     icon: HeartPulse,
-    detail: 'Internal pressure cabin held! Nitrogen and Oxygen scrubbers are operating normally.',
+    detail: 'Cabin air pressure is safe. Oxygen scrubbers are working fine.',
   },
 ];
 
 export const CrashInterlude: React.FC<CrashInterludeProps> = ({ onComplete }) => {
   const [beat, setBeat] = useState<number>(1);
   const [reduceMotion] = useState<boolean>(() => isReduceMotionEnabled());
-  const [activeSubsystem, setActiveSubsystem] = useState<string | null>(null);
+  const [activeSystemId, setActiveSystemId] = useState<string | null>(null);
   const [inspectedSystems, setInspectedSystems] = useState<Record<string, boolean>>({
     power: false,
     comms: false,
@@ -124,12 +119,12 @@ export const CrashInterlude: React.FC<CrashInterludeProps> = ({ onComplete }) =>
     }
   };
 
-  const handleSubsystemClick = (e: React.MouseEvent, sub: DiagnosticSubsystem) => {
+  const handleSystemClick = (e: React.MouseEvent, sub: DiagnosticSystem) => {
     e.stopPropagation();
     try {
       sound.playClick?.();
     } catch {}
-    setActiveSubsystem(sub.id);
+    setActiveSystemId(sub.id);
     setInspectedSystems((prev) => ({ ...prev, [sub.id]: true }));
   };
 
@@ -229,7 +224,7 @@ export const CrashInterlude: React.FC<CrashInterludeProps> = ({ onComplete }) =>
           >
             <div className="flex items-center justify-center gap-1.5 px-3 py-1 rounded-full bg-rose-950/80 border border-rose-500/50 text-rose-300 text-[11px] font-mono uppercase tracking-wider shadow-[0_0_15px_rgba(244,63,94,0.3)]">
               <AlertOctagon className="w-3.5 h-3.5 animate-pulse" />
-              <span>ALTITUDE: 18,000 METERS · RETRO-BURN</span>
+              <span>18,000 meters up!</span>
             </div>
 
             <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center bg-gradient-to-t from-orange-600 via-amber-500 to-yellow-300 shadow-[0_0_50px_rgba(249,115,22,0.8)] border border-amber-300/60">
@@ -240,11 +235,8 @@ export const CrashInterlude: React.FC<CrashInterludeProps> = ({ onComplete }) =>
               <h1 className="text-2xl sm:text-3xl font-display font-bold text-white tracking-wide drop-shadow-[0_0_20px_rgba(249,115,22,0.6)]">
                 Entering Mars...
               </h1>
-              <p className="text-xs sm:text-sm font-mono text-orange-200/90 leading-relaxed">
-                Hold on tight! It's getting hot!
-              </p>
-              <p className="text-[11px] font-mono text-slate-400 max-w-xs mx-auto pt-1 leading-snug">
-                Turbulent Martian atmosphere shear detected. Retro-engine gimbal malfunction! Trajectory destabilizing...
+              <p className="text-xs sm:text-sm font-mono text-orange-200/90 leading-relaxed font-semibold">
+                Strong winds shake the ship. The engines are failing!
               </p>
             </div>
           </div>
@@ -280,13 +272,13 @@ export const CrashInterlude: React.FC<CrashInterludeProps> = ({ onComplete }) =>
                 Brace for impact!
               </p>
               <p className="text-[11px] font-mono text-slate-300 max-w-xs mx-auto pt-1 leading-snug">
-                Aeroshell breached. Ingestion of Martian surface regolith. Primary power bus severed!
+                The ship hit the ground hard. Dust is everywhere!
               </p>
             </div>
           </div>
         )}
 
-        {/* BEAT 3: Nova Reboot & 4-Subsystems Interactive Diagnostic Checklist */}
+        {/* BEAT 3: Nova Reboot & 4 Systems Interactive Diagnostic Checklist */}
         {beat === 3 && (
           <div
             data-testid="crash-beat-3"
@@ -308,12 +300,12 @@ export const CrashInterlude: React.FC<CrashInterludeProps> = ({ onComplete }) =>
               </div>
             </div>
 
-            {/* 4 Interactive Subsystem Diagnostic Cards */}
+            {/* 4 Interactive System Diagnostic Cards */}
             <div className="w-full">
               <div className="flex items-center justify-between mb-1.5 px-1">
                 <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
                   <Wrench className="w-3 h-3 text-cyan-400" />
-                  <span>SPACECRAFT TELEMETRY DIAGNOSTICS</span>
+                  <span>SPACECRAFT SYSTEM STATUS</span>
                 </span>
                 <span className="text-[9px] font-mono text-slate-400">
                   TAP TO INSPECT
@@ -321,16 +313,16 @@ export const CrashInterlude: React.FC<CrashInterludeProps> = ({ onComplete }) =>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {SUBSYSTEMS.map((sub) => {
+                {SYSTEM_ITEMS.map((sub) => {
                   const Icon = sub.icon;
                   const isInspected = inspectedSystems[sub.id];
-                  const isActive = activeSubsystem === sub.id;
+                  const isActive = activeSystemId === sub.id;
 
                   return (
                     <button
                       key={sub.id}
-                      onClick={(e) => handleSubsystemClick(e, sub)}
-                      className={`p-2 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                      onClick={(e) => handleSystemClick(e, sub)}
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                         isActive
                           ? 'bg-slate-900 border-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.4)]'
                           : isInspected
@@ -338,16 +330,15 @@ export const CrashInterlude: React.FC<CrashInterludeProps> = ({ onComplete }) =>
                           : 'bg-slate-950/70 border-slate-800 hover:border-slate-600'
                       }`}
                     >
-                      <div className="flex items-center justify-between w-full mb-1">
+                      <div className="flex items-center justify-between w-full mb-1.5">
                         <div className="p-1 rounded bg-slate-900 border border-slate-700 text-slate-300">
                           <Icon className="w-3.5 h-3.5" />
                         </div>
                         {isInspected && <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400" />}
                       </div>
                       <div>
-                        <div className="text-[9px] font-mono text-slate-400">{sub.sub}</div>
-                        <div className="text-[11px] font-bold font-display text-white truncate">{sub.name}</div>
-                        <div className={`text-[9px] font-mono font-semibold truncate mt-0.5 ${sub.statusColor}`}>
+                        <div className="text-xs font-bold font-display text-white">{sub.name}</div>
+                        <div className={`text-[10px] font-mono font-semibold mt-0.5 ${sub.statusColor}`}>
                           {sub.status}
                         </div>
                       </div>
@@ -358,10 +349,10 @@ export const CrashInterlude: React.FC<CrashInterludeProps> = ({ onComplete }) =>
             </div>
 
             {/* Diagnostic Detail Box (Displays when a card is selected) */}
-            {activeSubsystem && (
+            {activeSystemId && (
               <div className="w-full p-2 rounded-lg bg-slate-950/95 border border-cyan-500/40 text-[11px] font-mono text-slate-200 flex items-center justify-between shadow-md">
                 <span className="flex-1 pr-2">
-                  {SUBSYSTEMS.find((s) => s.id === activeSubsystem)?.detail}
+                  {SYSTEM_ITEMS.find((s) => s.id === activeSystemId)?.detail}
                 </span>
                 <span className="text-[9px] text-cyan-400 font-bold uppercase shrink-0">LOGGED</span>
               </div>

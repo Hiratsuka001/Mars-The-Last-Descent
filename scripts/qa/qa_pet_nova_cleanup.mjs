@@ -5,6 +5,10 @@ import path from 'path';
 
 // Simple static server for dist
 const DIST_DIR = path.resolve('dist');
+const OUTPUT_DIR = path.resolve('qa-screenshots/pet_nova');
+if (!fs.existsSync(OUTPUT_DIR)) {
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+}
 const PORT = 4174;
 
 function startServer() {
@@ -109,7 +113,7 @@ async function run() {
     }
 
     // Take screenshot during cuddle window
-    await page.screenshot({ path: 'scripts/01_cuddle_window_prompt.png' });
+    await page.screenshot({ path: path.join(OUTPUT_DIR, '01_cuddle_window_prompt.png') });
 
     // 3. Wait until 8.0s total (exiting 7.0s cuddle window)
     console.log('Waiting for Nova cuddle window to expire (8.0s total)...');
@@ -126,7 +130,7 @@ async function run() {
     const toast = page.locator('text=NOVA PURRS IN 1/6TH GRAVITY');
     await toast.waitFor({ state: 'visible', timeout: 3000 });
     console.log('✓ Toast appeared on pressing [P]: NOVA PURRS IN 1/6TH GRAVITY');
-    await page.screenshot({ path: 'scripts/02_p_key_pet_nova.png' });
+    await page.screenshot({ path: path.join(OUTPUT_DIR, '02_p_key_pet_nova.png') });
 
     // Verify Cosmic Companion badge is awarded in localStorage
     const savedAfterP = await page.evaluate(() => {
@@ -180,7 +184,7 @@ async function run() {
     const mobileToast = mobilePage.locator('text=NOVA PURRS IN 1/6TH GRAVITY');
     await mobileToast.waitFor({ state: 'visible', timeout: 3000 });
     console.log('✓ Mobile touch-pet-btn successfully petted Nova!');
-    await mobilePage.screenshot({ path: 'scripts/03_mobile_pet_nova.png' });
+    await mobilePage.screenshot({ path: path.join(OUTPUT_DIR, '03_mobile_pet_nova.png') });
 
     console.log('ALL PET NOVA CLEANUP TESTS PASSED WITH 100% SUCCESS!');
   } finally {

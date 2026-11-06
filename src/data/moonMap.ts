@@ -156,7 +156,7 @@ export const MOON_ROCKS: LunarRockDef[] = [
     color: '#94a3b8',
     oneLineHint: 'An angular shock-fused rock resting on the regolith... Impact Melt Breccia!',
     interactionPrompt: '[E] SAMPLE BRECCIA',
-    discoveredLine: 'Impact Melt Breccia sampled! Shock-melted glass from ancient asteroid cataclysms. +1 RP for Mars transit!',
+    discoveredLine: 'Impact Melt Breccia sampled! Shock-melted glass from ancient asteroid cataclysms.',
     badge: 'Impact Geologist',
   },
   {
@@ -172,7 +172,7 @@ export const MOON_ROCKS: LunarRockDef[] = [
     color: '#f59e0b',
     oneLineHint: 'Dark volcanic rock with iridescent titanium crystals... Mare Basalt!',
     interactionPrompt: '[E] SAMPLE BASALT',
-    discoveredLine: 'Titanium-rich Mare Basalt sampled! Contains Tranquillityite, an ancient mineral once thought unique to the Moon. +1 RP for Mars transit!',
+    discoveredLine: 'Titanium-rich Mare Basalt sampled! Contains Tranquillityite, an ancient mineral once thought unique to the Moon.',
     badge: 'Mare Vulcanologist',
   },
   {
@@ -188,7 +188,7 @@ export const MOON_ROCKS: LunarRockDef[] = [
     color: '#38bdf8',
     oneLineHint: 'A brilliant, pure white crystalline rock gleaming on the plains... The Genesis Rock!',
     interactionPrompt: '[E] SAMPLE GENESIS ROCK',
-    discoveredLine: 'The Genesis Rock sampled! 4.5-billion-year-old primordial crust that definitively proved the Lunar Magma Ocean hypothesis. +1 RP for Mars transit!',
+    discoveredLine: 'The Genesis Rock sampled! 4.5-billion-year-old primordial crust that definitively proved the Lunar Magma Ocean hypothesis.',
     badge: 'Genesis Prospector',
   },
 ];

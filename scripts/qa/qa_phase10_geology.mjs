@@ -274,7 +274,10 @@ async function run() {
     await page.waitForTimeout(1000);
 
     const crashInterlude = page.locator('[data-testid="crash-interlude"]');
-    if (await crashInterlude.isVisible().catch(() => false)) {
+    if (await crashInterlude.isVisible({ timeout: 2000 }).catch(() => false)) {
+      // Tap to beat 2, then beat 3
+      await crashInterlude.click();
+      await page.waitForTimeout(300);
       await crashInterlude.click();
       await page.waitForTimeout(300);
 
