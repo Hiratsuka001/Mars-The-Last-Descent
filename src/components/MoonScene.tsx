@@ -6,6 +6,8 @@ import { isDebugMode } from '../systems/debug';
 import { getMoonMapData, RelicDef } from '../data/moonMap';
 import { MiniGameShell } from './MiniGames/MiniGameShell';
 import { LunaSoftLandingGame } from './MiniGames/LunaSoftLandingGame';
+import { ApolloLaserPingGame } from './MiniGames/ApolloLaserPingGame';
+import { LunokhodLostRoverGame } from './MiniGames/LunokhodLostRoverGame';
 import { NovaDialogue } from './NovaDialogue';
 import { Volume2, VolumeX, Radio } from 'lucide-react';
 
@@ -206,8 +208,9 @@ export const MoonScene: React.FC<MoonSceneProps> = ({
       if ((e.code === 'KeyE' || e.code === 'Enter') && !activeRelicRef.current && !showEarthriseRef.current) {
         if (novaDialogueRef.current?.onAction) {
           novaDialogueRef.current.onAction();
-        } else {
+        } else if (novaDialogueRef.current) {
           setNovaDialogue(null);
+        } else {
           const p = playerRef.current;
           const nr = nearbyRelicRef.current || mapData.relics.find((r) => Math.hypot(p.x - (r.tileX * TILE_SIZE + 8), p.y - (r.tileY * TILE_SIZE + 8)) <= 36);
           if (nr) {
@@ -228,6 +231,23 @@ export const MoonScene: React.FC<MoonSceneProps> = ({
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, [activeRelic, showEarthrise, novaDialogue, nearbyRelic]);
+
+  // When all 3 relics are logged, prompt for Earthrise whenever not in minigame or other dialogue
+  useEffect(() => {
+    if (relicIds.length >= 3 && !showEarthrise && !activeRelic && !novaDialogue) {
+      const timer = setTimeout(() => {
+        setNovaDialogue({
+          text: 'All three lunar relics logged! Look, Earth is rising ahead!',
+          actionLabel: 'Observe Earthrise →',
+          onAction: () => {
+            setNovaDialogue(null);
+            setShowEarthrise(true);
+          },
+        });
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [relicIds.length, showEarthrise, activeRelic, novaDialogue]);
 
   // Start Hop Action
   const startHop = useCallback(() => {
@@ -305,19 +325,6 @@ export const MoonScene: React.FC<MoonSceneProps> = ({
     setActiveRelic(null);
     setToast(`RELIC ${nextRelics.length}/3`);
     setTimeout(() => setToast(null), 2500);
-
-    if (nextRelics.length >= 3) {
-      setTimeout(() => {
-        setNovaDialogue({
-          text: 'All three lunar relics logged! Look, Earth is rising ahead!',
-          actionLabel: 'Observe Earthrise →',
-          onAction: () => {
-            setNovaDialogue(null);
-            setShowEarthrise(true);
-          },
-        });
-      }, 500);
-    }
   }, []);
 
   // Main 60fps Game Loop
@@ -632,68 +639,85 @@ export const MoonScene: React.FC<MoonSceneProps> = ({
         if (ch === '#') {
           atlas.drawSprite(ctx, 'tile_moon_crater_rim', px, py, TILE_SIZE, TILE_SIZE);
 
-          // Edge highlights for 3D crater rim look (no horizontal scanline stripes)
-          const hasGroundNorth = ty > 0 && mapData.tiles[ty - 1]?.[tx] !== '#';
-          const hasGroundWest = tx > 0 && mapData.tiles[ty]?.[tx - 1] !== '#';
-          const hasGroundSouth = ty < mapData.height - 1 && mapData.tiles[ty + 1]?.[tx] !== '#';
-          const hasGroundEast = tx < mapData.width - 1 && mapData.tiles[ty]?.[tx + 1] !== '#';
+          // Lit highlight drawn ONLY on edges touching open ground or pit, never between two wall tiles
+          ctx.save();
+          const touchesGroundNorth = ty > 0 && (mapData.tiles[ty - 1]?.[tx] === '.' || mapData.tiles[ty - 1]?.[tx] === '~');
+          const touchesGroundWest = tx > 0 && (mapData.tiles[ty]?.[tx - 1] === '.' || mapData.tiles[ty]?.[tx - 1] === '~');
+          const touchesGroundSouth = ty < mapData.height - 1 && (mapData.tiles[ty + 1]?.[tx] === '.' || mapData.tiles[ty + 1]?.[tx] === '~');
+          const touchesGroundEast = tx < mapData.width - 1 && (mapData.tiles[ty]?.[tx + 1] === '.' || mapData.tiles[ty]?.[tx + 1] === '~');
 
-          if (hasGroundNorth || hasGroundWest || hasGroundSouth || hasGroundEast) {
-            ctx.save();
-            if (hasGroundNorth) {
-              ctx.fillStyle = '#8a97a8';
-              ctx.fillRect(px, py, TILE_SIZE, 2);
-              ctx.fillStyle = '#4c5767';
-              ctx.fillRect(px, py + 2, TILE_SIZE, 1);
-            }
-            if (hasGroundWest) {
-              ctx.fillStyle = '#728091';
-              ctx.fillRect(px, py, 2, TILE_SIZE);
-            }
-            if (hasGroundSouth) {
-              ctx.fillStyle = '#0c1017';
-              ctx.fillRect(px, py + TILE_SIZE - 2, TILE_SIZE, 2);
-            }
-            if (hasGroundEast) {
-              ctx.fillStyle = '#10141b';
-              ctx.fillRect(px + TILE_SIZE - 2, py, 2, TILE_SIZE);
-            }
-            ctx.restore();
+          if (touchesGroundNorth) {
+            ctx.fillStyle = '#f1f5f9';
+            ctx.fillRect(px, py, TILE_SIZE, 1.5);
+            ctx.fillStyle = '#cbd5e1';
+            ctx.fillRect(px, py + 1.5, TILE_SIZE, 1);
           }
+          if (touchesGroundWest) {
+            ctx.fillStyle = '#e2e8f0';
+            ctx.fillRect(px, py, 1.5, TILE_SIZE);
+          }
+          if (touchesGroundSouth) {
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(px, py + TILE_SIZE - 2, TILE_SIZE, 2);
+          }
+          if (touchesGroundEast) {
+            ctx.fillStyle = '#334155';
+            ctx.fillRect(px + TILE_SIZE - 1.5, py, 1.5, TILE_SIZE);
+          }
+          ctx.restore();
         } else if (ch === '~') {
           atlas.drawSprite(ctx, 'tile_moon_pit', px, py, TILE_SIZE, TILE_SIZE);
 
-          // Lit crater rim and rounded inner bowl
+          // Deep blue-black crater centre with rounded bowl
+          ctx.save();
+          ctx.fillStyle = '#010309';
+          ctx.beginPath();
+          ctx.ellipse(px + 8, py + 8, 6.5, 6.5, 0, 0, Math.PI * 2);
+          ctx.fill();
+
           const pitNorthGround = ty > 0 && mapData.tiles[ty - 1]?.[tx] === '.';
           const pitSouthGround = ty < mapData.height - 1 && mapData.tiles[ty + 1]?.[tx] === '.';
           const pitWestGround = tx > 0 && mapData.tiles[ty]?.[tx - 1] === '.';
           const pitEastGround = tx < mapData.width - 1 && mapData.tiles[ty]?.[tx + 1] === '.';
 
-          ctx.save();
-          if (pitNorthGround) {
-            ctx.fillStyle = '#647285';
-            ctx.fillRect(px, py, TILE_SIZE, 2);
-            ctx.fillStyle = '#070a12';
-            ctx.fillRect(px, py + 2, TILE_SIZE, 2);
-          }
+          // Bright lit rim on the near edge (west edge facing player approach)
           if (pitWestGround) {
-            ctx.fillStyle = '#525e6f';
-            ctx.fillRect(px, py, 2, TILE_SIZE);
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillRect(px, py, 2.5, TILE_SIZE);
+            ctx.fillStyle = '#0284c7';
+            ctx.fillRect(px + 2.5, py, 1.5, TILE_SIZE);
+
+            // Faint dashed edge marker so it reads "hop here"
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.65)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([2, 2]);
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.lineTo(px, py + TILE_SIZE);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+
+          if (pitNorthGround) {
+            ctx.fillStyle = '#0284c7';
+            ctx.fillRect(px, py, TILE_SIZE, 2);
           }
           if (pitSouthGround) {
-            ctx.fillStyle = '#0d131f';
+            ctx.fillStyle = '#090d16';
             ctx.fillRect(px, py + TILE_SIZE - 2, TILE_SIZE, 2);
           }
           if (pitEastGround) {
-            ctx.fillStyle = '#0f1624';
+            ctx.fillStyle = '#0f172a';
             ctx.fillRect(px + TILE_SIZE - 2, py, 2, TILE_SIZE);
           }
+
+          // Rounded crater bowl corners
           if (pitNorthGround && pitWestGround) {
-            ctx.fillStyle = '#5a6270';
+            ctx.fillStyle = '#0369a1';
             ctx.fillRect(px, py, 3, 3);
           }
           if (pitNorthGround && pitEastGround) {
-            ctx.fillStyle = '#4a5360';
+            ctx.fillStyle = '#1e293b';
             ctx.fillRect(px + TILE_SIZE - 3, py, 3, 3);
           }
           ctx.restore();
@@ -856,7 +880,10 @@ export const MoonScene: React.FC<MoonSceneProps> = ({
 
       {/* Relic Found Toast */}
       {toast && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 px-5 py-2 rounded-full bg-cyan-500/90 text-slate-950 font-bold font-mono text-sm shadow-[0_0_25px_rgba(6,182,212,0.8)] animate-in fade-in zoom-in-95 pointer-events-none">
+        <div
+          data-testid="moon-relic-toast"
+          className="absolute top-16 left-1/2 -translate-x-1/2 z-40 px-5 py-2 rounded-full bg-cyan-500/90 text-slate-950 font-bold font-mono text-sm shadow-[0_0_25px_rgba(6,182,212,0.8)] animate-in fade-in zoom-in-95 pointer-events-none"
+        >
           {toast}
         </div>
       )}
@@ -873,7 +900,7 @@ export const MoonScene: React.FC<MoonSceneProps> = ({
         </div>
       )}
 
-      {/* Real MiniGame for Luna 9, STUB MiniGame for Relics 2 & 3 */}
+      {/* Real MiniGame for Luna 9 & Apollo 11, STUB MiniGame for Relic 3 */}
       {activeRelic && activeRelic.id === 'moon_luna9' && (
         <LunaSoftLandingGame
           onSuccess={() => handleRelicLogged(activeRelic.id)}
@@ -881,20 +908,18 @@ export const MoonScene: React.FC<MoonSceneProps> = ({
         />
       )}
 
-      {activeRelic && activeRelic.id !== 'moon_luna9' && (
-        <MiniGameShell
-          wreckId={activeRelic.id}
-          title={activeRelic.name}
-          instruction="Hold the sensor calibration trigger for 1.5s to log relic telemetry."
-          winTitle="RELIC LOGGED!"
-          claimLabel="Log Relic ->"
-          onWin={() => handleRelicLogged(activeRelic.id)}
-          onExit={() => setActiveRelic(null)}
-        >
-          {({ win }) => (
-            <RelicStubMiniGame onComplete={() => win({ stars: 3 })} />
-          )}
-        </MiniGameShell>
+      {activeRelic && activeRelic.id === 'moon_apollo11' && (
+        <ApolloLaserPingGame
+          onSuccess={() => handleRelicLogged(activeRelic.id)}
+          onClose={() => setActiveRelic(null)}
+        />
+      )}
+
+      {activeRelic && activeRelic.id === 'moon_lunokhod1' && (
+        <LunokhodLostRoverGame
+          onSuccess={() => handleRelicLogged(activeRelic.id)}
+          onClose={() => setActiveRelic(null)}
+        />
       )}
 
       {/* Full-Screen CSS Earthrise Panel */}

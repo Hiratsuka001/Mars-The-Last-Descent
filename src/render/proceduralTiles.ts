@@ -116,14 +116,13 @@ export const PROCEDURAL_TILE_DEFS: ProceduralTileConfig[] = [
     key: 'tile_moon_crater_rim',
     name: 'Moon Crater Rim Wall',
     biome: 'moon',
-    baseColor: '#181e28',
+    baseColor: '#636c7a',
     pattern: (_x, _y, rng) => {
-      // Solid dark regolith with organic subtle grain (no horizontal scanline stripes)
+      // Lighter warm grey rock with subtle stone fissures (clearly distinct from deep blue-black pits)
       const r = rng();
-      if (r < 0.08) return '#121620';
-      if (r < 0.16) return '#202735';
-      if (r < 0.22) return '#262f40';
-      if (r < 0.27) return '#151a24';
+      if (r < 0.10) return '#4d5563';
+      if (r < 0.20) return '#758091';
+      if (r < 0.26) return '#8894a7';
       return null;
     },
   },
@@ -131,12 +130,12 @@ export const PROCEDURAL_TILE_DEFS: ProceduralTileConfig[] = [
     key: 'tile_moon_pit',
     name: 'Moon Pit Void',
     biome: 'moon',
-    baseColor: '#050811',
+    baseColor: '#020511',
     pattern: (x, y, rng) => {
-      // Crater bowl: dark sunken center with subtle organic depth
+      // Deep blue-black crater bowl with sunken center
       const distFromCenter = Math.hypot(x - 7.5, y - 7.5);
-      if (distFromCenter < 4.0 && rng() < 0.20) return '#020409';
-      if (rng() < 0.05) return '#0a0f1a';
+      if (distFromCenter < 4.0 && rng() < 0.25) return '#010309';
+      if (rng() < 0.04) return '#060a18';
       return null;
     },
   },

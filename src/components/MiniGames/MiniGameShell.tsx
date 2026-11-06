@@ -18,8 +18,9 @@ export interface MiniGameShellProps {
   wreckId: string;
   title: string;
   instruction: string;
-  winTitle?: string;
+  winTitle?: string | ((stars: number) => string);
   claimLabel?: string;
+  factTeaser?: string;
   onWin: () => void;
   onExit: () => void;
   onRetry?: () => void;
@@ -36,6 +37,7 @@ export const MiniGameShell: React.FC<MiniGameShellProps> = ({
   instruction,
   winTitle,
   claimLabel = 'Claim Ship Part →',
+  factTeaser = 'Tap to unlock a real historical Mars mission fact!',
   onWin,
   onExit,
   onRetry,
@@ -117,6 +119,29 @@ export const MiniGameShell: React.FC<MiniGameShellProps> = ({
     }
   }, [handleWin]);
 
+  // Exit or claim handler: after a win, X and Esc perform the claim (onWin) so progress is never lost
+  const handleExitOrClaim = useCallback(() => {
+    if (hasWon) {
+      sound.playClick();
+      onWin();
+    } else {
+      onExit();
+    }
+  }, [hasWon, onWin, onExit]);
+
+  // Esc key listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleExitOrClaim();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleExitOrClaim]);
+
   const showAssistButton = !hasWon && (failCount >= 3 || assistRequested);
 
   // Footer Nova state and message
@@ -124,15 +149,26 @@ export const MiniGameShell: React.FC<MiniGameShellProps> = ({
     ? 'celebrate'
     : (assistActive || showAssistButton ? 'curious' : 'idle');
 
-  const defaultFooterText = hasWon
-    ? (stars === 3 ? 'Purr-fect! 3 stars achieved!' : 'Safe landing! System recovered!')
-    : showAssistButton
-      ? "Need a paw? I can help!"
-      : failCount > 0
-        ? 'Try again, you got this!'
-        : 'Paws ready to run!';
+  const isMoon = wreckId.startsWith('moon_');
+  const defaultIdle = isMoon ? '' : 'Paws ready to run!';
 
-  const activeFooterText = footerReaction || defaultFooterText;
+  const defaultFooterText = hasWon
+    ? (isMoon ? '' : (stars === 3 ? 'Purr-fect! 3 stars achieved!' : 'Safe landing! System recovered!'))
+    : (showAssistButton && !isMoon)
+      ? "Need a paw? I can help!"
+      : (failCount > 0 && !isMoon)
+        ? 'Try again, you got this!'
+        : defaultIdle;
+
+  const activeFooterText = footerReaction !== undefined ? footerReaction : defaultFooterText;
+
+  // Resolve winTitle (supports string or (stars: number) => string)
+  const resolvedWinTitle = useMemo(() => {
+    if (typeof winTitle === 'function') {
+      return winTitle(stars);
+    }
+    return winTitle || 'MISSION SUCCESS!';
+  }, [winTitle, stars]);
 
   return (
     <div
@@ -158,7 +194,7 @@ export const MiniGameShell: React.FC<MiniGameShellProps> = ({
           </div>
           <button
             data-testid="puzzle-exit-btn"
-            onClick={onExit}
+            onClick={handleExitOrClaim}
             aria-label="Exit Mini Game"
             className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-300 hover:text-white transition-colors cursor-pointer border border-slate-700/60"
           >
@@ -192,7 +228,7 @@ export const MiniGameShell: React.FC<MiniGameShellProps> = ({
             >
               <div className="flex items-center justify-center gap-2 text-emerald-400 font-bold text-sm sm:text-base font-mono">
                 <Award size={20} className="animate-bounce" />
-                <span>{winTitle || 'MISSION SUCCESS!'}</span>
+                <span>{resolvedWinTitle}</span>
               </div>
 
               {/* Stars Display */}
@@ -269,7 +305,7 @@ export const MiniGameShell: React.FC<MiniGameShellProps> = ({
                   </p>
                 ) : (
                   <p className="text-[11px] sm:text-xs text-amber-200/70 italic">
-                    Tap to unlock a real historical Mars mission fact!
+                    {factTeaser}
                   </p>
                 )}
               </button>

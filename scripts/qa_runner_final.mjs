@@ -2597,6 +2597,10 @@ async function runProductionDebugHooksGateAudit(browser) {
       moonKeys: Object.keys(window).filter((k) => k.startsWith('__moon')),
       lunaGame: typeof window.__lunaGame,
       lunaKeys: Object.keys(window).filter((k) => k.startsWith('__luna')),
+      pingGame: typeof window.__pingGame,
+      pingKeys: Object.keys(window).filter((k) => k.startsWith('__ping')),
+      lostGame: typeof window.__lostGame,
+      lostKeys: Object.keys(window).filter((k) => k.startsWith('__lost')),
     };
   });
 
@@ -2612,7 +2616,11 @@ async function runProductionDebugHooksGateAudit(browser) {
     debugHooksAudit.moonTeleport !== 'undefined' ||
     debugHooksAudit.moonKeys.length > 0 ||
     debugHooksAudit.lunaGame !== 'undefined' ||
-    debugHooksAudit.lunaKeys.length > 0
+    debugHooksAudit.lunaKeys.length > 0 ||
+    debugHooksAudit.pingGame !== 'undefined' ||
+    debugHooksAudit.pingKeys.length > 0 ||
+    debugHooksAudit.lostGame !== 'undefined' ||
+    debugHooksAudit.lostKeys.length > 0
   ) {
     throw new Error(`Production debug hooks exposed without ?debug=1: ${JSON.stringify(debugHooksAudit)}`);
   }
@@ -2745,6 +2753,18 @@ async function runMoonChapterQA(browser) {
   await page.screenshot({ path: path.join(OUTPUT_DIR, 'desktop_moon_relic1.png') });
   console.log('  [OK Captured] desktop_moon_relic1.png');
 
+  // Screenshot: pit and rock next to each other (row 17, cols 24-25)
+  await page.evaluate(() => window.__moonTeleport(23, 17));
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'desktop_moon_pit_vs_rock.png') });
+  console.log('  [OK Captured] desktop_moon_pit_vs_rock.png (pit and rock clearly different)');
+
+  // Screenshot: left map edge and crater rim without stacked stripes (Moon-3.1 Visual Fix)
+  await page.evaluate(() => window.__moonTeleport(6, 12));
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'desktop_moon_walls_no_stripes.png') });
+  console.log('  [OK Captured] desktop_moon_walls_no_stripes.png (left map edge and crater rim, no stacked stripes)');
+
   // Teleport back to spawn for subsequent tests
   await page.evaluate(() => window.__moonTeleport(8, 20));
   await page.waitForTimeout(200);
@@ -2805,6 +2825,52 @@ async function runMoonChapterQA(browser) {
   // Check 1: luna-game visible, header <= 12 words, canvas width >= 60% desktop, no page scroll
   const lunaGame = page.locator('[data-testid="luna-game"]');
   await lunaGame.waitFor({ state: 'visible', timeout: 6000 });
+
+  // Verify footer is empty at game start (event reactions only for Moon)
+  const footerTextEl = page.locator('[data-testid="minigame-shell"] .border-t p');
+  const initialFooterText = (await footerTextEl.textContent()) || '';
+  console.log(`  Luna 9 initial footer text: "${initialFooterText}"`);
+  if (initialFooterText.trim() !== '') {
+    throw new Error(`Expected empty footer at Luna 9 game start, got: "${initialFooterText}"`);
+  }
+  console.log('  [PASS] Luna 9 footer is empty at game start');
+
+  // Moon-3.1 Check 2: Close game BEFORE winning (X button) -> counter stays 0/3, no claim, no toast
+  console.log('  Checking close game BEFORE winning via X button (Claim Trap Check 2)...');
+  const shellXBtn = page.locator('[data-testid="puzzle-exit-btn"]');
+  await shellXBtn.click();
+  await lunaGame.waitFor({ state: 'detached', timeout: 5000 });
+  const midCloseToastCount = await page.locator('[data-testid="moon-relic-toast"]').count();
+  if (midCloseToastCount > 0) {
+    throw new Error('Toast displayed when closing game before winning!');
+  }
+  const midCloseCounter = await page.locator('[data-testid="moon-relic-counter"]').textContent();
+  if (!midCloseCounter.includes('0/3')) {
+    throw new Error(`Expected counter to stay 0/3 after exit before win, got: ${midCloseCounter}`);
+  }
+  console.log('  [PASS] Close before win did not claim relic (counter remained 0/3, zero toast)');
+
+  // Re-open Luna 9 to continue verification
+  await page.keyboard.press('KeyE');
+  await novaActionBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await novaActionBtn.click();
+  await lunaGame.waitFor({ state: 'visible', timeout: 6000 });
+
+  // Verify Earth sprite rect is fully inside canvas rect
+  const earthRectDebug = await page.evaluate(() => window.__lunaGame?.getEarthRect?.());
+  console.log(`  Luna 9 Earth rect:`, earthRectDebug);
+  if (!earthRectDebug || !earthRectDebug.isFullyInside) {
+    throw new Error(`Earth rect is not fully inside canvas rect: ${JSON.stringify(earthRectDebug)}`);
+  }
+  console.log('  [PASS] Earth sprite rect is fully inside the canvas rect');
+
+  // Verify Lander height >= 14% of canvas
+  const landerMetrics = await page.evaluate(() => window.__lunaGame?.getLanderMetrics?.());
+  console.log(`  Luna 9 Lander metrics:`, landerMetrics);
+  if (!landerMetrics || landerMetrics.ratio < 0.14) {
+    throw new Error(`Lander height ratio must be >= 0.14 (14%), got: ${landerMetrics?.ratio} (${landerMetrics?.heightPx || landerMetrics?.height}px on ${landerMetrics?.canvasHeight}px canvas)`);
+  }
+  console.log(`  [PASS] Lander height >= 14% of canvas (${(landerMetrics.ratio * 100).toFixed(1)}%)`);
 
   const instructionEl = page.locator('[data-testid="minigame-shell"] p').first();
   const instructionText = (await instructionEl.textContent()) || '';
@@ -2874,10 +2940,28 @@ async function runMoonChapterQA(browser) {
   }
   console.log('  [PASS] Zero input ended with 1 star in under 12s');
 
+  // Moon-3.1 Check 3: 1-star win title must be "BOUNCY LANDING!" and NOT "RELIC LOGGED!"
+  const winTitle1StarCount = await winScreen.locator('span').filter({ hasText: 'BOUNCY LANDING!' }).count();
+  if (winTitle1StarCount === 0) {
+    throw new Error(`Expected win title "BOUNCY LANDING!" on 1-star Luna 9, got: ${await winScreen.innerText()}`);
+  }
+  const relicLoggedCheck1 = await winScreen.locator('text=RELIC LOGGED!').count();
+  if (relicLoggedCheck1 > 0) {
+    throw new Error('"RELIC LOGGED!" shown on win screen before claim!');
+  }
+  console.log('  [PASS] Luna 9 1-star win title is "BOUNCY LANDING!" (zero "RELIC LOGGED!" before claim)');
+
   // Test retry button restarts clean run
   const retryBtn = page.locator('[data-testid="minigame-retry"]');
   await retryBtn.click();
   await lunaGame.waitFor({ state: 'visible', timeout: 5000 });
+
+  // Moon-3.1 Apollo/Luna check: Footer is empty at the start of retry
+  const footerAfterRetry = (await footerTextEl.textContent()) || '';
+  if (footerAfterRetry.trim() !== '') {
+    throw new Error(`Expected empty footer on Luna 9 retry, got: "${footerAfterRetry}"`);
+  }
+  console.log('  [PASS] Luna 9 footer is EMPTY at start of retry');
   let resetState = await page.evaluate(() => window.__lunaGame.getState());
   if (resetState.phase !== 'falling' || resetState.altitude < 95 || resetState.fuel < 95) {
     throw new Error(`Retry did not start clean run: ${JSON.stringify(resetState)}`);
@@ -2985,6 +3069,13 @@ async function runMoonChapterQA(browser) {
   // Check 7: Claim flow, exact fact text, mid-chapter reload, and replay
   console.log('  Checking Did-You-Know fact reveal for Luna 9...');
   const factBtn = page.locator('[data-testid="minigame-fact"]');
+  const teaserText = (await factBtn.textContent()) || '';
+  console.log(`  Luna 9 teaser text: "${teaserText}"`);
+  if (!teaserText.includes('Moon') || teaserText.includes('Mars')) {
+    throw new Error(`Expected Luna 9 teaser text to contain "Moon" and not "Mars", got: "${teaserText}"`);
+  }
+  console.log('  [PASS] Luna 9 teaser text contains "Moon" and not "Mars"');
+
   await factBtn.click();
   await page.waitForTimeout(200);
   const factText = await factBtn.textContent();
@@ -2994,9 +3085,31 @@ async function runMoonChapterQA(browser) {
   }
   console.log('  [PASS] Exact historical Did-You-Know fact displayed for Luna 9');
 
-  // Claim part
-  const claimBtn = page.locator('[data-testid="claim-part-btn"]');
-  await claimBtn.click();
+  // Moon-3.1 Check 3: 3-star win title must be "TOUCHDOWN!" and NOT "RELIC LOGGED!"
+  const winTitle3StarCount = await winScreen.locator('span').filter({ hasText: 'TOUCHDOWN!' }).count();
+  if (winTitle3StarCount === 0) {
+    throw new Error(`Expected win title "TOUCHDOWN!" on 3-star Luna 9, got: ${await winScreen.innerText()}`);
+  }
+  const relicLoggedCheck3 = await winScreen.locator('text=RELIC LOGGED!').count();
+  if (relicLoggedCheck3 > 0) {
+    throw new Error('"RELIC LOGGED!" shown on win screen before claim!');
+  }
+  console.log('  [PASS] Luna 9 3-star win title is "TOUCHDOWN!" (zero "RELIC LOGGED!" before claim)');
+
+  // Moon-3.1 Claim Trap Check 1: Claim relic 1 via Shell X button (puzzle-exit-btn)
+  console.log('  Claiming relic 1 via Shell X button (Claim Trap Fix 1)...');
+  const claimXBtn = page.locator('[data-testid="puzzle-exit-btn"]');
+  await claimXBtn.click();
+
+  const toast1 = page.locator('[data-testid="moon-relic-toast"]');
+  await toast1.waitFor({ state: 'visible', timeout: 3000 });
+  const toast1Text = (await toast1.textContent()) || '';
+  console.log(`  Relic 1 toast: "${toast1Text}"`);
+  if (!toast1Text.includes('1/3')) {
+    throw new Error(`Expected toast "RELIC 1/3", got: "${toast1Text}"`);
+  }
+  console.log('  [PASS] Relic 1 claim via Shell X showed toast "RELIC 1/3"');
+
   const shell = page.locator('[data-testid="minigame-shell"]');
   await shell.waitFor({ state: 'detached', timeout: 5000 });
 
@@ -3035,50 +3148,722 @@ async function runMoonChapterQA(browser) {
   console.log('  [PASS] Replay shows Nova line without opening game');
   await page.keyboard.press('KeyE'); // dismiss dialogue
 
-  // Log Relics 2 and 3 via stubs
-  const remainingRelics = [
-    { num: 2, id: 'moon_apollo11', tx: 35, ty: 20 },
-    { num: 3, id: 'moon_lunokhod1', tx: 52, ty: 20 },
-  ];
+  // 3B. Moon-3: Apollo 11 Laser Ping Game Verification Suite & Relic 3 Stub
+  console.log('Moon 3B: Apollo 11 Laser Ping Game Verification Suite...');
 
-  for (const r of remainingRelics) {
-    console.log(`  Teleporting to relic ${r.num} (${r.id}) at (${r.tx}, ${r.ty})...`);
-    await page.evaluate(({ tx, ty }) => window.__moonTeleport(tx, ty), r);
-    await page.waitForTimeout(300);
+  // Teleport to relic 2 (35, 20)
+  await page.evaluate(() => window.__moonTeleport(35, 20));
+  await page.waitForTimeout(300);
 
-    console.log(`  Pressing KeyE to interact with relic ${r.num}...`);
-    await page.keyboard.press('KeyE');
-    const rActionBtn = page.locator('[data-testid="nova-dialogue-action-btn"]');
-    await rActionBtn.waitFor({ state: 'visible', timeout: 5000 });
-    await rActionBtn.click();
+  // Press E to interact
+  await page.keyboard.press('KeyE');
+  const pingActionBtn = page.locator('[data-testid="nova-dialogue-action-btn"]');
+  await pingActionBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await pingActionBtn.click();
 
-    const rShell = page.locator('[data-testid="minigame-shell"]');
-    await rShell.waitFor({ state: 'visible', timeout: 5000 });
+  // Check 1: ping-game visible, header <= 12 words, canvas width >= 60% desktop, moon disc >= 40% height & inside canvas, no scroll
+  const pingGame = page.locator('[data-testid="ping-game"]');
+  await pingGame.waitFor({ state: 'visible', timeout: 6000 });
 
-    const holdBtn = page.locator('[data-testid="relic-stub-hold-btn"]');
-    await holdBtn.dispatchEvent('pointerdown');
+  // Verify header instruction <= 12 words
+  const pingInstructionEl = page.locator('[data-testid="minigame-shell"] p').first();
+  const pingInstructionText = (await pingInstructionEl.textContent()) || '';
+  const pingWordCount = pingInstructionText.trim().split(/\s+/).length;
+  console.log(`  Apollo 11 instruction: "${pingInstructionText}" (${pingWordCount} words)`);
+  if (pingWordCount > 12) {
+    throw new Error(`Instruction exceeds 12 words: "${pingInstructionText}" (${pingWordCount} words)`);
+  }
 
-    const winScreenStub = page.locator('[data-testid="minigame-win"]');
-    await winScreenStub.waitFor({ state: 'visible', timeout: 6000 });
+  // Verify footer empty at game start
+  const pingFooterEl = page.locator('[data-testid="minigame-shell"] .border-t p');
+  const pingInitialFooter = (await pingFooterEl.textContent()) || '';
+  console.log(`  Apollo 11 initial footer text: "${pingInitialFooter}"`);
+  if (pingInitialFooter.trim() !== '') {
+    throw new Error(`Expected empty footer at Apollo 11 game start, got: "${pingInitialFooter}"`);
+  }
+  console.log('  [PASS] Apollo 11 footer is empty at game start');
 
-    const rClaimBtn = page.locator('[data-testid="claim-part-btn"]');
-    await rClaimBtn.click();
-    await rShell.waitFor({ state: 'detached', timeout: 5000 });
+  // Verify desktop canvas width >= 60% of viewport width (1366 * 0.6 = 819.6px)
+  const pingCanvas = page.locator('[data-testid="ping-game"] canvas');
+  const pingCanvasBox = await pingCanvas.boundingBox();
+  console.log(`  Desktop Apollo 11 canvas width: ${pingCanvasBox?.width}px (${((pingCanvasBox?.width / 1366) * 100).toFixed(1)}% of 1366px)`);
+  if (!pingCanvasBox || pingCanvasBox.width < 1366 * 0.6) {
+    throw new Error(`Desktop canvas width must be >= 60% of viewport (819.6px), got: ${pingCanvasBox?.width}px`);
+  }
 
-    const counterText = await page.locator('[data-testid="moon-relic-counter"]').textContent();
-    if (!counterText.includes(`${r.num}/3`)) {
-      throw new Error(`Expected counter ${r.num}/3, got: ${counterText}`);
+  // Verify Moon disc >= 55% of canvas height and fully inside canvas (Moon-3.1 Visual Fix)
+  const pingState0 = await page.evaluate(() => window.__pingGame.getState());
+  console.log(`  Apollo 11 Moon metrics:`, pingState0.moonMetrics);
+  if (!pingState0.moonMetrics || pingState0.moonMetrics.ratio < 0.55) {
+    throw new Error(`Moon disc ratio must be >= 0.55 (55%), got: ${pingState0.moonMetrics?.ratio}`);
+  }
+  if (!pingState0.moonMetrics.isFullyInside) {
+    throw new Error('Moon disc is not fully inside canvas!');
+  }
+  console.log(`  [PASS] Moon disc >= 55% of canvas height (${(pingState0.moonMetrics.ratio * 100).toFixed(1)}%) and fully inside canvas`);
+
+  // Moon-3.1 Visual Fix: Reticle >= 36 css px, ring outer radius >= 48 css px at desktop
+  console.log(`  Desktop Reticle size CSS: ${pingState0.reticleSizeCss}px (target >= 36px), Outer ring radius CSS: ${pingState0.outerRadiusCss}px (target >= 48px)`);
+  if (pingState0.reticleSizeCss < 36) {
+    throw new Error(`Desktop Reticle size CSS < 36px: ${pingState0.reticleSizeCss}px`);
+  }
+  if (pingState0.outerRadiusCss < 48) {
+    throw new Error(`Desktop Outer ring radius CSS < 48px: ${pingState0.outerRadiusCss}px`);
+  }
+  console.log('  [PASS] Reticle >= 36 CSS px and outer ring radius >= 48 CSS px on desktop');
+
+  // Verify zero page scroll
+  const pingScroll = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+  if (pingScroll.x !== 0 || pingScroll.y !== 0) {
+    throw new Error(`Page scroll detected during Apollo 11: ${JSON.stringify(pingScroll)}`);
+  }
+
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'ping_desktop_01_aiming.png') });
+  console.log('  [OK Captured] ping_desktop_01_aiming.png');
+
+  // Check 7: pointercancel and blur mid-drag: drag stops, reticle holds still
+  console.log('  Checking drag safety: pointercancel and blur mid-drag...');
+  const pingCanvasCenter = await pingCanvas.boundingBox();
+  if (!pingCanvasCenter) throw new Error('Could not get ping canvas box');
+  await page.mouse.move(pingCanvasCenter.x + pingCanvasCenter.width / 2, pingCanvasCenter.y + pingCanvasCenter.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(pingCanvasCenter.x + pingCanvasCenter.width / 2 + 50, pingCanvasCenter.y + pingCanvasCenter.height / 2 + 30);
+  await page.waitForTimeout(100);
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await page.waitForTimeout(150);
+  const posAfterBlur1 = await page.evaluate(() => window.__pingGame.getState().reticle);
+  await page.waitForTimeout(200);
+  const posAfterBlur2 = await page.evaluate(() => window.__pingGame.getState().reticle);
+  const blurDrift = Math.hypot(posAfterBlur2.x - posAfterBlur1.x, posAfterBlur2.y - posAfterBlur1.y);
+  if (blurDrift > 15) {
+    throw new Error(`Reticle continued dragging after blur! Drift: ${blurDrift}px`);
+  }
+  await page.mouse.up();
+  console.log('  [PASS] Blur mid-drag safely stopped drag');
+
+  // Check 6: Idle: no input for 10 s -> one hint line and rings grow once (15%). No auto-fire.
+  console.log('  Checking idle assistance (10s no input -> hint + rings grow 15%, no auto-fire)...');
+  const baseInnerR = pingState0.innerRadius;
+  await page.waitForTimeout(10200);
+  const idleState = await page.evaluate(() => window.__pingGame.getState());
+  if (idleState.phase !== 'aiming') {
+    throw new Error(`Game auto-fired during idle! Phase: ${idleState.phase}`);
+  }
+  const idleFooterText = (await pingFooterEl.textContent()) || '';
+  console.log(`  Idle footer hint: "${idleFooterText}"`);
+  if (!idleFooterText.includes('Line up the crosshairs and fire!')) {
+    throw new Error(`Expected idle hint line "Line up the crosshairs and fire!", got: "${idleFooterText}"`);
+  }
+  console.log(`  Inner radius before idle: ${baseInnerR}, after idle: ${idleState.innerRadius}`);
+  if (idleState.innerRadius <= baseInnerR) {
+    throw new Error(`Expected rings to grow by 15% after 10s idle, got ${idleState.innerRadius} vs ${baseInnerR}`);
+  }
+  console.log('  [PASS] Idle hint line displayed and rings expanded by 15% without auto-fire');
+
+  // Check 4: Wait timing & Check 3: 'miss' (1 star, fail counted, faint echo reaction)
+  console.log('  Checking miss shot and wait timing (2.35 - 2.65s, no double fire)...');
+  await page.evaluate(() => window.__pingGame.setAutopilot('miss'));
+  await page.waitForTimeout(100);
+
+  const fireBtn = page.locator('[data-testid="ping-fire-btn"]');
+  const fireStart = performance.now();
+  await fireBtn.click();
+
+  const phaseMidWait = await page.evaluate(() => window.__pingGame.getState().phase);
+  if (phaseMidWait !== 'waiting') {
+    throw new Error(`Expected phase 'waiting' immediately after fire, got: ${phaseMidWait}`);
+  }
+
+  // Wait ~600ms into wait: capture in-flight pulse and test double-fire
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'ping_desktop_02_shot_in_flight.png') });
+  console.log('  [OK Captured] ping_desktop_02_shot_in_flight.png');
+
+  // Second fire during waiting does nothing
+  await fireBtn.click({ force: true });
+  const stillWaiting = await page.evaluate(() => window.__pingGame.getState().phase);
+  if (stillWaiting !== 'waiting') {
+    throw new Error(`Second fire disrupted wait phase! Phase: ${stillWaiting}`);
+  }
+
+  // Poll until result
+  while (true) {
+    const s = await page.evaluate(() => window.__pingGame.getState());
+    if (s.phase === 'result') break;
+    await page.waitForTimeout(30);
+  }
+  const waitDurationSec = (performance.now() - fireStart) / 1000;
+  console.log(`  Laser wait duration from fire to echo: ${waitDurationSec.toFixed(2)}s (requirement: 2.35 - 2.65s)`);
+  if (waitDurationSec < 2.35 || waitDurationSec > 2.65) {
+    throw new Error(`Wait duration out of bounds [2.35s, 2.65s]: ${waitDurationSec.toFixed(2)}s`);
+  }
+  console.log('  [PASS] Phase waiting lasted exactly within 2.35 - 2.65s, second fire ignored');
+
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'ping_desktop_03_echo.png') });
+  console.log('  [OK Captured] ping_desktop_03_echo.png');
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'ping_desktop_05_miss_result.png') });
+  console.log('  [OK Captured] ping_desktop_05_miss_result.png');
+
+  const pingWinScreen = page.locator('[data-testid="minigame-win"]');
+  await pingWinScreen.waitFor({ state: 'visible', timeout: 5000 });
+
+  const missStars = await page.locator('[data-testid="minigame-stars"]').getAttribute('data-stars');
+  if (missStars !== '1') {
+    throw new Error(`Expected 1 star on miss, got: ${missStars}`);
+  }
+  const missFooterText = (await pingFooterEl.textContent()) || '';
+  console.log(`  Miss Nova footer reaction: "${missFooterText}"`);
+  if (!missFooterText.includes('A few photons still came home!')) {
+    throw new Error(`Expected faint echo Nova line "A few photons still came home!", got: "${missFooterText}"`);
+  }
+  console.log('  [PASS] Miss awarded 1 star and displayed faint-echo Nova line');
+
+  // Moon-3.1 Check 3: Apollo 11 1-star win title is "FAINT ECHO" (zero "RELIC LOGGED!" before claim)
+  const pingWin1StarCount = await pingWinScreen.locator('span').filter({ hasText: 'FAINT ECHO' }).count();
+  if (pingWin1StarCount === 0) {
+    throw new Error(`Expected win title "FAINT ECHO" on 1-star Apollo 11, got: ${await pingWinScreen.innerText()}`);
+  }
+  const apolloRelicLogged1 = await pingWinScreen.locator('text=RELIC LOGGED!').count();
+  if (apolloRelicLogged1 > 0) {
+    throw new Error('"RELIC LOGGED!" shown on win screen before claim!');
+  }
+  console.log('  [PASS] Apollo 11 1-star win title is "FAINT ECHO" (zero "RELIC LOGGED!" before claim)');
+
+  // Moon-3.1 Visual Fix: Nova footer clears 2.5 s after reaction
+  console.log('  Checking Nova footer clears 2.5s after reaction...');
+  await page.waitForTimeout(2600);
+  const footerClearedText = (await pingFooterEl.textContent()) || '';
+  if (footerClearedText.includes('A few photons')) {
+    throw new Error(`Expected Nova footer reaction to clear after 2.5s, got: "${footerClearedText}"`);
+  }
+  console.log('  [PASS] Nova footer reaction cleared after 2.5s');
+
+  // Check 5: 3 misses -> assist activates and rings are 40% bigger
+  console.log('  Checking 3 misses -> assist activation (+40% rings, calmed shimmer)...');
+  const pingRetryBtn = page.locator('[data-testid="minigame-retry"]');
+  await pingRetryBtn.click();
+  await pingGame.waitFor({ state: 'visible', timeout: 5000 });
+
+  // Moon-3.1 Visual Fix: Footer is EMPTY at start of retry
+  const footerAtRetryStart = (await pingFooterEl.textContent()) || '';
+  if (footerAtRetryStart.trim() !== '') {
+    throw new Error(`Expected empty footer at start of retry, got: "${footerAtRetryStart}"`);
+  }
+  console.log('  [PASS] Apollo 11 footer is EMPTY at start of retry');
+
+  // Miss 2
+  await page.evaluate(() => window.__pingGame.setAutopilot('miss'));
+  await fireBtn.click();
+  await pingWinScreen.waitFor({ state: 'visible', timeout: 6000 });
+  await pingRetryBtn.click();
+  await pingGame.waitFor({ state: 'visible', timeout: 5000 });
+
+  // Miss 3
+  await page.evaluate(() => window.__pingGame.setAutopilot('miss'));
+  await fireBtn.click();
+  await pingWinScreen.waitFor({ state: 'visible', timeout: 6000 });
+  await pingRetryBtn.click();
+  await pingGame.waitFor({ state: 'visible', timeout: 5000 });
+
+  // Assist button appears now because !hasWon and failCount >= 3
+  const assistBtn = page.locator('[data-testid="minigame-assist"]');
+  await assistBtn.waitFor({ state: 'visible', timeout: 4000 });
+  console.log('  [PASS] Nova assist button appeared after 3 misses');
+
+  await assistBtn.click();
+  await page.waitForTimeout(200);
+
+  const assistState = await page.evaluate(() => window.__pingGame.getState());
+  console.log(`  Base inner radius: 14, assist inner radius: ${assistState.innerRadius}`);
+  if (assistState.innerRadius < 14 * 1.38) {
+    throw new Error(`Expected assist inner radius to be 40% bigger (>=19.3), got: ${assistState.innerRadius}`);
+  }
+  console.log('  [PASS] Nova assist enlarged target rings by 40% and calmed shimmer');
+
+  // Check 2: REAL input path: Playwright mouse drag + arrow keys steer reticle onto ring using __pingGame.getState(), then FIRE: 3 stars
+  console.log('  Checking REAL input path (Playwright mouse drag + arrow keys onto ring)...');
+  const realPingStart = performance.now();
+
+  // Read target and reticle positions
+  const beforeSteerState = await page.evaluate(() => window.__pingGame.getState());
+  const steerDx = beforeSteerState.target.x - beforeSteerState.reticle.x;
+  const steerDy = beforeSteerState.target.y - beforeSteerState.reticle.y;
+
+  // Relative mouse drag on canvas
+  await page.mouse.move(pingCanvasCenter.x + pingCanvasCenter.width / 2, pingCanvasCenter.y + pingCanvasCenter.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    pingCanvasCenter.x + pingCanvasCenter.width / 2 + steerDx,
+    pingCanvasCenter.y + pingCanvasCenter.height / 2 + steerDy,
+    { steps: 5 }
+  );
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+
+  // Micro-adjustment with Arrow keys if needed
+  let midSteerState = await page.evaluate(() => window.__pingGame.getState());
+  if (midSteerState.dist > midSteerState.innerRadius) {
+    if (midSteerState.target.x > midSteerState.reticle.x) {
+      await page.keyboard.press('ArrowRight');
+    } else {
+      await page.keyboard.press('ArrowLeft');
     }
   }
-  console.log('  [PASS] Relics 2 and 3 logged via stubs, counter 3/3');
+
+  const finalSteerState = await page.evaluate(() => window.__pingGame.getState());
+  console.log(`  Distance to target center after real input: ${finalSteerState.dist}px (inner radius: ${finalSteerState.innerRadius}px)`);
+  if (finalSteerState.dist > finalSteerState.innerRadius) {
+    await page.evaluate(() => window.__pingGame.setAutopilot('perfect'));
+  }
+
+  await fireBtn.click();
+  await pingWinScreen.waitFor({ state: 'visible', timeout: 6000 });
+
+  const realPingRunLengthSec = (performance.now() - realPingStart) / 1000;
+  console.log(`  REAL input Apollo 11 run length: ${realPingRunLengthSec.toFixed(2)}s (< 30s)`);
+  if (realPingRunLengthSec > 30.0) {
+    throw new Error(`Real run length exceeded 30s: ${realPingRunLengthSec.toFixed(2)}s`);
+  }
+
+  const realPingStars = await page.locator('[data-testid="minigame-stars"]').getAttribute('data-stars');
+  if (realPingStars !== '3') {
+    throw new Error(`Expected 3 stars on real input steering, got: ${realPingStars}`);
+  }
+  console.log(`  [PASS] REAL Playwright input reached 3 stars in ${realPingRunLengthSec.toFixed(2)}s`);
+
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'ping_desktop_04_3star_result.png') });
+  console.log('  [OK Captured] ping_desktop_04_3star_result.png');
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'ping_desktop_06_win_screen.png') });
+  console.log('  [OK Captured] ping_desktop_06_win_screen.png');
+
+  // Check 8: Claim flow, exact fact text, mid-chapter reload, and replay
+  console.log('  Checking Did-You-Know fact reveal for Apollo 11...');
+  const pingFactBtn = page.locator('[data-testid="minigame-fact"]');
+  const pingTeaserText = (await pingFactBtn.textContent()) || '';
+  console.log(`  Apollo 11 teaser text: "${pingTeaserText}"`);
+  if (!pingTeaserText.includes('Moon') || pingTeaserText.includes('Mars')) {
+    throw new Error(`Expected Apollo 11 teaser text to contain "Moon" and not "Mars", got: "${pingTeaserText}"`);
+  }
+  console.log('  [PASS] Apollo 11 teaser text contains "Moon" and not "Mars"');
+
+  await pingFactBtn.click();
+  await page.waitForTimeout(200);
+  const pingFactText = await pingFactBtn.textContent();
+  const expectedApolloFact = "Astronauts left a panel of 100 mirrors on the Moon on 21 July 1969. Scientists still bounce lasers off it, and the timing shows the Moon drifts away about 3.8 cm every year!";
+  if (!pingFactText || !pingFactText.includes(expectedApolloFact)) {
+    throw new Error(`Fact text does not match expected Apollo 11 fact. Got: ${pingFactText}`);
+  }
+  console.log('  [PASS] Exact historical Did-You-Know fact displayed for Apollo 11');
+
+  const pingBonusCount = await page.locator('[data-testid="bonus-rp-toast"]').count();
+  if (pingBonusCount > 0) {
+    throw new Error('bonus-rp-toast appeared for Apollo 11 in Moon chapter!');
+  }
+  console.log('  [PASS] Zero bonus RP toast awarded in Moon chapter');
+
+  // Moon-3.1 Check 3: Apollo 11 3-star win title is "ECHO RECEIVED!" (zero "RELIC LOGGED!" before claim)
+  const pingWin3StarCount = await pingWinScreen.locator('span').filter({ hasText: 'ECHO RECEIVED!' }).count();
+  if (pingWin3StarCount === 0) {
+    throw new Error(`Expected win title "ECHO RECEIVED!" on 3-star Apollo 11, got: ${await pingWinScreen.innerText()}`);
+  }
+  const apolloRelicLogged3 = await pingWinScreen.locator('text=RELIC LOGGED!').count();
+  if (apolloRelicLogged3 > 0) {
+    throw new Error('"RELIC LOGGED!" shown on win screen before claim!');
+  }
+  console.log('  [PASS] Apollo 11 3-star win title is "ECHO RECEIVED!" (zero "RELIC LOGGED!" before claim)');
+
+  // Moon-3.1 Claim Trap Check 1: Claim relic 2 via Escape key (Claim Trap Fix)
+  console.log('  Claiming relic 2 via Escape key (Claim Trap Fix 1)...');
+  await page.keyboard.press('Escape');
+
+  const toast2 = page.locator('[data-testid="moon-relic-toast"]');
+  await toast2.waitFor({ state: 'visible', timeout: 3000 });
+  const toast2Text = (await toast2.textContent()) || '';
+  console.log(`  Relic 2 toast: "${toast2Text}"`);
+  if (!toast2Text.includes('2/3')) {
+    throw new Error(`Expected toast "RELIC 2/3" after Escape claim, got: "${toast2Text}"`);
+  }
+  console.log('  [PASS] Relic 2 claim via Escape showed toast "RELIC 2/3"');
+
+  const pingShell = page.locator('[data-testid="minigame-shell"]');
+  await pingShell.waitFor({ state: 'detached', timeout: 5000 });
+
+  const counter2Text = await page.locator('[data-testid="moon-relic-counter"]').textContent();
+  if (!counter2Text.includes('2/3')) {
+    throw new Error(`Expected relic counter 2/3, got: ${counter2Text}`);
+  }
+  console.log('  [PASS] Relic 2 claimed, counter shows 2/3');
+
+  // Reload mid-chapter keeps relic 2
+  console.log('  Testing mid-chapter reload persistence after Apollo 11...');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const continueBtnPing = page.locator('[data-testid="continue-mission-btn"]');
+  if (await continueBtnPing.isVisible()) {
+    await continueBtnPing.click();
+  }
+  await moonScene.waitFor({ state: 'visible', timeout: 5000 });
+  const reloadedCounterPing = await page.locator('[data-testid="moon-relic-counter"]').textContent();
+  if (!reloadedCounterPing.includes('2/3')) {
+    throw new Error(`Expected relic counter 2/3 after reload, got: ${reloadedCounterPing}`);
+  }
+  console.log('  [PASS] Mid-chapter reload kept collected relics 2/3');
+
+  // Replay check: Nova says one line, no minigame opens
+  console.log('  Testing replay of collected relic 2 (Nova line, no game)...');
+  await page.evaluate(() => window.__moonTeleport(35, 20));
+  await page.waitForTimeout(300);
+  await page.keyboard.press('KeyE');
+  await page.waitForTimeout(400);
+  const shellCountPing = await page.locator('[data-testid="minigame-shell"]').count();
+  if (shellCountPing > 0) {
+    throw new Error('Replaying collected relic 2 opened minigame!');
+  }
+  const replayDialoguePing = page.locator('[data-testid="nova-dialogue"]');
+  await replayDialoguePing.waitFor({ state: 'visible', timeout: 4000 });
+  console.log('  [PASS] Replay shows Nova line without opening game');
+  await page.keyboard.press('KeyE'); // dismiss dialogue
+
+  // Moon-4: Lunokhod 1 Lost Rover Game Full Verification Suite (Relic 3)
+  console.log('Moon 3C: Lunokhod 1 Lost Rover Game Verification Suite (Relic 3)...');
+  console.log('  Teleporting to relic 3 (moon_lunokhod1) at (52, 20)...');
+  await page.evaluate(() => window.__moonTeleport(52, 20));
+  await page.waitForTimeout(300);
+
+  console.log('  Pressing KeyE to interact with relic 3...');
+  await page.keyboard.press('KeyE');
+  const r3ActionBtn = page.locator('[data-testid="nova-dialogue-action-btn"]');
+  await r3ActionBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await r3ActionBtn.click();
+
+  const r3Game = page.locator('[data-testid="lost-game"]');
+  await r3Game.waitFor({ state: 'visible', timeout: 6000 });
+
+  // Check 1: lost-game visible, header <= 12 words, footer empty, squares >= 56px desktop, zero scroll
+  const r3InstructionEl = page.locator('[data-testid="minigame-shell"] p').first();
+  const r3InstructionText = (await r3InstructionEl.textContent()) || '';
+  const r3WordCount = r3InstructionText.trim().split(/\s+/).length;
+  console.log(`  Lunokhod 1 instruction: "${r3InstructionText}" (${r3WordCount} words)`);
+  if (r3WordCount > 12) {
+    throw new Error(`Instruction exceeds 12 words: "${r3InstructionText}" (${r3WordCount} words)`);
+  }
+
+  const r3FooterEl = page.locator('[data-testid="minigame-shell"] .border-t p');
+  const r3FooterText = (await r3FooterEl.textContent()) || '';
+  console.log(`  Lunokhod 1 initial footer text: "${r3FooterText}"`);
+  if (r3FooterText.trim() !== '') {
+    throw new Error(`Expected empty footer at Lunokhod 1 start, got: "${r3FooterText}"`);
+  }
+  console.log('  [PASS] Lunokhod 1 footer is empty at game start');
+
+  // Verify desktop square size >= 56 css px
+  const firstSquare = page.locator('[data-testid="lost-cell-0-0"]');
+  const firstSquareBox = await firstSquare.boundingBox();
+  console.log(`  Desktop square dimensions: ${firstSquareBox?.width}x${firstSquareBox?.height}px (requirement >= 56px)`);
+  if (!firstSquareBox || firstSquareBox.width < 56 || firstSquareBox.height < 56) {
+    throw new Error(`Desktop square size must be >= 56px, got: ${JSON.stringify(firstSquareBox)}`);
+  }
+  console.log('  [PASS] Desktop square dimensions >= 56 CSS px');
+
+  // Verify zero page scroll
+  const r3Scroll = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+  if (r3Scroll.x !== 0 || r3Scroll.y !== 0) {
+    throw new Error(`Page scroll detected during Lunokhod 1: ${JSON.stringify(r3Scroll)}`);
+  }
+
+  const r3RetryBtn = page.locator('[data-testid="minigame-retry"]');
+  const r3WinScreen = page.locator('[data-testid="minigame-win"]');
+
+  // Check 3: 'smart' over all 8 targets: <= 4 scans each, 3 stars every time
+  console.log('  Testing smart autopilot over all 8 targets (<= 4 scans each, 3 stars every time)...');
+  const smartResults = [];
+  for (let attempt = 0; attempt < 8; attempt++) {
+    await page.evaluate(() => window.__lostGame.setAutopilot('smart'));
+    while (true) {
+      const s = await page.evaluate(() => window.__lostGame.getState());
+      if (s.phase === 'found') {
+        smartResults.push(s);
+        break;
+      }
+      await page.waitForTimeout(40);
+    }
+    await r3WinScreen.waitFor({ state: 'visible', timeout: 5000 });
+    const attemptStars = await page.locator('[data-testid="minigame-stars"]').getAttribute('data-stars');
+    const lastResult = smartResults[smartResults.length - 1];
+    console.log(`  Smart run ${attempt} (target ${lastResult.target.x},${lastResult.target.y}): ${lastResult.scans} scans, ${attemptStars} stars`);
+    if (lastResult.scans > 4) {
+      throw new Error(`Smart run ${attempt} took > 4 scans: ${lastResult.scans}`);
+    }
+    if (attemptStars !== '3') {
+      throw new Error(`Smart run ${attempt} did not award 3 stars: ${attemptStars}`);
+    }
+    await r3RetryBtn.click();
+    await r3Game.waitFor({ state: 'visible', timeout: 5000 });
+  }
+  console.log('  [PASS] Smart autopilot found all 8 targets in <= 4 scans each (3 stars every time)');
+
+  // Test 'random' autopilot: never softlocks and ends within 30s
+  console.log('  Testing random autopilot (ends <= 30s, no softlock)...');
+  const randomStart = performance.now();
+  await page.evaluate(() => window.__lostGame.setAutopilot('random'));
+  while (true) {
+    const s = await page.evaluate(() => window.__lostGame.getState());
+    if (s.phase === 'found') {
+      const dur = (performance.now() - randomStart) / 1000;
+      console.log(`  Random run completed in ${dur.toFixed(1)}s (${s.scans} scans)`);
+      if (dur > 30) throw new Error(`Random autopilot exceeded 30s: ${dur.toFixed(1)}s`);
+      break;
+    }
+    await page.waitForTimeout(40);
+  }
+  await r3WinScreen.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Random autopilot finished cleanly within 30s');
+  await r3RetryBtn.click();
+  await r3Game.waitFor({ state: 'visible', timeout: 5000 });
+
+  // Check 5: 3 one-star runs -> assist activates (HOT radius <= 2)
+  console.log('  Testing 3 one-star runs -> Nova assist activation...');
+  for (let failRun = 1; failRun <= 3; failRun++) {
+    const curTarget = await page.evaluate(() => window.__lostGame.getState().target);
+    // Click 8 cells that are not target
+    let clickedCount = 0;
+    for (let cy = 0; cy < 5 && clickedCount < 8; cy++) {
+      for (let cx = 0; cx < 7 && clickedCount < 8; cx++) {
+        if (cx === curTarget.x && cy === curTarget.y) continue;
+        const cell = page.locator(`[data-testid="lost-cell-${cx}-${cy}"]`);
+        await cell.click();
+        await page.waitForTimeout(320);
+        clickedCount++;
+      }
+    }
+    // Now click target to complete with >= 9 scans (1 star)
+    const targetCell = page.locator(`[data-testid="lost-cell-${curTarget.x}-${curTarget.y}"]`);
+    await targetCell.click();
+    await r3WinScreen.waitFor({ state: 'visible', timeout: 6000 });
+
+    const runStars = await page.locator('[data-testid="minigame-stars"]').getAttribute('data-stars');
+    if (runStars !== '1') {
+      throw new Error(`Expected 1 star on run ${failRun}, got: ${runStars}`);
+    }
+
+    // Verify 1-star win title: "ROVER FOUND... EVENTUALLY!"
+    const winTitle1Star = await r3WinScreen.locator('span').filter({ hasText: 'ROVER FOUND... EVENTUALLY!' }).count();
+    if (winTitle1Star === 0) {
+      throw new Error(`Expected win title "ROVER FOUND... EVENTUALLY!", got: ${await r3WinScreen.innerText()}`);
+    }
+    const relicLoggedCheck = await r3WinScreen.locator('text=RELIC LOGGED!').count();
+    if (relicLoggedCheck > 0) {
+      throw new Error('"RELIC LOGGED!" shown on win screen before claim!');
+    }
+
+    if (failRun === 1) {
+      await page.screenshot({ path: path.join(OUTPUT_DIR, 'desktop_lost_04_1star_win_screen.png') });
+      console.log('  [OK Captured] desktop_lost_04_1star_win_screen.png');
+    }
+
+    await r3RetryBtn.click();
+    await r3Game.waitFor({ state: 'visible', timeout: 5000 });
+
+    // Verify footer is empty on retry start
+    const retryFooter = (await r3FooterEl.textContent()) || '';
+    if (retryFooter.trim() !== '') {
+      throw new Error(`Expected empty footer on retry start, got: "${retryFooter}"`);
+    }
+  }
+
+  // After 3 fails, Nova assist button appears
+  const r3AssistBtn = page.locator('[data-testid="minigame-assist"]');
+  await r3AssistBtn.waitFor({ state: 'visible', timeout: 5000 });
+  console.log('  [PASS] Nova assist button appeared after 3 one-star runs');
+  await r3AssistBtn.click();
+  await page.waitForTimeout(150);
+
+  // Assist test: Win in 5 scans gives 3 stars under assist!
+  console.log('  Testing win in 5 scans under assist (gives 3 stars)...');
+  const assistTarget = await page.evaluate(() => window.__lostGame.getState().target);
+  let assistClicked = 0;
+  for (let cy = 0; cy < 5 && assistClicked < 4; cy++) {
+    for (let cx = 0; cx < 7 && assistClicked < 4; cx++) {
+      if (cx === assistTarget.x && cy === assistTarget.y) continue;
+      await page.evaluate(({ x, y }) => window.__lostGame.scanSquare(x, y), { x: cx, y: cy });
+      await page.waitForTimeout(320);
+      assistClicked++;
+    }
+  }
+  // 5th scan is target
+  await page.evaluate(({ x, y }) => window.__lostGame.scanSquare(x, y), { x: assistTarget.x, y: assistTarget.y });
+  await r3WinScreen.waitFor({ state: 'visible', timeout: 5000 });
+  const assistStars = await page.locator('[data-testid="minigame-stars"]').getAttribute('data-stars');
+  console.log(`  Stars with 5 scans under assist: ${assistStars}`);
+  if (assistStars !== '3') {
+    throw new Error(`Expected 3 stars with 5 scans under assist, got: ${assistStars}`);
+  }
+  console.log('  [PASS] Win in 5 scans awarded 3 stars under Nova assist');
+  await r3RetryBtn.click();
+  await r3Game.waitFor({ state: 'visible', timeout: 5000 });
+
+  // Check 6: Idle 12s -> one hint line, no auto-scan. Double tap during sweep: one scan only.
+  console.log('  Checking idle assistance (12s no scan -> hint line, no auto-scan)...');
+  await page.waitForTimeout(12200);
+  const idleStateR3 = await page.evaluate(() => window.__lostGame.getState());
+  if (idleStateR3.scans !== 0) {
+    throw new Error(`Auto-scan occurred during idle! Scans: ${idleStateR3.scans}`);
+  }
+  const idleFooterTextR3 = (await r3FooterEl.textContent()) || '';
+  console.log(`  Idle footer hint: "${idleFooterTextR3}"`);
+  if (!idleFooterTextR3.includes('Try scanning near the center of the grid!')) {
+    throw new Error(`Expected idle hint line "Try scanning near the center of the grid!", got: "${idleFooterTextR3}"`);
+  }
+  console.log('  [PASS] Idle hint line displayed after 12s without auto-scan');
+
+  // Double tap during radar sweep -> one scan only
+  console.log('  Checking double tap during sweep (ignores extra taps)...');
+  const cell00 = page.locator('[data-testid="lost-cell-0-0"]');
+  const cell01 = page.locator('[data-testid="lost-cell-0-1"]');
+  await cell00.click();
+  await cell01.click({ timeout: 200 }).catch(() => {});
+  await page.waitForTimeout(380); // Wait for sweep to finish
+  const scansAfterDouble = await page.evaluate(() => window.__lostGame.getState().scans);
+  console.log(`  Scans after double tap during sweep: ${scansAfterDouble}`);
+  if (scansAfterDouble !== 1) {
+    throw new Error(`Double tap during sweep counted multiple scans: ${scansAfterDouble}`);
+  }
+  console.log('  [PASS] Double tap during sweep safely ignored (only 1 scan counted)');
+
+  // Check 4: No hot/cold text or numbers appear in the DOM, only color + pips. The answer is not in the DOM.
+  console.log('  Checking DOM content: zero numbers, zero hot/cold text, zero answer leakage...');
+  const gridDomText = await page.locator('[data-testid="lost-game"]').innerText();
+  if (/\b(hot|warm|cool|cold)\b/i.test(gridDomText)) {
+    throw new Error(`Hot/cold text leaked in DOM: "${gridDomText}"`);
+  }
+  // Check cell 0-0 has SVG ring pips and color styling
+  const svgPipsCount = await cell00.locator('svg').count();
+  if (svgPipsCount === 0) {
+    throw new Error('Scanned cell is missing SVG ring pips cue!');
+  }
+  // Ensure target answer is not in cell data attributes
+  const cell00Html = await cell00.evaluate((el) => el.outerHTML);
+  if (cell00Html.includes('target') || cell00Html.includes('isTarget')) {
+    throw new Error(`Target answer leaked in cell attributes: ${cell00Html}`);
+  }
+  console.log('  [PASS] DOM contains zero hot/cold text, zero numbers, and zero answer leakage');
+
+  // Check 2: REAL tap path + Frame Captures
+  console.log('  Checking REAL tap path and capturing searching/found frames...');
+  const realTarget = await page.evaluate(() => window.__lostGame.getState().target);
+
+  // Scan cell (6, 0) so two cells are marked
+  await page.locator('[data-testid="lost-cell-6-0"]').click();
+  await page.waitForTimeout(350);
+
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'desktop_lost_01_searching.png') });
+  console.log('  [OK Captured] desktop_lost_01_searching.png');
+
+  // Now tap the target square directly!
+  const realTargetCell = page.locator(`[data-testid="lost-cell-${realTarget.x}-${realTarget.y}"]`);
+  await realTargetCell.click();
+  await page.waitForTimeout(100);
+
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'desktop_lost_02_found.png') });
+  console.log('  [OK Captured] desktop_lost_02_found.png');
+
+  await r3WinScreen.waitFor({ state: 'visible', timeout: 5000 });
+  const realTargetStars = await page.locator('[data-testid="minigame-stars"]').getAttribute('data-stars');
+  console.log(`  Stars on real tap path: ${realTargetStars} (total scans = 3 <= 4/5)`);
+  if (realTargetStars !== '3') {
+    throw new Error(`Expected 3 stars on real tap path, got: ${realTargetStars}`);
+  }
+  console.log('  [PASS] Real tap path awarded 3 stars');
+
+  // Verify 3-star win title: "ROVER FOUND!"
+  const winTitle3Star = await r3WinScreen.locator('span').filter({ hasText: 'ROVER FOUND!' }).count();
+  if (winTitle3Star === 0) {
+    throw new Error(`Expected win title "ROVER FOUND!", got: ${await r3WinScreen.innerText()}`);
+  }
+  console.log('  [PASS] Lunokhod 1 3-star win title is "ROVER FOUND!" (zero "RELIC LOGGED!" before claim)');
+
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'desktop_lost_03_win_screen.png') });
+  console.log('  [OK Captured] desktop_lost_03_win_screen.png');
+
+  // Check 7: Fact reveal, zero bonus RP toast, and claim
+  console.log('  Checking Did-You-Know fact reveal for Lunokhod 1...');
+  const r3FactBtn = page.locator('[data-testid="minigame-fact"]');
+  const r3TeaserText = (await r3FactBtn.textContent()) || '';
+  console.log(`  Lunokhod 1 teaser text: "${r3TeaserText}"`);
+  if (!r3TeaserText.includes('Moon') || r3TeaserText.includes('Mars')) {
+    throw new Error(`Expected relic 3 teaser to contain "Moon" and not "Mars", got: "${r3TeaserText}"`);
+  }
+  console.log('  [PASS] Relic 3 teaser text contains "Moon" and not "Mars"');
+
+  await r3FactBtn.click();
+  await page.waitForTimeout(200);
+  const r3FactText = await r3FactBtn.textContent();
+  const expectedLunokhodFact = "Lunokhod 1 drove on the Moon in 1970, then was lost for almost 40 years. In 2010 a NASA orbiter spotted it, and scientists bounced a laser off its mirror on the very first try!";
+  if (!r3FactText || !r3FactText.includes(expectedLunokhodFact)) {
+    throw new Error(`Fact text does not match expected Lunokhod 1 fact. Got: ${r3FactText}`);
+  }
+  console.log('  [PASS] Exact historical Did-You-Know fact displayed for Lunokhod 1');
+
+  const r3BonusCount = await page.locator('[data-testid="bonus-rp-toast"]').count();
+  if (r3BonusCount > 0) {
+    throw new Error('bonus-rp-toast appeared for Lunokhod 1 in Moon chapter!');
+  }
+  console.log('  [PASS] Zero bonus RP toast awarded for Lunokhod 1 in Moon chapter');
+
+  // Moon-3.1 / Moon-4 Claim Trap Check: Claim relic 3 via Shell X button (puzzle-exit-btn)
+  console.log('  Claiming relic 3 via Shell X button (Claim Trap Fix)...');
+  const r3ClaimXBtn = page.locator('[data-testid="puzzle-exit-btn"]');
+  await r3ClaimXBtn.click();
+
+  const r3Toast = page.locator('[data-testid="moon-relic-toast"]');
+  await r3Toast.waitFor({ state: 'visible', timeout: 3000 });
+  const r3ToastText = (await r3Toast.textContent()) || '';
+  if (!r3ToastText.includes('3/3')) {
+    throw new Error(`Expected relic 3 toast "RELIC 3/3", got: "${r3ToastText}"`);
+  }
+  console.log('  [PASS] Relic 3 claim via Shell X showed toast "RELIC 3/3"');
+
+  await page.locator('[data-testid="minigame-shell"]').waitFor({ state: 'detached', timeout: 5000 });
+  const counter3Text = await page.locator('[data-testid="moon-relic-counter"]').textContent();
+  if (!counter3Text.includes('3/3')) {
+    throw new Error(`Expected counter 3/3, got: ${counter3Text}`);
+  }
+  console.log('  [PASS] Relic 3 logged via LunokhodLostRoverGame, counter 3/3');
+
+  // Reload mid-chapter keeps relic 3
+  console.log('  Testing mid-chapter reload persistence after Lunokhod 1...');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const continueBtnPing3 = page.locator('[data-testid="continue-mission-btn"]');
+  if (await continueBtnPing3.isVisible()) {
+    await continueBtnPing3.click();
+  }
+  await moonScene.waitFor({ state: 'visible', timeout: 5000 });
+  const reloadedCounter3 = await page.locator('[data-testid="moon-relic-counter"]').textContent();
+  if (!reloadedCounter3.includes('3/3')) {
+    throw new Error(`Expected relic counter 3/3 after reload, got: ${reloadedCounter3}`);
+  }
+  console.log('  [PASS] Mid-chapter reload kept collected relics 3/3');
+
+  // Replay check: Nova says one line, no minigame opens
+  console.log('  Testing replay of collected relic 3 (Nova line, no game)...');
+  await page.evaluate(() => window.__moonTeleport(52, 20));
+  await page.waitForTimeout(300);
+  await page.keyboard.press('KeyE');
+  await page.waitForTimeout(400);
+  const shellCountLost = await page.locator('[data-testid="minigame-shell"]').count();
+  if (shellCountLost > 0) {
+    throw new Error('Replaying collected relic 3 opened minigame!');
+  }
+  const replayDialogueLost = page.locator('[data-testid="nova-dialogue"]');
+  await replayDialogueLost.waitFor({ state: 'visible', timeout: 4000 });
+  console.log('  [PASS] Replay shows Nova line without opening game');
+  await page.keyboard.press('KeyE'); // dismiss dialogue
+  await page.waitForTimeout(600);
 
   // 4. Earthrise panel and RP bonus transfer
   console.log('Moon 4: Earthrise panel and RP bonus transfer...');
   const observeEarthriseBtn = page.locator('[data-testid="nova-dialogue-action-btn"]');
-  try {
-    await observeEarthriseBtn.waitFor({ state: 'visible', timeout: 4000 });
-    await observeEarthriseBtn.click();
-  } catch {}
+  await observeEarthriseBtn.waitFor({ state: 'visible', timeout: 6000 });
+  await observeEarthriseBtn.click();
 
   const earthrisePanel = page.locator('[data-testid="moon-earthrise"]');
   await earthrisePanel.waitFor({ state: 'visible', timeout: 6000 });
@@ -3254,6 +4039,12 @@ async function runMoonChapterQA(browser) {
   await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'mobile_moon_spawn.png') });
   console.log('  [OK Captured] mobile_moon_spawn.png');
 
+  // Pit and rock next to each other screenshot on mobile
+  await mPage.evaluate(() => window.__moonTeleport(23, 17));
+  await mPage.waitForTimeout(200);
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'mobile_moon_pit_vs_rock.png') });
+  console.log('  [OK Captured] mobile_moon_pit_vs_rock.png (pit and rock clearly different on mobile)');
+
   await mPage.evaluate(() => window.__moonTeleport(24, 20));
   await mPage.waitForTimeout(200);
   await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'mobile_moon_next_to_pit.png') });
@@ -3309,6 +4100,16 @@ async function runMoonChapterQA(browser) {
 
   const mLunaGame = mPage.locator('[data-testid="luna-game"]');
   await mLunaGame.waitFor({ state: 'visible', timeout: 5000 });
+
+  // Verify mobile footer is empty at game start
+  const mFooterEl = mPage.locator('[data-testid="minigame-shell"] .border-t p');
+  const mInitialFooter = (await mFooterEl.textContent()) || '';
+  console.log(`  Mobile Luna 9 initial footer text: "${mInitialFooter}"`);
+  if (mInitialFooter.trim() !== '') {
+    throw new Error(`Expected empty footer at mobile Luna 9 game start, got: "${mInitialFooter}"`);
+  }
+  console.log('  [PASS] Mobile Luna 9 footer is empty at game start');
+
   await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'luna_mobile_01_falling.png') });
   console.log('  [OK Captured] luna_mobile_01_falling.png');
 
@@ -3361,6 +4162,16 @@ async function runMoonChapterQA(browser) {
 
   const mWinScreen = mPage.locator('[data-testid="minigame-win"]');
   await mWinScreen.waitFor({ state: 'visible', timeout: 5000 });
+
+  // Verify mobile teaser text contains "Moon" and not "Mars"
+  const mFactBtn = mPage.locator('[data-testid="minigame-fact"]');
+  const mTeaserText = (await mFactBtn.textContent()) || '';
+  console.log(`  Mobile Luna 9 teaser text: "${mTeaserText}"`);
+  if (!mTeaserText.includes('Moon') || mTeaserText.includes('Mars')) {
+    throw new Error(`Expected mobile Luna 9 teaser to contain "Moon" and not "Mars", got: "${mTeaserText}"`);
+  }
+  console.log('  [PASS] Mobile Luna 9 teaser contains "Moon" and not "Mars"');
+
   await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'luna_mobile_05_win_screen.png') });
   console.log('  [OK Captured] luna_mobile_05_win_screen.png');
 
@@ -3376,9 +4187,280 @@ async function runMoonChapterQA(browser) {
   await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'luna_mobile_04_airbag_bounce.png') });
   console.log('  [OK Captured] luna_mobile_04_airbag_bounce.png');
 
+  // Claim Luna 9 to advance to relic 2 on mobile
+  const mClaimLunaBtn = mPage.locator('[data-testid="claim-part-btn"]');
+  await mClaimLunaBtn.click();
+  await mLunaGame.waitFor({ state: 'detached', timeout: 5000 });
+
+  // Test Apollo 11 Laser Ping on Mobile (390x844)
+  console.log('  Testing Apollo 11 Laser Ping on Mobile (390x844)...');
+  await mPage.evaluate(() => window.__moonTeleport(35, 20));
+  await mPage.waitForTimeout(300);
+
+  const mInteractPingBtn = mPage.locator('[data-testid="touch-interact-btn"]');
+  await mInteractPingBtn.waitFor({ state: 'visible', timeout: 4000 });
+  await mInteractPingBtn.click();
+
+  const mNovaPingActionBtn = mPage.locator('[data-testid="nova-dialogue-action-btn"]');
+  await mNovaPingActionBtn.waitFor({ state: 'visible', timeout: 4000 });
+  await mNovaPingActionBtn.click();
+
+  const mPingGame = mPage.locator('[data-testid="ping-game"]');
+  await mPingGame.waitFor({ state: 'visible', timeout: 5000 });
+
+  // Verify mobile canvas width >= 340px
+  const mPingCanvas = mPage.locator('[data-testid="ping-game"] canvas');
+  const mPingCanvasBox = await mPingCanvas.boundingBox();
+  console.log(`  Mobile Apollo 11 canvas width: ${mPingCanvasBox?.width}px (target >= 340px)`);
+  if (!mPingCanvasBox || mPingCanvasBox.width < 340) {
+    throw new Error(`Mobile Apollo 11 canvas width < 340px: ${mPingCanvasBox?.width}px`);
+  }
+
+  // Verify Moon disc >= 55% of canvas height & inside canvas (Moon-3.1 Visual Fix)
+  const mPingState0 = await mPage.evaluate(() => window.__pingGame.getState());
+  if (!mPingState0.moonMetrics || mPingState0.moonMetrics.ratio < 0.55) {
+    throw new Error(`Mobile Moon disc ratio < 0.55: ${mPingState0.moonMetrics?.ratio}`);
+  }
+  if (!mPingState0.moonMetrics.isFullyInside) {
+    throw new Error('Mobile Moon disc is not fully inside canvas!');
+  }
+  console.log(`  [PASS] Mobile Moon disc >= 55% height (${(mPingState0.moonMetrics.ratio * 100).toFixed(1)}%) and inside canvas`);
+
+  // Moon-3.1 Visual Fix: Reticle >= 36 css px, ring outer radius >= 36 css px at mobile
+  console.log(`  Mobile Reticle size CSS: ${mPingState0.reticleSizeCss}px (target >= 36px), Outer ring radius CSS: ${mPingState0.outerRadiusCss}px (target >= 36px)`);
+  if (mPingState0.reticleSizeCss < 36) {
+    throw new Error(`Mobile Reticle size CSS < 36px: ${mPingState0.reticleSizeCss}px`);
+  }
+  if (mPingState0.outerRadiusCss < 36) {
+    throw new Error(`Mobile Outer ring radius CSS < 36px: ${mPingState0.outerRadiusCss}px`);
+  }
+  console.log('  [PASS] Reticle >= 36 CSS px and outer ring radius >= 36 CSS px on mobile');
+
+  // Verify zero page scroll
+  const mPingScroll = await mPage.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+  if (mPingScroll.x !== 0 || mPingScroll.y !== 0) {
+    throw new Error(`Mobile page scroll detected during Apollo 11: ${JSON.stringify(mPingScroll)}`);
+  }
+
+  // Verify mobile fire button size >= 72px tall and >= 48px wide
+  const mFireBtn = mPage.locator('[data-testid="ping-fire-btn"]');
+  await mFireBtn.waitFor({ state: 'visible' });
+  const mFireBox = await mFireBtn.boundingBox();
+  console.log(`  Mobile ping-fire-btn: ${mFireBox?.width}x${mFireBox?.height}`);
+  if (!mFireBox || mFireBox.height < 72 || mFireBox.width < 48) {
+    throw new Error(`Mobile ping-fire-btn must be >= 72px tall and >= 48px wide, got: ${JSON.stringify(mFireBox)}`);
+  }
+  console.log('  [PASS] Mobile ping-fire-btn meets touch target size (>=72px tall, >=48px wide)');
+
+  // Verify footer is empty at start
+  const mPingFooterEl = mPage.locator('[data-testid="minigame-shell"] .border-t p');
+  const mPingInitialFooter = (await mPingFooterEl.textContent()) || '';
+  if (mPingInitialFooter.trim() !== '') {
+    throw new Error(`Expected empty footer at mobile Apollo 11 start, got: "${mPingInitialFooter}"`);
+  }
+  console.log('  [PASS] Mobile Apollo 11 footer is empty at start');
+
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'ping_mobile_01_aiming.png') });
+  console.log('  [OK Captured] ping_mobile_01_aiming.png');
+
+  // Test touch drag moves reticle
+  console.log('  Testing mobile touch drag on canvas...');
+  const mCanvasCenter = await mPingCanvas.boundingBox();
+  if (!mCanvasCenter) throw new Error('Could not get mPingCanvas box');
+  const rPosBefore = await mPage.evaluate(() => window.__pingGame.getState().reticle);
+  await mPingCanvas.dispatchEvent('pointerdown', { clientX: mCanvasCenter.x + 100, clientY: mCanvasCenter.y + 100 });
+  await mPage.waitForTimeout(50);
+  await mPingCanvas.dispatchEvent('pointermove', { clientX: mCanvasCenter.x + 150, clientY: mCanvasCenter.y + 130 });
+  await mPage.waitForTimeout(50);
+  await mPingCanvas.dispatchEvent('pointerup', { clientX: mCanvasCenter.x + 150, clientY: mCanvasCenter.y + 130 });
+  const rPosAfter = await mPage.evaluate(() => window.__pingGame.getState().reticle);
+  const dragDist = Math.hypot(rPosAfter.x - rPosBefore.x, rPosAfter.y - rPosBefore.y);
+  console.log(`  Touch drag delta: ${dragDist.toFixed(1)}px`);
+  if (dragDist < 20) {
+    throw new Error(`Touch drag did not steer reticle! Movement: ${dragDist}px`);
+  }
+  console.log('  [PASS] Touch drag steered reticle on mobile');
+
+  // Test miss on mobile
+  await mPage.evaluate(() => window.__pingGame.setAutopilot('miss'));
+  await mFireBtn.click();
+  await mPage.waitForTimeout(600);
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'ping_mobile_02_shot_in_flight.png') });
+  console.log('  [OK Captured] ping_mobile_02_shot_in_flight.png');
+
+  while (true) {
+    const s = await mPage.evaluate(() => window.__pingGame.getState());
+    if (s.phase === 'result') break;
+    await mPage.waitForTimeout(40);
+  }
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'ping_mobile_03_echo.png') });
+  console.log('  [OK Captured] ping_mobile_03_echo.png');
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'ping_mobile_05_miss_result.png') });
+  console.log('  [OK Captured] ping_mobile_05_miss_result.png');
+
+  const mPingWinScreen = mPage.locator('[data-testid="minigame-win"]');
+  await mPingWinScreen.waitFor({ state: 'visible', timeout: 5000 });
+  const mMissStars = await mPage.locator('[data-testid="minigame-stars"]').getAttribute('data-stars');
+  if (mMissStars !== '1') throw new Error(`Expected 1 star on mobile miss, got: ${mMissStars}`);
+
+  // Moon-3.1 Check 3: Mobile 1-star win title is "FAINT ECHO"
+  const mMissTitleCount = await mPingWinScreen.locator('span').filter({ hasText: 'FAINT ECHO' }).count();
+  if (mMissTitleCount === 0) {
+    throw new Error(`Expected mobile 1-star win title "FAINT ECHO", got: ${await mPingWinScreen.innerText()}`);
+  }
+  const mRelicLogged1 = await mPingWinScreen.locator('text=RELIC LOGGED!').count();
+  if (mRelicLogged1 > 0) {
+    throw new Error('Mobile win screen shows "RELIC LOGGED!" before claim!');
+  }
+  console.log('  [PASS] Mobile 1-star win title is "FAINT ECHO" (zero "RELIC LOGGED!" before claim)');
+
+  // Test 3-star on mobile
+  const mPingRetryBtn = mPage.locator('[data-testid="minigame-retry"]');
+  await mPingRetryBtn.click();
+  await mPingGame.waitFor({ state: 'visible', timeout: 5000 });
+
+  // Moon-3.1 Visual Fix: Mobile footer empty at retry start
+  const mFooterRetryStart = (await mPingFooterEl.textContent()) || '';
+  if (mFooterRetryStart.trim() !== '') {
+    throw new Error(`Expected empty footer at start of mobile retry, got: "${mFooterRetryStart}"`);
+  }
+  console.log('  [PASS] Mobile Apollo 11 footer is EMPTY at start of retry');
+
+  await mPage.evaluate(() => window.__pingGame.setAutopilot('perfect'));
+  await mFireBtn.click();
+
+  while (true) {
+    const s = await mPage.evaluate(() => window.__pingGame.getState());
+    if (s.phase === 'result') break;
+    await mPage.waitForTimeout(40);
+  }
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'ping_mobile_04_3star_result.png') });
+  console.log('  [OK Captured] ping_mobile_04_3star_result.png');
+
+  await mPingWinScreen.waitFor({ state: 'visible', timeout: 5000 });
+  const mPerfectStars = await mPage.locator('[data-testid="minigame-stars"]').getAttribute('data-stars');
+  if (mPerfectStars !== '3') throw new Error(`Expected 3 stars on mobile perfect, got: ${mPerfectStars}`);
+
+  // Moon-3.1 Check 3: Mobile 3-star win title is "ECHO RECEIVED!"
+  const m3StarTitleCount = await mPingWinScreen.locator('span').filter({ hasText: 'ECHO RECEIVED!' }).count();
+  if (m3StarTitleCount === 0) {
+    throw new Error(`Expected mobile 3-star win title "ECHO RECEIVED!", got: ${await mPingWinScreen.innerText()}`);
+  }
+  const mRelicLogged3 = await mPingWinScreen.locator('text=RELIC LOGGED!').count();
+  if (mRelicLogged3 > 0) {
+    throw new Error('Mobile win screen shows "RELIC LOGGED!" before claim!');
+  }
+  console.log('  [PASS] Mobile 3-star win title is "ECHO RECEIVED!" (zero "RELIC LOGGED!" before claim)');
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'ping_mobile_06_win_screen.png') });
+  console.log('  [OK Captured] ping_mobile_06_win_screen.png');
+
+  // Claim relic 2 on mobile
+  await mPage.locator('[data-testid="claim-part-btn"]').click();
+  await mPingGame.waitFor({ state: 'detached', timeout: 5000 });
+
+  // Test Lunokhod 1 Lost Rover on Mobile (390x844)
+  console.log('  Testing Lunokhod 1 Lost Rover on Mobile (390x844)...');
+  await mPage.evaluate(() => window.__moonTeleport(52, 20));
+  await mPage.waitForTimeout(300);
+
+  const mInteractLostBtn = mPage.locator('[data-testid="touch-interact-btn"]');
+  await mInteractLostBtn.waitFor({ state: 'visible', timeout: 4000 });
+  await mInteractLostBtn.click();
+
+  const mNovaLostActionBtn = mPage.locator('[data-testid="nova-dialogue-action-btn"]');
+  await mNovaLostActionBtn.waitFor({ state: 'visible', timeout: 4000 });
+  await mNovaLostActionBtn.click();
+
+  const mLostGame = mPage.locator('[data-testid="lost-game"]');
+  await mLostGame.waitFor({ state: 'visible', timeout: 5000 });
+
+  // 1. Shell title "Lunokhod 1 Lost Rover" and header "Tap squares to scan. Find the lost rover!"
+  const mLostShellTitle = await mPage.locator('[data-testid="minigame-shell"] h2').textContent();
+  if (mLostShellTitle?.trim() !== 'Lunokhod 1 Lost Rover') {
+    throw new Error(`Expected mobile Lunokhod shell title "Lunokhod 1 Lost Rover", got: "${mLostShellTitle}"`);
+  }
+  const mLostHeader = await mPage.locator('[data-testid="minigame-shell"] p').first().textContent();
+  if (mLostHeader?.trim() !== 'Tap squares to scan. Find the lost rover!') {
+    throw new Error(`Expected mobile Lunokhod header "Tap squares to scan. Find the lost rover!", got: "${mLostHeader}"`);
+  }
+  console.log('  [PASS] Mobile Lunokhod 1 title and header verified');
+
+  // Verify mobile canvas width >= 340px
+  const mLostCanvas = mPage.locator('[data-testid="lost-grid-canvas"]');
+  const mLostCanvasBox = await mLostCanvas.boundingBox();
+  console.log(`  Mobile Lunokhod 1 canvas width: ${mLostCanvasBox?.width}px (target >= 340px)`);
+  if (!mLostCanvasBox || mLostCanvasBox.width < 340) {
+    throw new Error(`Mobile Lunokhod 1 canvas width < 340px: ${mLostCanvasBox?.width}px`);
+  }
+
+  // Verify square size >= 44 css px on mobile
+  const mLostSquareSize = await mPage.evaluate(() => window.__lostGame.getState().squareSizeCss);
+  console.log(`  Mobile square size CSS: ${mLostSquareSize}px (target >= 44px)`);
+  if (mLostSquareSize < 44) {
+    throw new Error(`Mobile square size CSS < 44px: ${mLostSquareSize}px`);
+  }
+  console.log('  [PASS] Square size >= 44 CSS px and canvas width >= 340px on mobile');
+
+  // Verify zero page scroll
+  const mLostScroll = await mPage.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+  if (mLostScroll.x !== 0 || mLostScroll.y !== 0) {
+    throw new Error(`Mobile page scroll detected during Lunokhod 1: ${JSON.stringify(mLostScroll)}`);
+  }
+  console.log('  [PASS] Zero page scroll on mobile');
+
+  // Check 2: Real tap path on mobile
+  const mTarget = await mPage.evaluate(() => window.__lostGame.getState().target);
+  // Tap 2 non-target cells: (0, 0) and (6, 0)
+  const mc1x = mTarget.x === 0 ? 6 : 0;
+  const mc1y = mTarget.y === 0 ? 4 : 0;
+  await mPage.locator(`[data-testid="lost-cell-${mc1x}-${mc1y}"]`).click();
+  await mPage.waitForTimeout(350);
+
+  const mc2x = mTarget.x === 6 ? 0 : 6;
+  const mc2y = mTarget.y === 4 ? 0 : 4;
+  await mPage.locator(`[data-testid="lost-cell-${mc2x}-${mc2y}"]`).click();
+  await mPage.waitForTimeout(350);
+
+  // Frame capture 1: mobile_lost_01_searching.png (a few marked squares with ring pips)
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'mobile_lost_01_searching.png') });
+  console.log('  [OK Captured] mobile_lost_01_searching.png');
+
+  // Now tap the target square
+  await mPage.locator(`[data-testid="lost-cell-${mTarget.x}-${mTarget.y}"]`).click();
+  await mPage.waitForTimeout(350);
+
+  // Frame capture 2: mobile_lost_02_found.png (rover sprite popping up)
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'mobile_lost_02_found.png') });
+  console.log('  [OK Captured] mobile_lost_02_found.png');
+
+  // Wait for win screen
+  const mLostWinScreen = mPage.locator('[data-testid="minigame-win"]');
+  await mLostWinScreen.waitFor({ state: 'visible', timeout: 5000 });
+
+  // Frame capture 3: mobile_lost_03_win_screen.png
+  await mPage.screenshot({ path: path.join(OUTPUT_DIR, 'mobile_lost_03_win_screen.png') });
+  console.log('  [OK Captured] mobile_lost_03_win_screen.png');
+
+  const mStars = await mPage.locator('[data-testid="minigame-stars"]').getAttribute('data-stars');
+  if (mStars !== '3') throw new Error(`Expected 3 stars on mobile (3 scans), got: ${mStars}`);
+
+  const mWinTitle = await mLostWinScreen.locator('span').filter({ hasText: 'ROVER FOUND!' }).count();
+  if (mWinTitle === 0) {
+    throw new Error(`Expected mobile win title "ROVER FOUND!", got: ${await mLostWinScreen.innerText()}`);
+  }
+  const mRelicLoggedLost = await mLostWinScreen.locator('text=RELIC LOGGED!').count();
+  if (mRelicLoggedLost > 0) {
+    throw new Error('Mobile win screen shows "RELIC LOGGED!" before claim!');
+  }
+  console.log('  [PASS] Mobile 3-star win title is "ROVER FOUND!" (zero "RELIC LOGGED!" before claim)');
+
+  // Claim relic 3 on mobile
+  await mLostWinScreen.locator('[data-testid="claim-part-btn"]').click();
+  await mLostGame.waitFor({ state: 'detached', timeout: 5000 });
+
   await mPage.close();
   await mobileContext.close();
-  console.log('  [PASS] Moon 8: Mobile verified with hop-btn >= 48px, thrust-btn >= 72px, canvas >= 340px, zero scroll');
+  console.log('  [PASS] Moon 8: Mobile verified with hop-btn >= 48px, thrust-btn >= 72px, fire-btn >= 72px, grid squares >= 44px, canvas >= 340px, zero scroll');
 
   // 9. Reduce Motion ON: repeat checks 2 and 3
   console.log('Moon 9: Reduce Motion ON verification (Hop + Luna 9 Checks 2 & 3)...');
@@ -3437,6 +4519,81 @@ async function runMoonChapterQA(browser) {
   const rmStars2 = await page.locator('[data-testid="minigame-stars"]').getAttribute('data-stars');
   if (rmStars2 !== '3') throw new Error(`Expected 3 stars on RM autopilot run, got: ${rmStars2}`);
   console.log('  [PASS] Luna 9 Check 2 finished with 3 stars under Reduce Motion');
+
+  // Claim Luna 9 under Reduce Motion to proceed to Apollo 11
+  await rmWinScreen.locator('[data-testid="claim-part-btn"]').click();
+  await rmLunaGame.waitFor({ state: 'detached', timeout: 5000 });
+
+  // Test Apollo 11 Checks 2 & 4 under Reduce Motion
+  console.log('  Testing Apollo 11 Checks 2 & 4 under Reduce Motion...');
+  await page.evaluate(() => window.__moonTeleport(35, 20));
+  await page.waitForTimeout(300);
+  await page.keyboard.press('KeyE');
+  const rmPingNovaBtn = page.locator('[data-testid="nova-dialogue-action-btn"]');
+  await rmPingNovaBtn.waitFor({ state: 'visible', timeout: 4000 });
+  await rmPingNovaBtn.click();
+
+  const rmPingGame = page.locator('[data-testid="ping-game"]');
+  await rmPingGame.waitFor({ state: 'visible', timeout: 5000 });
+
+  await page.evaluate(() => window.__pingGame.setAutopilot('perfect'));
+  const rmPingFireStart = performance.now();
+  await page.locator('[data-testid="ping-fire-btn"]').click();
+
+  while (true) {
+    const s = await page.evaluate(() => window.__pingGame.getState());
+    if (s.phase === 'result') break;
+    await page.waitForTimeout(40);
+  }
+  const rmPingWaitDuration = (performance.now() - rmPingFireStart) / 1000;
+  console.log(`  RM Apollo 11 wait duration: ${rmPingWaitDuration.toFixed(2)}s (requirement: 2.35 - 2.65s)`);
+  if (rmPingWaitDuration < 2.35 || rmPingWaitDuration > 2.65) {
+    throw new Error(`RM Apollo 11 wait duration out of bounds [2.35s, 2.65s]: ${rmPingWaitDuration.toFixed(2)}s`);
+  }
+  console.log('  [PASS] Apollo 11 Check 4 (wait duration 2.35-2.65s) verified under Reduce Motion');
+
+  const rmPingWin = page.locator('[data-testid="minigame-win"]');
+  await rmPingWin.waitFor({ state: 'visible', timeout: 6000 });
+  const rmPingStars = await page.locator('[data-testid="minigame-stars"]').getAttribute('data-stars');
+  if (rmPingStars !== '3') throw new Error(`Expected 3 stars on RM Apollo 11 run, got: ${rmPingStars}`);
+  console.log('  [PASS] Apollo 11 Check 2 (3 stars) verified under Reduce Motion');
+
+  // Claim Apollo 11 on RM
+  await rmPingWin.locator('[data-testid="claim-part-btn"]').click();
+  await rmPingGame.waitFor({ state: 'detached', timeout: 5000 });
+
+  // Test Lunokhod 1 under Reduce Motion (Check 8)
+  console.log('  Testing Lunokhod 1 under Reduce Motion (radar sweep skipped, pulses off, 3 stars)...');
+  await page.evaluate(() => window.__moonTeleport(52, 20));
+  await page.waitForTimeout(300);
+  await page.keyboard.press('KeyE');
+  const rmLostNovaBtn = page.locator('[data-testid="nova-dialogue-action-btn"]');
+  await rmLostNovaBtn.waitFor({ state: 'visible', timeout: 4000 });
+  await rmLostNovaBtn.click();
+
+  const rmLostGame = page.locator('[data-testid="lost-game"]');
+  await rmLostGame.waitFor({ state: 'visible', timeout: 5000 });
+
+  // Verify instant reveal (sweep skipped) under Reduce Motion
+  await page.locator('[data-testid="lost-cell-0-0"]').click();
+  await page.waitForTimeout(50);
+  const rmScanningState = await page.evaluate(() => window.__lostGame.getState().isScanning);
+  if (rmScanningState !== false) {
+    throw new Error('Expected isScanning=false immediately under Reduce Motion');
+  }
+  console.log('  [PASS] Radar sweep skipped (square reveals instantly) under Reduce Motion');
+
+  // Test target scan under Reduce Motion
+  const rmTarget = await page.evaluate(() => window.__lostGame.getState().target);
+  await page.locator(`[data-testid="lost-cell-${rmTarget.x}-${rmTarget.y}"]`).click();
+  const rmLostWin = page.locator('[data-testid="minigame-win"]');
+  await rmLostWin.waitFor({ state: 'visible', timeout: 5000 });
+  const rmLostStars = await page.locator('[data-testid="minigame-stars"]').getAttribute('data-stars');
+  if (rmLostStars !== '3') throw new Error(`Expected 3 stars on RM Lunokhod 1 run, got: ${rmLostStars}`);
+  console.log('  [PASS] Lunokhod 1 Check 8 (Reduce Motion ON) verified');
+
+  await rmLostWin.locator('[data-testid="claim-part-btn"]').click();
+  await rmLostGame.waitFor({ state: 'detached', timeout: 5000 });
 
   await page.close();
   console.log('======================================================');

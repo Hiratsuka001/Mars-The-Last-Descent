@@ -8,6 +8,6 @@ export const DID_YOU_KNOW: Record<string, string> = {
   eq_lrv_buggy: "The Moon buggy folded up to fit inside the lunar module. Apollo astronauts drove it on three missions.",
   eq_surveyor: "Apollo 12 astronauts visited Surveyor 3 in 1969 and brought parts of it home to Earth.",
   moon_luna9: "Luna 9 touched down on 3 Feb 1966 and sent home the first photos ever taken from the Moon's surface. Airbags cushioned its landing!",
-  moon_apollo11: "Fact coming in the next update.",
-  moon_lunokhod1: "Fact coming in the next update.",
+  moon_apollo11: "Astronauts left a panel of 100 mirrors on the Moon on 21 July 1969. Scientists still bounce lasers off it, and the timing shows the Moon drifts away about 3.8 cm every year!",
+  moon_lunokhod1: "Lunokhod 1 drove on the Moon in 1970, then was lost for almost 40 years. In 2010 a NASA orbiter spotted it, and scientists bounced a laser off its mirror on the very first try!",
 };

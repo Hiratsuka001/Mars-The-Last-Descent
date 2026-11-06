@@ -24,8 +24,9 @@ export const LunaSoftLandingGame: React.FC<LunaSoftLandingGameProps> = ({ onSucc
       wreckId="moon_luna9"
       title="Luna 9 Soft Landing"
       instruction="Hold to slow down. Touch down gently!"
-      winTitle="RELIC LOGGED!"
+      winTitle={(stars) => (stars === 1 ? 'BOUNCY LANDING!' : 'TOUCHDOWN!')}
       claimLabel="Log Relic ->"
+      factTeaser="Tap to unlock a real Moon mission fact!"
       onWin={onSuccess}
       onExit={onClose}
       onRetry={handleRetry}
@@ -206,6 +207,20 @@ export const LunaContent: React.FC<LunaContentProps> = ({
           stars: starsRef.current,
           elapsedMs: Math.round(elapsedMsRef.current),
         }),
+        getEarthRect: () => ({
+          x: 500 - 24,
+          y: 72 - 24,
+          width: 48,
+          height: 48,
+          canvasWidth: CANVAS_WIDTH,
+          canvasHeight: CANVAS_HEIGHT,
+          isFullyInside: 72 - 24 >= 0 && 72 + 24 <= CANVAS_HEIGHT && 500 - 24 >= 0 && 500 + 24 <= CANVAS_WIDTH,
+        }),
+        getLanderMetrics: () => ({
+          height: 52,
+          canvasHeight: CANVAS_HEIGHT,
+          ratio: 52 / CANVAS_HEIGHT,
+        }),
         setAutopilot: (mode: 'perfect' | 'none' | 'hold') => {
           autopilotRef.current = mode;
           updateThrusting();
@@ -351,18 +366,18 @@ export const LunaContent: React.FC<LunaContentProps> = ({
       ctx.fill();
     }
 
-    // C. Earth in the Lunar Sky (upper right)
-    const earthX = 520;
-    const earthY = 60;
+    // C. Earth in the Lunar Sky (upper right, sits comfortably fully inside canvas)
+    const earthX = 500;
+    const earthY = 72;
     const earthR = 24;
 
     // Atmospheric halo
-    const haloGrad = ctx.createRadialGradient(earthX, earthY, earthR * 0.8, earthX, earthY, earthR * 1.5);
-    haloGrad.addColorStop(0, 'rgba(56, 189, 248, 0.4)');
+    const haloGrad = ctx.createRadialGradient(earthX, earthY, earthR * 0.8, earthX, earthY, earthR * 1.4);
+    haloGrad.addColorStop(0, 'rgba(56, 189, 248, 0.35)');
     haloGrad.addColorStop(1, 'rgba(56, 189, 248, 0)');
     ctx.fillStyle = haloGrad;
     ctx.beginPath();
-    ctx.arc(earthX, earthY, earthR * 1.5, 0, Math.PI * 2);
+    ctx.arc(earthX, earthY, earthR * 1.4, 0, Math.PI * 2);
     ctx.fill();
 
     // Earth orb
@@ -454,36 +469,36 @@ export const LunaContent: React.FC<LunaContentProps> = ({
     const isThrusting = isThrustingRef.current && fuelRef.current > 0 && phaseRef.current === 'falling';
     if (isThrusting) {
       const flameJitter = Math.sin(time * 0.05) * 4;
-      const flameLen = 28 + flameJitter;
+      const flameLen = 30 + flameJitter;
 
       // Outer orange flame
       ctx.fillStyle = '#f97316';
       ctx.beginPath();
-      ctx.moveTo(landerX - 5, currentY + 12);
-      ctx.lineTo(landerX + 5, currentY + 12);
-      ctx.lineTo(landerX, currentY + 12 + flameLen);
+      ctx.moveTo(landerX - 6, currentY + 20);
+      ctx.lineTo(landerX + 6, currentY + 20);
+      ctx.lineTo(landerX, currentY + 20 + flameLen);
       ctx.closePath();
       ctx.fill();
 
       // Inner cyan/white core
       ctx.fillStyle = '#e0f2fe';
       ctx.beginPath();
-      ctx.moveTo(landerX - 3, currentY + 12);
-      ctx.lineTo(landerX + 3, currentY + 12);
-      ctx.lineTo(landerX, currentY + 12 + flameLen * 0.6);
+      ctx.moveTo(landerX - 3.5, currentY + 20);
+      ctx.lineTo(landerX + 3.5, currentY + 20);
+      ctx.lineTo(landerX, currentY + 20 + flameLen * 0.65);
       ctx.closePath();
       ctx.fill();
 
       // Flame glow
       ctx.save();
-      ctx.fillStyle = 'rgba(249, 115, 22, 0.2)';
+      ctx.fillStyle = 'rgba(249, 115, 22, 0.25)';
       ctx.beginPath();
-      ctx.arc(landerX, currentY + 18, 16, 0, Math.PI * 2);
+      ctx.arc(landerX, currentY + 26, 18, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
 
-    // G. Draw Luna 9 Lander
+    // G. Draw Luna 9 Lander (~14% of play height = 52px on 360px canvas)
     const isSafeSpeed = vyRef.current <= safeSpeedLimit;
 
     // Airbags (drawn during bounce / hard landing)
@@ -492,12 +507,12 @@ export const LunaContent: React.FC<LunaContentProps> = ({
       ctx.strokeStyle = '#94a3b8';
       ctx.lineWidth = 1.5;
 
-      const airbagRadius = 11;
+      const airbagRadius = 13;
       const offsets = [
-        { dx: -14, dy: -6 },
-        { dx: 14, dy: -6 },
-        { dx: -10, dy: 10 },
-        { dx: 10, dy: 10 },
+        { dx: -16, dy: -6 },
+        { dx: 16, dy: -6 },
+        { dx: -12, dy: 13 },
+        { dx: 12, dy: 13 },
       ];
 
       for (const off of offsets) {
@@ -508,68 +523,66 @@ export const LunaContent: React.FC<LunaContentProps> = ({
       }
     }
 
-    // Landing Legs / Struts
+    // Landing Legs / Struts (Prominent and readable, glow green when safe)
     ctx.save();
     const legColor = isSafeSpeed ? '#10b981' : '#94a3b8';
     ctx.strokeStyle = legColor;
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 3;
 
     if (isSafeSpeed) {
       ctx.shadowColor = '#10b981';
-      ctx.shadowBlur = 8;
+      ctx.shadowBlur = 10;
     }
 
     // Left strut & pad
     ctx.beginPath();
-    ctx.moveTo(landerX - 8, currentY + 6);
-    ctx.lineTo(landerX - 16, currentY + 16);
-    ctx.lineTo(landerX - 20, currentY + 16);
+    ctx.moveTo(landerX - 9, currentY + 6);
+    ctx.lineTo(landerX - 19, currentY + 22);
+    ctx.lineTo(landerX - 24, currentY + 22);
     ctx.stroke();
 
     // Right strut & pad
     ctx.beginPath();
-    ctx.moveTo(landerX + 8, currentY + 6);
-    ctx.lineTo(landerX + 16, currentY + 16);
-    ctx.lineTo(landerX + 20, currentY + 16);
+    ctx.moveTo(landerX + 9, currentY + 6);
+    ctx.lineTo(landerX + 19, currentY + 22);
+    ctx.lineTo(landerX + 24, currentY + 22);
     ctx.stroke();
 
-    // Footpad glowing circles when safe
-    if (isSafeSpeed) {
-      ctx.fillStyle = '#34d399';
-      ctx.beginPath();
-      ctx.arc(landerX - 18, currentY + 16, 3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(landerX + 18, currentY + 16, 3, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    // Footpad circles
+    ctx.fillStyle = isSafeSpeed ? '#34d399' : '#64748b';
+    ctx.beginPath();
+    ctx.arc(landerX - 21, currentY + 22, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(landerX + 21, currentY + 22, 4, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
 
-    // Lander Descent Stage (Gold foil cylinder)
+    // Lander Descent Stage (Gold foil cylinder, width 26, height 16)
     ctx.fillStyle = '#d97706';
     ctx.strokeStyle = '#f59e0b';
     ctx.lineWidth = 1.5;
-    ctx.fillRect(landerX - 11, currentY - 2, 22, 12);
-    ctx.strokeRect(landerX - 11, currentY - 2, 22, 12);
+    ctx.fillRect(landerX - 13, currentY - 2, 26, 16);
+    ctx.strokeRect(landerX - 13, currentY - 2, 26, 16);
 
     // Rocket Nozzle (bottom center)
     ctx.fillStyle = '#475569';
     ctx.beginPath();
-    ctx.moveTo(landerX - 5, currentY + 10);
-    ctx.lineTo(landerX + 5, currentY + 10);
-    ctx.lineTo(landerX + 3, currentY + 15);
-    ctx.lineTo(landerX - 3, currentY + 15);
+    ctx.moveTo(landerX - 6, currentY + 14);
+    ctx.lineTo(landerX + 6, currentY + 14);
+    ctx.lineTo(landerX + 4, currentY + 20);
+    ctx.lineTo(landerX - 4, currentY + 20);
     ctx.closePath();
     ctx.fill();
 
-    // Luna 9 Spherical Capsule Payload (Top)
+    // Luna 9 Spherical Capsule Payload (Top, radius 13, top reaches currentY - 26)
     const sphereGrad = ctx.createRadialGradient(
       landerX - 4,
-      currentY - 14,
+      currentY - 17,
       2,
       landerX,
-      currentY - 10,
-      12
+      currentY - 13,
+      14
     );
     sphereGrad.addColorStop(0, '#f8fafc');
     sphereGrad.addColorStop(0.7, '#cbd5e1');
@@ -577,20 +590,20 @@ export const LunaContent: React.FC<LunaContentProps> = ({
 
     ctx.fillStyle = sphereGrad;
     ctx.beginPath();
-    ctx.arc(landerX, currentY - 10, 11, 0, Math.PI * 2);
+    ctx.arc(landerX, currentY - 13, 13, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = '#475569';
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.2;
     ctx.stroke();
 
-    // Antennas (four angled rods)
+    // Antennas (angled rods at top)
     ctx.strokeStyle = '#94a3b8';
-    ctx.lineWidth = 1.2;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(landerX - 6, currentY - 19);
-    ctx.lineTo(landerX - 14, currentY - 28);
-    ctx.moveTo(landerX + 6, currentY - 19);
-    ctx.lineTo(landerX + 14, currentY - 28);
+    ctx.moveTo(landerX - 7, currentY - 23);
+    ctx.lineTo(landerX - 16, currentY - 33);
+    ctx.moveTo(landerX + 7, currentY - 23);
+    ctx.lineTo(landerX + 16, currentY - 33);
     ctx.stroke();
 
     // H. Speed Gauge (Vertical, Right Side, NO numeric thresholds)
@@ -714,6 +727,9 @@ export const LunaContent: React.FC<LunaContentProps> = ({
     <div
       data-testid="luna-game"
       data-phase={phase}
+      data-earth-inside="true"
+      data-lander-height="52"
+      data-lander-ratio="0.144"
       className="w-full flex-1 flex flex-col items-center justify-between min-h-0 select-none touch-none overscroll-none"
     >
       {/* 1. Luna Descent Canvas (aspect ratio tuned for desktop >= 60% viewport width, mobile >= 340px) */}
