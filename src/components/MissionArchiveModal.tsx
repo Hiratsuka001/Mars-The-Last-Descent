@@ -186,8 +186,15 @@ export const MissionArchiveModal: React.FC<MissionArchiveModalProps> = ({
   const isLegacyUnlocked = unlockedMissionIds.includes(activeLegacyMission.id);
 
   return (
-    <div data-testid="codex-modal" className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200 select-none">
-      <div className="relative w-full max-w-4xl bg-slate-950 border border-cyan-500/40 rounded-2xl shadow-[0_16px_60px_rgba(0,0,0,0.8)] overflow-hidden text-slate-200 flex flex-col max-h-[92vh]">
+    <div
+      data-testid="codex-modal"
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200 select-none cursor-pointer"
+    >
+      <div
+        className="relative w-full max-w-4xl bg-slate-950 border border-cyan-500/40 rounded-2xl shadow-[0_16px_60px_rgba(0,0,0,0.8)] overflow-hidden text-slate-200 flex flex-col max-h-[92vh] cursor-default"
+        onClick={(e) => e.stopPropagation()}
+      >
         
         {/* Header */}
         <div className="px-5 py-3.5 border-b border-slate-800 bg-slate-900/70 flex items-center justify-between shrink-0">

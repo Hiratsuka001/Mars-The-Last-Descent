@@ -202,6 +202,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     minimap: 0,
   });
   const [isShipTerminalOpen, setIsShipTerminalOpen] = useState<boolean>(false);
+  const isShipTerminalOpenRef = useRef<boolean>(false);
+  isShipTerminalOpenRef.current = isShipTerminalOpen;
 
   // Nova Floating Speech Bubble (Non-Modal, No movement block)
   const [novaBubble, setNovaBubble] = useState<{ text: string; mood?: string } | null>(null);
@@ -248,7 +250,11 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
   const [isLaunching, setIsLaunching] = useState<boolean>(false);
   const [showEnding, setShowEnding] = useState<boolean>(false);
   const [showCredits, setShowCredits] = useState<boolean>(false);
+  const showCreditsRef = useRef<boolean>(false);
+  showCreditsRef.current = showCredits;
   const [showCodex, setShowCodex] = useState<boolean>(false);
+  const showCodexRef = useRef<boolean>(false);
+  showCodexRef.current = showCodex;
 
   // Play Time & Autosave State
   const [playTimeSeconds, setPlayTimeSeconds] = useState<number>(0);
@@ -318,8 +324,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
   });
 
   // Pause movement when dialogue, mini-game, tile debugger, map overlay, repair, launch, ship terminal, or ending is open
-  const isPausedRef = useRef(false);
-  isPausedRef.current =
+  const isPaused =
     !!activeMiniGame ||
     !!novaDialogue ||
     showTileDebug ||
@@ -330,6 +335,8 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     showCredits ||
     showCodex ||
     isShipTerminalOpen;
+  const isPausedRef = useRef(isPaused);
+  isPausedRef.current = isPaused;
 
   // NOVA companion state
   const novaRef = useRef({
@@ -1581,6 +1588,33 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         return;
       }
 
+      // Close Ship Terminal Modal with Escape
+      if (e.code === 'Escape' && isShipTerminalOpenRef.current) {
+        e.preventDefault();
+        sound.playClick();
+        heldKeysRef.current.delete('KeyE');
+        heldKeysRef.current.delete('Enter');
+        heldKeysRef.current.delete('Space');
+        setIsShipTerminalOpen(false);
+        return;
+      }
+
+      // Close Codex Modal with Escape
+      if (e.code === 'Escape' && showCodexRef.current) {
+        e.preventDefault();
+        sound.playClick();
+        setShowCodex(false);
+        return;
+      }
+
+      // Close Credits Modal with Escape
+      if (e.code === 'Escape' && showCreditsRef.current) {
+        e.preventDefault();
+        sound.playClick();
+        setShowCredits(false);
+        return;
+      }
+
       // Quick teleport shortcut with T when F3 debug is active
       if (isDebugMode && showDebugRef.current && (e.code === 'KeyT' || e.key === 't' || e.key === 'T')) {
         e.preventDefault();
@@ -1667,7 +1701,17 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     sound.playClick();
     heldKeysRef.current.delete('KeyE');
     heldKeysRef.current.delete('Enter');
+    heldKeysRef.current.delete('Space');
     setIsShipTerminalOpen(true);
+  }, []);
+
+  // Close crashed spaceship terminal & dismiss modal
+  const closeShipTerminal = useCallback(() => {
+    sound.playClick();
+    heldKeysRef.current.delete('KeyE');
+    heldKeysRef.current.delete('Enter');
+    heldKeysRef.current.delete('Space');
+    setIsShipTerminalOpen(false);
   }, []);
 
   // Mini-Game Success Callback
@@ -3950,11 +3994,15 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       {isShipTerminalOpen && (
         <div
           data-testid="ship-terminal-modal"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150 select-none"
+          onClick={closeShipTerminal}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150 select-none cursor-pointer"
         >
-          <div className="relative w-full max-w-lg bg-slate-950 border border-cyan-500/50 rounded-2xl shadow-[0_0_50px_rgba(6,182,212,0.3)] overflow-hidden text-slate-100 flex flex-col">
+          <div
+            className="relative w-full max-w-lg bg-slate-950 border border-cyan-500/50 rounded-2xl shadow-[0_0_50px_rgba(6,182,212,0.3)] overflow-hidden text-slate-100 flex flex-col max-h-[90vh] cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Header */}
-            <div className="px-5 py-3.5 border-b border-slate-800 bg-slate-900/70 flex items-center justify-between">
+            <div className="px-5 py-3.5 border-b border-slate-800 bg-slate-900/70 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <Wrench className="w-5 h-5 text-cyan-400" />
                 <h3 className="text-base font-bold font-display tracking-wider text-white">
@@ -3963,17 +4011,14 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
               </div>
               <button
                 data-testid="close-ship-terminal-btn"
-                onClick={() => {
-                  sound.playClick();
-                  setIsShipTerminalOpen(false);
-                }}
+                onClick={closeShipTerminal}
                 className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-5 space-y-4 font-mono text-xs">
+            <div className="p-5 space-y-4 font-mono text-xs overflow-y-auto flex-1 min-h-0 custom-scrollbar">
               {/* Ascent Vehicle Status */}
               <div className="p-3.5 rounded-xl bg-slate-900/50 border border-slate-800 flex items-center justify-between">
                 <div>
@@ -4173,12 +4218,10 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
             </div>
 
             {/* Footer */}
-            <div className="px-5 py-3 border-t border-slate-800 bg-slate-900/40 flex justify-end">
+            <div className="px-5 py-3 border-t border-slate-800 bg-slate-900/40 flex justify-end shrink-0">
               <button
-                onClick={() => {
-                  sound.playClick();
-                  setIsShipTerminalOpen(false);
-                }}
+                data-testid="exit-ship-terminal-btn"
+                onClick={closeShipTerminal}
                 className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold font-mono text-xs cursor-pointer transition-colors"
               >
                 Exit Terminal
@@ -4335,7 +4378,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       )}
 
       {/* Desktop Proximity Interaction Prompt Banner */}
-      {!isLaunching && !showEnding && (nearbyEquipment || isNearShip || nearbySample || canProbeCanyon) && (
+      {!isShipTerminalOpen && !isLaunching && !showEnding && (nearbyEquipment || isNearShip || nearbySample || canProbeCanyon) && (
         <div
           data-testid="interact-prompt"
           onClick={handleTouchInteract}
@@ -4363,7 +4406,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       )}
 
       {/* Touch Interaction & D-Pad Controls (Mobile) */}
-      {!isLaunching && !showEnding && (
+      {!isShipTerminalOpen && !isLaunching && !showEnding && (
         <div className="sm:hidden absolute bottom-4 left-4 right-4 z-20 flex items-end justify-between pointer-events-none">
           
           {/* Virtual D-Pad */}
