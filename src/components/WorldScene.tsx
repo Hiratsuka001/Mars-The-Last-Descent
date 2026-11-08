@@ -380,10 +380,30 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
   showDebugRef.current = showDebug;
   const teleportNearestRef = useRef<() => void>(() => {});
 
-  // Clear keys on any modal or dialogue state change
+  // Clear keys and touch inputs whenever any modal, dialogue, or pause state opens or closes
   useEffect(() => {
     heldKeysRef.current.clear();
-  }, [activeMiniGame, novaDialogue, showTileDebug]);
+    touchStateRef.current = {
+      up: false,
+      down: false,
+      left: false,
+      right: false,
+      boost: false,
+      interact: false,
+    };
+  }, [
+    isPaused,
+    activeMiniGame,
+    novaDialogue,
+    showTileDebug,
+    isMapOpen,
+    isShipTerminalOpen,
+    showCodex,
+    showCredits,
+    isRepairing,
+    isLaunching,
+    showEnding,
+  ]);
 
   // Initialize World, Spawn Point, and Deterministic Equipment Scatter
   useEffect(() => {
@@ -1526,13 +1546,65 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     'ShiftLeft', 'ShiftRight', 'KeyQ', 'KeyP',
   ]);
 
-  // Robust Keyboard Event Listeners with single heldKeys Set and window blur cleanup
+  // Robust Keyboard Event Listeners with single heldKeys Set and window blur/focus/touch cleanup
   useEffect(() => {
-    const clearHeldKeys = () => {
+    const clearAllInputs = () => {
       heldKeysRef.current.clear();
+      touchStateRef.current = {
+        up: false,
+        down: false,
+        left: false,
+        right: false,
+        boost: false,
+        interact: false,
+      };
+    };
+
+    const clearTouchInputs = () => {
+      touchStateRef.current = {
+        up: false,
+        down: false,
+        left: false,
+        right: false,
+        boost: false,
+        interact: false,
+      };
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // System / Modifier keys: clear all inputs to prevent browser swallowing keyup when Alt-Tab / Windows key / Tab is pressed
+      if (
+        e.key === 'Alt' ||
+        e.key === 'Meta' ||
+        e.key === 'Tab' ||
+        e.code === 'AltLeft' ||
+        e.code === 'AltRight' ||
+        e.code === 'MetaLeft' ||
+        e.code === 'MetaRight' ||
+        e.code === 'Tab'
+      ) {
+        clearAllInputs();
+        return;
+      }
+
+      // Cancel opposite directions so player never gets locked or stuck moving opposite
+      if (e.code === 'KeyW' || e.code === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') {
+        heldKeysRef.current.delete('KeyS');
+        heldKeysRef.current.delete('ArrowDown');
+      }
+      if (e.code === 'KeyS' || e.code === 'ArrowDown' || e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') {
+        heldKeysRef.current.delete('KeyW');
+        heldKeysRef.current.delete('ArrowUp');
+      }
+      if (e.code === 'KeyA' || e.code === 'ArrowLeft' || e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') {
+        heldKeysRef.current.delete('KeyD');
+        heldKeysRef.current.delete('ArrowRight');
+      }
+      if (e.code === 'KeyD' || e.code === 'ArrowRight' || e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') {
+        heldKeysRef.current.delete('KeyA');
+        heldKeysRef.current.delete('ArrowLeft');
+      }
+
       // Toggle Debug Overlay with F3 (Dev or ?debug=1 only)
       if (e.code === 'F3') {
         e.preventDefault();
@@ -1592,9 +1664,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       if (e.code === 'Escape' && isShipTerminalOpenRef.current) {
         e.preventDefault();
         sound.playClick();
-        heldKeysRef.current.delete('KeyE');
-        heldKeysRef.current.delete('Enter');
-        heldKeysRef.current.delete('Space');
+        clearAllInputs();
         setIsShipTerminalOpen(false);
         return;
       }
@@ -1603,6 +1673,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       if (e.code === 'Escape' && showCodexRef.current) {
         e.preventDefault();
         sound.playClick();
+        clearAllInputs();
         setShowCodex(false);
         return;
       }
@@ -1611,6 +1682,7 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
       if (e.code === 'Escape' && showCreditsRef.current) {
         e.preventDefault();
         sound.playClick();
+        clearAllInputs();
         setShowCredits(false);
         return;
       }
@@ -1650,25 +1722,57 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     const handleKeyUp = (e: KeyboardEvent) => {
       if (GAME_KEY_CODES.has(e.code)) {
         e.preventDefault();
-        // Do not drop momentary action keys (KeyE, Enter, Space) before the render frame consumes them
-        if (e.code !== 'KeyE' && e.code !== 'Enter' && e.code !== 'Space') {
-          heldKeysRef.current.delete(e.code);
+      }
+      // Always delete released key if not momentary action key
+      if (e.code && e.code !== 'KeyE' && e.code !== 'Enter' && e.code !== 'Space') {
+        heldKeysRef.current.delete(e.code);
+      }
+      // Also clear by e.key / lowercase fallbacks for directional and sprint keys
+      if (e.key) {
+        const k = e.key.toLowerCase();
+        if (k === 'w' || k === 'arrowup') {
+          heldKeysRef.current.delete('KeyW');
+          heldKeysRef.current.delete('ArrowUp');
+        } else if (k === 's' || k === 'arrowdown') {
+          heldKeysRef.current.delete('KeyS');
+          heldKeysRef.current.delete('ArrowDown');
+        } else if (k === 'a' || k === 'arrowleft') {
+          heldKeysRef.current.delete('KeyA');
+          heldKeysRef.current.delete('ArrowLeft');
+        } else if (k === 'd' || k === 'arrowright') {
+          heldKeysRef.current.delete('KeyD');
+          heldKeysRef.current.delete('ArrowRight');
+        } else if (k === 'shift') {
+          heldKeysRef.current.delete('ShiftLeft');
+          heldKeysRef.current.delete('ShiftRight');
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
-    window.addEventListener('blur', clearHeldKeys);
+    window.addEventListener('blur', clearAllInputs);
+    window.addEventListener('focus', clearAllInputs);
+    window.addEventListener('contextmenu', clearAllInputs);
+    window.addEventListener('pointerup', clearTouchInputs);
+    window.addEventListener('pointercancel', clearTouchInputs);
+    window.addEventListener('touchend', clearTouchInputs);
+    window.addEventListener('touchcancel', clearTouchInputs);
     const handleVisChange = () => {
-      if (document.hidden) clearHeldKeys();
+      if (document.hidden) clearAllInputs();
     };
     document.addEventListener('visibilitychange', handleVisChange);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('blur', clearHeldKeys);
+      window.removeEventListener('blur', clearAllInputs);
+      window.removeEventListener('focus', clearAllInputs);
+      window.removeEventListener('contextmenu', clearAllInputs);
+      window.removeEventListener('pointerup', clearTouchInputs);
+      window.removeEventListener('pointercancel', clearTouchInputs);
+      window.removeEventListener('touchend', clearTouchInputs);
+      window.removeEventListener('touchcancel', clearTouchInputs);
       document.removeEventListener('visibilitychange', handleVisChange);
     };
   }, [triggerPetNova, triggerSonarScan]);
@@ -1678,8 +1782,15 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
     if (completedRef.current.includes(eq.def.id)) return;
 
     sound.playClick();
-    heldKeysRef.current.delete('KeyE');
-    heldKeysRef.current.delete('Enter');
+    heldKeysRef.current.clear();
+    touchStateRef.current = {
+      up: false,
+      down: false,
+      left: false,
+      right: false,
+      boost: false,
+      interact: false,
+    };
 
     // Show brief 1-line Nova dialogue hint, then launch mini-game
     setNovaDialogue({
@@ -1699,18 +1810,30 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
   // Launch interaction sequence with crashed spaceship terminal
   const triggerShipInteract = useCallback(() => {
     sound.playClick();
-    heldKeysRef.current.delete('KeyE');
-    heldKeysRef.current.delete('Enter');
-    heldKeysRef.current.delete('Space');
+    heldKeysRef.current.clear();
+    touchStateRef.current = {
+      up: false,
+      down: false,
+      left: false,
+      right: false,
+      boost: false,
+      interact: false,
+    };
     setIsShipTerminalOpen(true);
   }, []);
 
   // Close crashed spaceship terminal & dismiss modal
   const closeShipTerminal = useCallback(() => {
     sound.playClick();
-    heldKeysRef.current.delete('KeyE');
-    heldKeysRef.current.delete('Enter');
-    heldKeysRef.current.delete('Space');
+    heldKeysRef.current.clear();
+    touchStateRef.current = {
+      up: false,
+      down: false,
+      left: false,
+      right: false,
+      boost: false,
+      interact: false,
+    };
     setIsShipTerminalOpen(false);
   }, []);
 
@@ -3492,6 +3615,12 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
   // Touch event handlers
   const handleTouchDir = useCallback((dir: 'up' | 'down' | 'left' | 'right', active: boolean) => {
     touchStateRef.current[dir] = active;
+    if (active) {
+      if (dir === 'up') touchStateRef.current.down = false;
+      if (dir === 'down') touchStateRef.current.up = false;
+      if (dir === 'left') touchStateRef.current.right = false;
+      if (dir === 'right') touchStateRef.current.left = false;
+    }
   }, []);
 
   const handleTouchInteract = useCallback(() => {
@@ -3995,17 +4124,17 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
         <div
           data-testid="ship-terminal-modal"
           onClick={closeShipTerminal}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150 select-none cursor-pointer"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-md animate-in fade-in duration-150 select-none cursor-pointer overflow-y-auto"
         >
           <div
-            className="relative w-full max-w-lg bg-slate-950 border border-cyan-500/50 rounded-2xl shadow-[0_0_50px_rgba(6,182,212,0.3)] overflow-hidden text-slate-100 flex flex-col max-h-[90vh] cursor-default"
+            className="relative w-full max-w-4xl my-auto bg-slate-950 border border-cyan-500/50 rounded-2xl shadow-[0_0_50px_rgba(6,182,212,0.3)] overflow-hidden text-slate-100 flex flex-col max-h-[92vh] cursor-default"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="px-5 py-3.5 border-b border-slate-800 bg-slate-900/70 flex items-center justify-between shrink-0">
+            <div className="px-5 py-3 border-b border-slate-800 bg-slate-900/70 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
-                <Wrench className="w-5 h-5 text-cyan-400" />
-                <h3 className="text-base font-bold font-display tracking-wider text-white">
+                <Wrench className="w-5 h-5 text-cyan-400 shrink-0" />
+                <h3 className="text-sm sm:text-base font-bold font-display tracking-wider text-white">
                   ASCENT VEHICLE & UPGRADES TERMINAL
                 </h3>
               </div>
@@ -4013,216 +4142,227 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
                 data-testid="close-ship-terminal-btn"
                 onClick={closeShipTerminal}
                 className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                title="Close (Esc)"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-5 space-y-4 font-mono text-xs overflow-y-auto flex-1 min-h-0 custom-scrollbar">
-              {/* Ascent Vehicle Status */}
-              <div className="p-3.5 rounded-xl bg-slate-900/50 border border-slate-800 flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] text-slate-400 uppercase font-semibold">Ascent Vehicle Subsystems</div>
-                  <div className="text-sm font-bold text-white mt-0.5">
-                    {collectedPartIds.length >= 8
-                      ? isShipRepaired
-                        ? 'Ready for Orbital Return Flight'
-                        : 'All 8 Parts Found · Ready for Calibration'
-                      : `Missing ${8 - collectedPartIds.length} Parts (${collectedPartIds.length}/8 Found)`}
-                  </div>
-                </div>
-                {collectedPartIds.length >= 8 ? (
-                  isShipRepaired ? (
-                    <button
-                      data-testid="terminal-launch-btn"
-                      onClick={() => {
-                        setIsShipTerminalOpen(false);
-                        setIsLaunching(true);
-                      }}
-                      className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold cursor-pointer transition-colors shadow-md"
-                    >
-                      Launch Ascent →
-                    </button>
-                  ) : (
-                    <button
-                      data-testid="terminal-repair-btn"
-                      onClick={() => {
-                        setIsShipTerminalOpen(false);
-                        setIsRepairing(true);
-                      }}
-                      className="px-3.5 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold cursor-pointer transition-colors shadow-md"
-                    >
-                      Calibrate & Repair →
-                    </button>
-                  )
-                ) : (
-                  <span className="text-[10px] text-amber-400 font-bold px-2 py-1 rounded bg-amber-500/10 border border-amber-500/30">
-                    {8 - collectedPartIds.length} Wrecks Left
-                  </span>
-                )}
-              </div>
-
-              {/* Research Points Balance Banner */}
-              <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/40 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <Sparkles className="w-5 h-5 text-amber-400" />
-                  <div>
-                    <div className="text-[10px] text-amber-300/80 uppercase font-bold">Field Research Points</div>
-                    <div className="text-base font-bold text-white">
-                      <span data-testid="research-points-count">{researchPoints}</span> RP
+            <div className="p-4 sm:p-5 space-y-3.5 font-mono text-xs overflow-y-auto flex-1 min-h-0 custom-scrollbar">
+              {/* Top 2-Column Row: Ascent Vehicle Status & Research Points Balance */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Ascent Vehicle Status */}
+                <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-800 flex items-center justify-between gap-2.5">
+                  <div className="min-w-0">
+                    <div className="text-[10px] text-slate-400 uppercase font-semibold tracking-wider">Ascent Vehicle Subsystems</div>
+                    <div className="text-xs sm:text-sm font-bold text-white mt-0.5">
+                      {collectedPartIds.length >= 8
+                        ? isShipRepaired
+                          ? 'Ready for Orbital Return Flight'
+                          : 'All 8 Parts Found · Ready for Calibration'
+                        : `Missing ${8 - collectedPartIds.length} Parts (${collectedPartIds.length}/8 Found)`}
                     </div>
                   </div>
+                  {collectedPartIds.length >= 8 ? (
+                    isShipRepaired ? (
+                      <button
+                        data-testid="terminal-launch-btn"
+                        onClick={() => {
+                          setIsShipTerminalOpen(false);
+                          setIsLaunching(true);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold cursor-pointer transition-colors shadow-md text-xs shrink-0 whitespace-nowrap"
+                      >
+                        Launch Ascent →
+                      </button>
+                    ) : (
+                      <button
+                        data-testid="terminal-repair-btn"
+                        onClick={() => {
+                          setIsShipTerminalOpen(false);
+                          setIsRepairing(true);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold cursor-pointer transition-colors shadow-md text-xs shrink-0 whitespace-nowrap"
+                      >
+                        Calibrate & Repair →
+                      </button>
+                    )
+                  ) : (
+                    <span className="text-[10px] text-amber-400 font-bold px-2 py-1 rounded bg-amber-500/10 border border-amber-500/30 shrink-0 whitespace-nowrap">
+                      {8 - collectedPartIds.length} Wrecks Left
+                    </span>
+                  )}
                 </div>
-                <span className="text-[10px] text-slate-400">Earned from Science Samples & Landmarks</span>
+
+                {/* Research Points Balance Banner */}
+                <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-500/40 flex items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Sparkles className="w-5 h-5 text-amber-400 shrink-0" />
+                    <div>
+                      <div className="text-[10px] text-amber-300/80 uppercase font-bold tracking-wider">Field Research Points</div>
+                      <div className="text-sm sm:text-base font-bold text-white leading-tight">
+                        <span data-testid="research-points-count">{researchPoints}</span> RP
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-slate-400 text-right leading-tight max-w-[130px] shrink-0">
+                    Earned from Samples & Landmarks
+                  </span>
+                </div>
               </div>
 
-              {/* 3 Upgrades List (2 Levels Each) */}
-              <div className="space-y-2.5 pt-1">
+              {/* 3 Upgrades in Responsive Grid (3 columns on desktop / tablet) */}
+              <div className="space-y-2 pt-0.5">
                 <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Subsystem Upgrades:</div>
 
-                {/* Upgrade 1: Jetpack Boost */}
-                {(() => {
-                  const lvl = typeof upgrades.jetpack === 'number' ? upgrades.jetpack : (upgrades.jetpack ? 1 : 0);
-                  const isMax = lvl >= 2;
-                  const cost = isMax ? 0 : [3, 6][lvl];
-                  const canAfford = !isMax && researchPoints >= cost;
-                  const needed = isMax ? 0 : Math.max(0, cost - researchPoints);
-                  const effectText = lvl === 2 ? 'Sprint Drain: -50% (Lv.2 Max)' : lvl === 1 ? 'Sprint Drain: -30% (Lv.1)' : 'Sprint Drain: Standard (100%)';
-                  return (
-                    <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between gap-3">
-                      <div className="space-y-0.5">
-                        <div className="font-bold text-white flex items-center gap-2">
-                          <span>Jetpack Thruster Capacitor</span>
-                          {isMax && <span className="text-emerald-400 text-[10px] font-bold">✓ MAX</span>}
-                        </div>
-                        <div className="flex items-center gap-1.5 py-0.5">
-                          <div className="flex items-center gap-1">
-                            <span className={`w-2 h-2 rounded-full ${lvl >= 1 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
-                            <span className={`w-2 h-2 rounded-full ${lvl >= 2 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Upgrade 1: Jetpack Boost */}
+                  {(() => {
+                    const lvl = typeof upgrades.jetpack === 'number' ? upgrades.jetpack : (upgrades.jetpack ? 1 : 0);
+                    const isMax = lvl >= 2;
+                    const cost = isMax ? 0 : [3, 6][lvl];
+                    const canAfford = !isMax && researchPoints >= cost;
+                    const needed = isMax ? 0 : Math.max(0, cost - researchPoints);
+                    const effectText = lvl === 2 ? 'Sprint Drain: -50% (Lv.2 Max)' : lvl === 1 ? 'Sprint Drain: -30% (Lv.1)' : 'Sprint Drain: Standard (100%)';
+                    return (
+                      <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col justify-between gap-2.5">
+                        <div className="space-y-1">
+                          <div className="font-bold text-white flex items-center justify-between gap-1.5">
+                            <span className="text-xs font-sans tracking-tight">Jetpack Thruster Capacitor</span>
+                            {isMax && <span className="text-emerald-400 text-[10px] font-bold shrink-0">✓ MAX</span>}
                           </div>
-                          <span className="text-[10px] font-mono text-slate-400">Level {lvl}/2</span>
+                          <div className="flex items-center gap-1.5 py-0.5">
+                            <div className="flex items-center gap-1">
+                              <span className={`w-2 h-2 rounded-full ${lvl >= 1 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
+                              <span className={`w-2 h-2 rounded-full ${lvl >= 2 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
+                            </div>
+                            <span className="text-[10px] font-mono text-slate-400">Level {lvl}/2</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 leading-snug">Extended thruster sprint duration with reduced battery drain rate.</div>
+                          <div data-testid="effect-value-jetpack" className="text-[10px] text-cyan-300 font-bold pt-0.5">
+                            {effectText}
+                          </div>
                         </div>
-                        <div className="text-[11px] text-slate-400">Extended thruster sprint duration with reduced battery drain rate.</div>
-                        <div data-testid="effect-value-jetpack" className="text-[10px] text-cyan-300 font-bold">
-                          {effectText}
-                        </div>
+                        <button
+                          data-testid="buy-upgrade-jetpack"
+                          onClick={() => handleBuyUpgrade('jetpack')}
+                          disabled={isMax || !canAfford}
+                          className={`w-full py-1.5 rounded-lg text-xs font-bold font-mono transition-colors ${
+                            isMax
+                              ? 'bg-slate-800 text-emerald-400 cursor-default border border-slate-700'
+                              : canAfford
+                              ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-md cursor-pointer'
+                              : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
+                          }`}
+                        >
+                          {isMax ? 'Owned' : canAfford ? `Buy (${cost} RP)` : `Need ${needed} more RP`}
+                        </button>
                       </div>
-                      <button
-                        data-testid="buy-upgrade-jetpack"
-                        onClick={() => handleBuyUpgrade('jetpack')}
-                        disabled={isMax || !canAfford}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono shrink-0 transition-colors ${
-                          isMax
-                            ? 'bg-slate-800 text-emerald-400 cursor-default border border-slate-700'
-                            : canAfford
-                            ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-md cursor-pointer'
-                            : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
-                        }`}
-                      >
-                        {isMax ? 'Owned' : canAfford ? `Buy (${cost} RP)` : `Need ${needed} more RP`}
-                      </button>
-                    </div>
-                  );
-                })()}
+                    );
+                  })()}
 
-                {/* Upgrade 2: Scan Radius */}
-                {(() => {
-                  const lvl = typeof upgrades.scan === 'number' ? upgrades.scan : (upgrades.scan ? 1 : 0);
-                  const isMax = lvl >= 2;
-                  const cost = isMax ? 0 : [4, 8][lvl];
-                  const canAfford = !isMax && researchPoints >= cost;
-                  const needed = isMax ? 0 : Math.max(0, cost - researchPoints);
-                  const effectText = lvl === 2 ? 'Scan Radius: 420m (+50% Lv.2 Max)' : lvl === 1 ? 'Scan Radius: 350m (+25% Lv.1)' : 'Scan Radius: 280m (Standard)';
-                  return (
-                    <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between gap-3">
-                      <div className="space-y-0.5">
-                        <div className="font-bold text-white flex items-center gap-2">
-                          <span>Deep Resonance Sonar Antenna</span>
-                          {isMax && <span className="text-emerald-400 text-[10px] font-bold">✓ MAX</span>}
-                        </div>
-                        <div className="flex items-center gap-1.5 py-0.5">
-                          <div className="flex items-center gap-1">
-                            <span className={`w-2 h-2 rounded-full ${lvl >= 1 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
-                            <span className={`w-2 h-2 rounded-full ${lvl >= 2 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
+                  {/* Upgrade 2: Scan Radius */}
+                  {(() => {
+                    const lvl = typeof upgrades.scan === 'number' ? upgrades.scan : (upgrades.scan ? 1 : 0);
+                    const isMax = lvl >= 2;
+                    const cost = isMax ? 0 : [4, 8][lvl];
+                    const canAfford = !isMax && researchPoints >= cost;
+                    const needed = isMax ? 0 : Math.max(0, cost - researchPoints);
+                    const effectText = lvl === 2 ? 'Scan Radius: 420m (+50% Lv.2 Max)' : lvl === 1 ? 'Scan Radius: 350m (+25% Lv.1)' : 'Scan Radius: 280m (Standard)';
+                    return (
+                      <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col justify-between gap-2.5">
+                        <div className="space-y-1">
+                          <div className="font-bold text-white flex items-center justify-between gap-1.5">
+                            <span className="text-xs font-sans tracking-tight">Deep Resonance Sonar Antenna</span>
+                            {isMax && <span className="text-emerald-400 text-[10px] font-bold shrink-0">✓ MAX</span>}
                           </div>
-                          <span className="text-[10px] font-mono text-slate-400">Level {lvl}/2</span>
+                          <div className="flex items-center gap-1.5 py-0.5">
+                            <div className="flex items-center gap-1">
+                              <span className={`w-2 h-2 rounded-full ${lvl >= 1 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
+                              <span className={`w-2 h-2 rounded-full ${lvl >= 2 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
+                            </div>
+                            <span className="text-[10px] font-mono text-slate-400">Level {lvl}/2</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 leading-snug">Expands NOVA's acoustic radar ping wave radius.</div>
+                          <div data-testid="effect-value-scan" className="text-[10px] text-cyan-300 font-bold pt-0.5">
+                            {effectText}
+                          </div>
                         </div>
-                        <div className="text-[11px] text-slate-400">Expands NOVA's acoustic radar ping wave radius.</div>
-                        <div data-testid="effect-value-scan" className="text-[10px] text-cyan-300 font-bold">
-                          {effectText}
-                        </div>
+                        <button
+                          data-testid="buy-upgrade-scan"
+                          onClick={() => handleBuyUpgrade('scan')}
+                          disabled={isMax || !canAfford}
+                          className={`w-full py-1.5 rounded-lg text-xs font-bold font-mono transition-colors ${
+                            isMax
+                              ? 'bg-slate-800 text-emerald-400 cursor-default border border-slate-700'
+                              : canAfford
+                              ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-md cursor-pointer'
+                              : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
+                          }`}
+                        >
+                          {isMax ? 'Owned' : canAfford ? `Buy (${cost} RP)` : `Need ${needed} more RP`}
+                        </button>
                       </div>
-                      <button
-                        data-testid="buy-upgrade-scan"
-                        onClick={() => handleBuyUpgrade('scan')}
-                        disabled={isMax || !canAfford}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono shrink-0 transition-colors ${
-                          isMax
-                            ? 'bg-slate-800 text-emerald-400 cursor-default border border-slate-700'
-                            : canAfford
-                            ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-md cursor-pointer'
-                            : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
-                        }`}
-                      >
-                        {isMax ? 'Owned' : canAfford ? `Buy (${cost} RP)` : `Need ${needed} more RP`}
-                      </button>
-                    </div>
-                  );
-                })()}
+                    );
+                  })()}
 
-                {/* Upgrade 3: Minimap Reveal */}
-                {(() => {
-                  const lvl = typeof upgrades.minimap === 'number' ? upgrades.minimap : (upgrades.minimap ? 1 : 0);
-                  const isMax = lvl >= 2;
-                  const cost = isMax ? 0 : [5, 10][lvl];
-                  const canAfford = !isMax && researchPoints >= cost;
-                  const needed = isMax ? 0 : Math.max(0, cost - researchPoints);
-                  const effectText = lvl === 2 ? 'Reveal Radius: 26 tiles (+8 Lv.2 Max)' : lvl === 1 ? 'Reveal Radius: 22 tiles (+4 Lv.1)' : 'Reveal Radius: 18 tiles (Standard)';
-                  return (
-                    <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between gap-3">
-                      <div className="space-y-0.5">
-                        <div className="font-bold text-white flex items-center gap-2">
-                          <span>Orbital Cartography Uplink</span>
-                          {isMax && <span className="text-emerald-400 text-[10px] font-bold">✓ MAX</span>}
-                        </div>
-                        <div className="flex items-center gap-1.5 py-0.5">
-                          <div className="flex items-center gap-1">
-                            <span className={`w-2 h-2 rounded-full ${lvl >= 1 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
-                            <span className={`w-2 h-2 rounded-full ${lvl >= 2 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
+                  {/* Upgrade 3: Minimap Reveal */}
+                  {(() => {
+                    const lvl = typeof upgrades.minimap === 'number' ? upgrades.minimap : (upgrades.minimap ? 1 : 0);
+                    const isMax = lvl >= 2;
+                    const cost = isMax ? 0 : [5, 10][lvl];
+                    const canAfford = !isMax && researchPoints >= cost;
+                    const needed = isMax ? 0 : Math.max(0, cost - researchPoints);
+                    const effectText = lvl === 2 ? 'Reveal Radius: 26 tiles (+8 Lv.2 Max)' : lvl === 1 ? 'Reveal Radius: 22 tiles (+4 Lv.1)' : 'Reveal Radius: 18 tiles (Standard)';
+                    return (
+                      <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col justify-between gap-2.5">
+                        <div className="space-y-1">
+                          <div className="font-bold text-white flex items-center justify-between gap-1.5">
+                            <span className="text-xs font-sans tracking-tight">Orbital Cartography Uplink</span>
+                            {isMax && <span className="text-emerald-400 text-[10px] font-bold shrink-0">✓ MAX</span>}
                           </div>
-                          <span className="text-[10px] font-mono text-slate-400">Level {lvl}/2</span>
+                          <div className="flex items-center gap-1.5 py-0.5">
+                            <div className="flex items-center gap-1">
+                              <span className={`w-2 h-2 rounded-full ${lvl >= 1 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
+                              <span className={`w-2 h-2 rounded-full ${lvl >= 2 ? 'bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]' : 'bg-slate-800 border border-slate-700'}`} />
+                            </div>
+                            <span className="text-[10px] font-mono text-slate-400">Level {lvl}/2</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 leading-snug">Expands the fog-of-war exploration reveal radius.</div>
+                          <div data-testid="effect-value-minimap" className="text-[10px] text-cyan-300 font-bold pt-0.5">
+                            {effectText}
+                          </div>
                         </div>
-                        <div className="text-[11px] text-slate-400">Expands the fog-of-war exploration reveal radius.</div>
-                        <div data-testid="effect-value-minimap" className="text-[10px] text-cyan-300 font-bold">
-                          {effectText}
-                        </div>
+                        <button
+                          data-testid="buy-upgrade-minimap"
+                          onClick={() => handleBuyUpgrade('minimap')}
+                          disabled={isMax || !canAfford}
+                          className={`w-full py-1.5 rounded-lg text-xs font-bold font-mono transition-colors ${
+                            isMax
+                              ? 'bg-slate-800 text-emerald-400 cursor-default border border-slate-700'
+                              : canAfford
+                              ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-md cursor-pointer'
+                              : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
+                          }`}
+                        >
+                          {isMax ? 'Owned' : canAfford ? `Buy (${cost} RP)` : `Need ${needed} more RP`}
+                        </button>
                       </div>
-                      <button
-                        data-testid="buy-upgrade-minimap"
-                        onClick={() => handleBuyUpgrade('minimap')}
-                        disabled={isMax || !canAfford}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono shrink-0 transition-colors ${
-                          isMax
-                            ? 'bg-slate-800 text-emerald-400 cursor-default border border-slate-700'
-                            : canAfford
-                            ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-md cursor-pointer'
-                            : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
-                        }`}
-                      >
-                        {isMax ? 'Owned' : canAfford ? `Buy (${cost} RP)` : `Need ${needed} more RP`}
-                      </button>
-                    </div>
-                  );
-                })()}
+                    );
+                  })()}
+                </div>
               </div>
             </div>
 
             {/* Footer */}
-            <div className="px-5 py-3 border-t border-slate-800 bg-slate-900/40 flex justify-end shrink-0">
+            <div className="px-5 py-2.5 border-t border-slate-800 bg-slate-900/40 flex items-center justify-between shrink-0">
+              <span className="text-[10px] font-mono text-slate-500 hidden sm:inline">
+                Click outside or press [Esc] to exit
+              </span>
               <button
                 data-testid="exit-ship-terminal-btn"
                 onClick={closeShipTerminal}
-                className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold font-mono text-xs cursor-pointer transition-colors"
+                className="ml-auto px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold font-mono text-xs cursor-pointer transition-colors"
               >
                 Exit Terminal
               </button>
@@ -4412,8 +4552,18 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
           {/* Virtual D-Pad */}
           <div data-testid="virtual-dpad" className="flex flex-col items-center pointer-events-auto">
             <button
-              onPointerDown={() => handleTouchDir('up', true)}
-              onPointerUp={() => handleTouchDir('up', false)}
+              onPointerDown={(e) => {
+                try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch {}
+                handleTouchDir('up', true);
+              }}
+              onPointerUp={(e) => {
+                try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+                handleTouchDir('up', false);
+              }}
+              onPointerCancel={(e) => {
+                try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+                handleTouchDir('up', false);
+              }}
               onPointerLeave={() => handleTouchDir('up', false)}
               className="w-11 h-11 rounded-lg bg-slate-900/80 border border-slate-700 active:bg-cyan-900 text-slate-200 flex items-center justify-center font-bold"
             >
@@ -4421,24 +4571,54 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
             </button>
             <div className="flex gap-2 my-1">
               <button
-                onPointerDown={() => handleTouchDir('left', true)}
-                onPointerUp={() => handleTouchDir('left', false)}
+                onPointerDown={(e) => {
+                  try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch {}
+                  handleTouchDir('left', true);
+                }}
+                onPointerUp={(e) => {
+                  try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+                  handleTouchDir('left', false);
+                }}
+                onPointerCancel={(e) => {
+                  try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+                  handleTouchDir('left', false);
+                }}
                 onPointerLeave={() => handleTouchDir('left', false)}
                 className="w-11 h-11 rounded-lg bg-slate-900/80 border border-slate-700 active:bg-cyan-900 text-slate-200 flex items-center justify-center font-bold"
               >
                 ◀
               </button>
               <button
-                onPointerDown={() => handleTouchDir('down', true)}
-                onPointerUp={() => handleTouchDir('down', false)}
+                onPointerDown={(e) => {
+                  try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch {}
+                  handleTouchDir('down', true);
+                }}
+                onPointerUp={(e) => {
+                  try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+                  handleTouchDir('down', false);
+                }}
+                onPointerCancel={(e) => {
+                  try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+                  handleTouchDir('down', false);
+                }}
                 onPointerLeave={() => handleTouchDir('down', false)}
                 className="w-11 h-11 rounded-lg bg-slate-900/80 border border-slate-700 active:bg-cyan-900 text-slate-200 flex items-center justify-center font-bold"
               >
                 ▼
               </button>
               <button
-                onPointerDown={() => handleTouchDir('right', true)}
-                onPointerUp={() => handleTouchDir('right', false)}
+                onPointerDown={(e) => {
+                  try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch {}
+                  handleTouchDir('right', true);
+                }}
+                onPointerUp={(e) => {
+                  try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+                  handleTouchDir('right', false);
+                }}
+                onPointerCancel={(e) => {
+                  try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+                  handleTouchDir('right', false);
+                }}
                 onPointerLeave={() => handleTouchDir('right', false)}
                 className="w-11 h-11 rounded-lg bg-slate-900/80 border border-slate-700 active:bg-cyan-900 text-slate-200 flex items-center justify-center font-bold"
               >
@@ -4453,10 +4633,16 @@ export const WorldScene: React.FC<WorldSceneProps> = ({
             {/* Boost & Scan Mini Buttons */}
             <div className="flex items-center gap-2">
               <button
-                onPointerDown={() => {
+                onPointerDown={(e) => {
+                  try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch {}
                   touchStateRef.current.boost = true;
                 }}
-                onPointerUp={() => {
+                onPointerUp={(e) => {
+                  try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+                  touchStateRef.current.boost = false;
+                }}
+                onPointerCancel={(e) => {
+                  try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
                   touchStateRef.current.boost = false;
                 }}
                 onPointerLeave={() => {

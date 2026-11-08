@@ -347,6 +347,28 @@ export const MoonScene: React.FC<MoonSceneProps> = ({
     interact: false,
   });
 
+  const handleTouchDir = useCallback((dir: 'up' | 'down' | 'left' | 'right', active: boolean) => {
+    touchStateRef.current[dir] = active;
+    if (active) {
+      if (dir === 'up') touchStateRef.current.down = false;
+      if (dir === 'down') touchStateRef.current.up = false;
+      if (dir === 'left') touchStateRef.current.right = false;
+      if (dir === 'right') touchStateRef.current.left = false;
+    }
+  }, []);
+
+  // Clear keys and touch inputs whenever any modal, dialogue, or state opens or closes
+  useEffect(() => {
+    heldKeysRef.current.clear();
+    touchStateRef.current = {
+      up: false,
+      down: false,
+      left: false,
+      right: false,
+      interact: false,
+    };
+  }, [activeRelic, novaDialogue, showEarthrise, isDrivingRover]);
+
   // Current Tile Coordinates for data attribute
   const [currentTile, setCurrentTile] = useState(`${mapData.startTile.x},${mapData.startTile.y}`);
 
@@ -1158,9 +1180,63 @@ export const MoonScene: React.FC<MoonSceneProps> = ({
     }
   }, [mapData, triggerPetNova]);
 
-  // Keyboard Event Listeners
+  // Keyboard Event Listeners with window blur/focus/touch cleanup
   useEffect(() => {
+    const clearAllInputs = () => {
+      heldKeysRef.current.clear();
+      touchStateRef.current = {
+        up: false,
+        down: false,
+        left: false,
+        right: false,
+        interact: false,
+      };
+    };
+
+    const clearTouchInputs = () => {
+      touchStateRef.current = {
+        up: false,
+        down: false,
+        left: false,
+        right: false,
+        interact: false,
+      };
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Modifier keys: prevent browser swallowing keyup when Alt-Tab / Windows key / Tab is pressed
+      if (
+        e.key === 'Alt' ||
+        e.key === 'Meta' ||
+        e.key === 'Tab' ||
+        e.code === 'AltLeft' ||
+        e.code === 'AltRight' ||
+        e.code === 'MetaLeft' ||
+        e.code === 'MetaRight' ||
+        e.code === 'Tab'
+      ) {
+        clearAllInputs();
+        return;
+      }
+
+      // Cancel opposite directions
+      if (e.code === 'KeyW' || e.code === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') {
+        heldKeysRef.current.delete('KeyS');
+        heldKeysRef.current.delete('ArrowDown');
+      }
+      if (e.code === 'KeyS' || e.code === 'ArrowDown' || e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') {
+        heldKeysRef.current.delete('KeyW');
+        heldKeysRef.current.delete('ArrowUp');
+      }
+      if (e.code === 'KeyA' || e.code === 'ArrowLeft' || e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') {
+        heldKeysRef.current.delete('KeyD');
+        heldKeysRef.current.delete('ArrowRight');
+      }
+      if (e.code === 'KeyD' || e.code === 'ArrowRight' || e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') {
+        heldKeysRef.current.delete('KeyA');
+        heldKeysRef.current.delete('ArrowLeft');
+      }
+
       if (['Space', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyE', 'Enter', 'KeyP'].includes(e.code)) {
         e.preventDefault();
       }
@@ -1249,14 +1325,55 @@ export const MoonScene: React.FC<MoonSceneProps> = ({
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      heldKeysRef.current.delete(e.code);
+      if (['Space', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyE', 'Enter', 'KeyP'].includes(e.code)) {
+        e.preventDefault();
+      }
+      if (e.code) {
+        heldKeysRef.current.delete(e.code);
+      }
+      if (e.key) {
+        const k = e.key.toLowerCase();
+        if (k === 'w' || k === 'arrowup') {
+          heldKeysRef.current.delete('KeyW');
+          heldKeysRef.current.delete('ArrowUp');
+        } else if (k === 's' || k === 'arrowdown') {
+          heldKeysRef.current.delete('KeyS');
+          heldKeysRef.current.delete('ArrowDown');
+        } else if (k === 'a' || k === 'arrowleft') {
+          heldKeysRef.current.delete('KeyA');
+          heldKeysRef.current.delete('ArrowLeft');
+        } else if (k === 'd' || k === 'arrowright') {
+          heldKeysRef.current.delete('KeyD');
+          heldKeysRef.current.delete('ArrowRight');
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', clearAllInputs);
+    window.addEventListener('focus', clearAllInputs);
+    window.addEventListener('contextmenu', clearAllInputs);
+    window.addEventListener('pointerup', clearTouchInputs);
+    window.addEventListener('pointercancel', clearTouchInputs);
+    window.addEventListener('touchend', clearTouchInputs);
+    window.addEventListener('touchcancel', clearTouchInputs);
+    const handleVisChange = () => {
+      if (document.hidden) clearAllInputs();
+    };
+    document.addEventListener('visibilitychange', handleVisChange);
+
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', clearAllInputs);
+      window.removeEventListener('focus', clearAllInputs);
+      window.removeEventListener('contextmenu', clearAllInputs);
+      window.removeEventListener('pointerup', clearTouchInputs);
+      window.removeEventListener('pointercancel', clearTouchInputs);
+      window.removeEventListener('touchend', clearTouchInputs);
+      window.removeEventListener('touchcancel', clearTouchInputs);
+      document.removeEventListener('visibilitychange', handleVisChange);
     };
   }, [mapData, showDialogue, startHop, triggerRelicInteract, triggerMonumentInteract, triggerRockSample, triggerSeismicThumper, triggerSecretInteract, triggerIceScan, triggerPetNova, boardRover, dismountRover]);
 
@@ -3888,34 +4005,74 @@ export const MoonScene: React.FC<MoonSceneProps> = ({
         {/* Virtual D-Pad */}
         <div data-testid="virtual-dpad" className="flex flex-col items-center pointer-events-auto">
           <button
-            onPointerDown={() => { touchStateRef.current.up = true; }}
-            onPointerUp={() => { touchStateRef.current.up = false; }}
-            onPointerLeave={() => { touchStateRef.current.up = false; }}
+            onPointerDown={(e) => {
+              try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch {}
+              handleTouchDir('up', true);
+            }}
+            onPointerUp={(e) => {
+              try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+              handleTouchDir('up', false);
+            }}
+            onPointerCancel={(e) => {
+              try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+              handleTouchDir('up', false);
+            }}
+            onPointerLeave={() => handleTouchDir('up', false)}
             className="w-11 h-11 rounded-lg bg-slate-900/80 border border-slate-700 active:bg-cyan-900 text-slate-200 flex items-center justify-center font-bold"
           >
             ▲
           </button>
           <div className="flex gap-2 my-1">
             <button
-              onPointerDown={() => { touchStateRef.current.left = true; }}
-              onPointerUp={() => { touchStateRef.current.left = false; }}
-              onPointerLeave={() => { touchStateRef.current.left = false; }}
+              onPointerDown={(e) => {
+                try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch {}
+                handleTouchDir('left', true);
+              }}
+              onPointerUp={(e) => {
+                try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+                handleTouchDir('left', false);
+              }}
+              onPointerCancel={(e) => {
+                try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+                handleTouchDir('left', false);
+              }}
+              onPointerLeave={() => handleTouchDir('left', false)}
               className="w-11 h-11 rounded-lg bg-slate-900/80 border border-slate-700 active:bg-cyan-900 text-slate-200 flex items-center justify-center font-bold"
             >
               ◀
             </button>
             <button
-              onPointerDown={() => { touchStateRef.current.down = true; }}
-              onPointerUp={() => { touchStateRef.current.down = false; }}
-              onPointerLeave={() => { touchStateRef.current.down = false; }}
+              onPointerDown={(e) => {
+                try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch {}
+                handleTouchDir('down', true);
+              }}
+              onPointerUp={(e) => {
+                try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+                handleTouchDir('down', false);
+              }}
+              onPointerCancel={(e) => {
+                try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+                handleTouchDir('down', false);
+              }}
+              onPointerLeave={() => handleTouchDir('down', false)}
               className="w-11 h-11 rounded-lg bg-slate-900/80 border border-slate-700 active:bg-cyan-900 text-slate-200 flex items-center justify-center font-bold"
             >
               ▼
             </button>
             <button
-              onPointerDown={() => { touchStateRef.current.right = true; }}
-              onPointerUp={() => { touchStateRef.current.right = false; }}
-              onPointerLeave={() => { touchStateRef.current.right = false; }}
+              onPointerDown={(e) => {
+                try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch {}
+                handleTouchDir('right', true);
+              }}
+              onPointerUp={(e) => {
+                try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+                handleTouchDir('right', false);
+              }}
+              onPointerCancel={(e) => {
+                try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+                handleTouchDir('right', false);
+              }}
+              onPointerLeave={() => handleTouchDir('right', false)}
               className="w-11 h-11 rounded-lg bg-slate-900/80 border border-slate-700 active:bg-cyan-900 text-slate-200 flex items-center justify-center font-bold"
             >
               ▶
