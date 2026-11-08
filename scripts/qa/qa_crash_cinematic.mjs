@@ -153,10 +153,10 @@ async function run() {
     if (!beat2Text.includes('SYSTEMS FAILING!')) {
       throw new Error(`Expected "SYSTEMS FAILING!", got: "${beat2Text}"`);
     }
-    if (!beat2Text.includes('ALTITUDE: 0 METERS')) {
-      throw new Error(`Expected Altitude 0m impact telemetry, got: "${beat2Text}"`);
+    if (!beat2Text.toLowerCase().includes('crash landing')) {
+      throw new Error(`Expected Crash landing! impact copy, got: "${beat2Text}"`);
     }
-    console.log('✓ Stage 2 impact confirmed (SYSTEMS FAILING! & 0m Altitude)');
+    console.log('✓ Stage 2 impact confirmed (SYSTEMS FAILING! & Crash landing!)');
     await page.screenshot({ path: path.join(OUTPUT_DIR, 'crash_stage2_impact.png') });
 
     // -------------------------------------------------------------------------

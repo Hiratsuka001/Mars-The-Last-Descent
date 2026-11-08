@@ -158,7 +158,9 @@ This creates a clean zip archive containing only the tracked repository files.
 ---
 
 ## 📄 Licensing & Attributions
-- **Software Code**: MIT License.
+- **Software Code**: MIT License. See [LICENSE](LICENSE).
 - **Pixel Art & Audio Engine**: CC0 1.0 Universal Public Domain Dedication.
+- **Source Sheets**: Source sheets are not in the repo; the committed `src/assets/characters.png` is the built atlas.
 - **Educational Media**: NASA / JPL-Caltech public-domain photography and mission archives. See [ASSET_LICENSES.md](ASSET_LICENSES.md) for complete details.
+
 

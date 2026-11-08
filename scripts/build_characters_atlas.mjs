@@ -3,11 +3,22 @@ import path from 'path';
 import { chromium } from 'playwright';
 
 async function main() {
+  const sourceDir = path.resolve('src/assets/new assets');
+  const playerSheetPath = path.join(sourceDir, 'player_sheet_user.jpg');
+  const novaWalkPath = path.join(sourceDir, 'nova_walk.png');
+
+  if (!fs.existsSync(sourceDir) || !fs.existsSync(playerSheetPath) || !fs.existsSync(novaWalkPath)) {
+    console.error(
+      `[Error] Source sheets are not in the repo; the committed src/assets/characters.png is the built atlas.\nExpected: "${playerSheetPath}" and "${novaWalkPath}".`
+    );
+    process.exit(1);
+  }
+
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
 
-  const pB64 = fs.readFileSync('src/assets/new assets/player_sheet_user.jpg').toString('base64');
-  const nB64 = fs.readFileSync('src/assets/new assets/nova_walk.png').toString('base64');
+  const pB64 = fs.readFileSync(playerSheetPath).toString('base64');
+  const nB64 = fs.readFileSync(novaWalkPath).toString('base64');
 
   await page.setContent(`<!DOCTYPE html><html><body>
     <img id="p" src="data:image/jpeg;base64,${pB64}">

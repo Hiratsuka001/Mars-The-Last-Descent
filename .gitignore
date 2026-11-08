@@ -6,3 +6,5 @@ coverage/
 .DS_Store
 *.log
 .env*
+src/assets/new assets/
+

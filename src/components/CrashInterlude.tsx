@@ -257,7 +257,7 @@ export const CrashInterlude: React.FC<CrashInterludeProps> = ({ onComplete }) =>
 
             <div className="flex items-center justify-center gap-1.5 px-3 py-1 rounded-full bg-red-950/80 border border-red-500/70 text-red-300 text-[11px] font-mono uppercase tracking-wider z-10 shadow-[0_0_20px_rgba(239,68,68,0.5)]">
               <AlertTriangle className="w-3.5 h-3.5 animate-bounce" />
-              <span>ALTITUDE: 0 METERS · HARD LANDING</span>
+              <span>Crash landing!</span>
             </div>
 
             <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center bg-red-950 border-2 border-red-500 shadow-[0_0_60px_rgba(239,68,68,0.9)] z-10">

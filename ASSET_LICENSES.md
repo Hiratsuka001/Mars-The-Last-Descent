@@ -87,25 +87,15 @@ The following files in `src/assets/` and `public/` are pending source verificati
 | `src/assets/characters.png` | Sliced Character Atlas | UNKNOWN: owner must confirm before public release |
 | `public/favicon.svg` | Site Favicon Vector | UNKNOWN: owner must confirm before public release |
 | `public/assets/characters.png` | Sliced Character Atlas (Public Asset) | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/8-bit_tiles_platformer.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/colorful-illustrated-set-cracked-rocks-260nw-2812761893.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/game-ui-elements-set-retro-260nw-2631633133.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/Grassland-Top-Down-Tileset-Pixel-Art2-720x480.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/nova_walk.png` | Nova Walk Source Sheet | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/pixel keyboard.png` | Keycap Source Sheet | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/player_sheet_user.jpg` | Player Sheet Source Photo | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/player_walk.png` | Player Walk Source Frame | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/player_walk2.png` | Player Walk Source Frame | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/player_walk4.png` | Player Walk Source Frame | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/pngtree-sci-fi-pixel-art-sprite-sheet-top-down-base-walls-machines-png-image_19052232.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/pngtree-sci-fi-pixel-art-top-down-base-walls-machines-buildings-sprite-png-image_19052242.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/rover.png` | Rover Source Art | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/scifi depot.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/scifi icon 2.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/scifi icon.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/space themed.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/stock-vector-satellite-rocket-pixel-art-set-spaceship-spacecraft-collection-bit-sprite-game-development-2172857931.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/tiles.png` | Prototype Source Sheet | UNKNOWN: owner must confirm before public release |
-| `src/assets/new assets/kenny nl assets/` | Kenney Tiny Factory Tileset | CC0 1.0 Universal (Kenney - www.kenney.nl) |
+
+---
+
+## 6. Source Sheets (Not in This Repo)
+
+The raw source sheets (`src/assets/new assets/`) are not tracked in this repository and are not included in build artifacts:
+- **Kenney**: CC0 1.0 Universal ([kenney.nl](https://kenney.nl))
+- **Stock-site sheets**: not redistributed
+- **User-provided sprites**: UNKNOWN: owner must confirm
+
 
 
